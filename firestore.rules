@@ -1,0 +1,128 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function isUser(userId) {
+      return isSignedIn() && request.auth.uid == userId;
+    }
+
+    function incomingOwnedBySignedInUser() {
+      return isSignedIn() &&
+        request.resource.data.userID == request.auth.uid;
+    }
+
+    function existingOwnedBySignedInUser() {
+      return isSignedIn() &&
+        resource.data.userID == request.auth.uid;
+    }
+
+    function preservesOwner() {
+      return request.resource.data.userID == resource.data.userID;
+    }
+
+    function onlyAmenCountChanged() {
+      return request.resource.data.diff(resource.data).changedKeys().hasOnly(['amenCount']);
+    }
+
+    function incrementsAmenCount() {
+      return request.resource.data.amenCount is int &&
+        resource.data.amenCount is int &&
+        request.resource.data.amenCount == resource.data.amenCount + 1;
+    }
+
+    match /users/{userId} {
+      allow get, delete: if isUser(userId);
+      allow list: if false;
+      allow create, update: if isUser(userId) &&
+        request.resource.data.userID == userId &&
+        request.resource.data.id == userId;
+
+      match /state/{documentId} {
+        allow read, write, delete: if isUser(userId);
+      }
+
+      match /{document=**} {
+        allow read, write, delete: if isUser(userId);
+      }
+    }
+
+    match /missions/{documentId} {
+      allow get, list, delete: if existingOwnedBySignedInUser();
+      allow create: if incomingOwnedBySignedInUser();
+      allow update: if existingOwnedBySignedInUser() &&
+        incomingOwnedBySignedInUser() &&
+        preservesOwner();
+    }
+
+    match /devotionals/{documentId} {
+      allow get, list, delete: if existingOwnedBySignedInUser();
+      allow create: if incomingOwnedBySignedInUser();
+      allow update: if existingOwnedBySignedInUser() &&
+        incomingOwnedBySignedInUser() &&
+        preservesOwner();
+    }
+
+    match /journalEntries/{documentId} {
+      allow get, list, delete: if existingOwnedBySignedInUser();
+      allow create: if incomingOwnedBySignedInUser();
+      allow update: if existingOwnedBySignedInUser() &&
+        incomingOwnedBySignedInUser() &&
+        preservesOwner();
+    }
+
+    match /progress/{documentId} {
+      allow get, list, delete: if existingOwnedBySignedInUser();
+      allow create: if incomingOwnedBySignedInUser();
+      allow update: if existingOwnedBySignedInUser() &&
+        incomingOwnedBySignedInUser() &&
+        preservesOwner();
+    }
+
+    match /groups/{groupId} {
+      allow get, list: if isSignedIn();
+      allow create: if incomingOwnedBySignedInUser();
+      allow update: if existingOwnedBySignedInUser() &&
+        incomingOwnedBySignedInUser() &&
+        preservesOwner();
+      allow delete: if existingOwnedBySignedInUser();
+    }
+
+    match /posts/{postId} {
+      allow get, list: if isSignedIn();
+      allow create: if incomingOwnedBySignedInUser();
+      allow update: if (
+        existingOwnedBySignedInUser() &&
+        incomingOwnedBySignedInUser() &&
+        preservesOwner()
+      ) || (
+        isSignedIn() &&
+        preservesOwner() &&
+        onlyAmenCountChanged() &&
+        incrementsAmenCount()
+      );
+      allow delete: if existingOwnedBySignedInUser();
+    }
+
+    match /reports/{reportId} {
+      allow get, list, delete: if existingOwnedBySignedInUser();
+      allow create: if incomingOwnedBySignedInUser() &&
+        request.resource.data.reportedByUserID == request.auth.uid;
+      allow update: if false;
+    }
+
+    match /leaderboards/{userId} {
+      allow get, list: if isSignedIn();
+      allow create, update: if isUser(userId) &&
+        request.resource.data.userID == userId;
+      allow delete: if isUser(userId);
+    }
+
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}
