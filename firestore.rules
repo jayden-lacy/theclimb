@@ -24,14 +24,494 @@ service cloud.firestore {
       return request.resource.data.userID == resource.data.userID;
     }
 
+    function hasIncomingKey(key) {
+      return request.resource.data.keys().hasAny([key]);
+    }
+
+    function validOptionalTimestamp(key) {
+      return !hasIncomingKey(key) ||
+        request.resource.data[key] is timestamp;
+    }
+
     function onlyAmenCountChanged() {
-      return request.resource.data.diff(resource.data).changedKeys().hasOnly(['amenCount']);
+      return request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+        'amenCount',
+        'updatedAt'
+      ]);
     }
 
     function incrementsAmenCount() {
       return request.resource.data.amenCount is int &&
         resource.data.amenCount is int &&
         request.resource.data.amenCount == resource.data.amenCount + 1;
+    }
+
+    function validPost(postId) {
+      return request.resource.data.keys().hasOnly([
+        'id',
+        'authorID',
+        'author',
+        'body',
+        'createdAt',
+        'amenCount',
+        'userID',
+        'updatedAt'
+      ]) &&
+        request.resource.data.keys().hasAll([
+          'id',
+          'authorID',
+          'author',
+          'body',
+          'createdAt',
+          'amenCount',
+          'userID'
+        ]) &&
+        request.resource.data.id == postId &&
+        request.resource.data.authorID == request.resource.data.userID &&
+        request.resource.data.authorID is string &&
+        request.resource.data.authorID.size() > 0 &&
+        request.resource.data.authorID.size() <= 128 &&
+        request.resource.data.author is string &&
+        request.resource.data.author.size() > 0 &&
+        request.resource.data.author.size() <= 40 &&
+        request.resource.data.body is string &&
+        request.resource.data.body.size() > 0 &&
+        request.resource.data.body.size() <= 500 &&
+        (
+          request.resource.data.createdAt is timestamp ||
+          request.resource.data.createdAt is string
+        ) &&
+        request.resource.data.amenCount is int &&
+        request.resource.data.amenCount >= 0 &&
+        request.resource.data.amenCount <= 1000000 &&
+        validOptionalTimestamp('updatedAt');
+    }
+
+    function createsPost(postId) {
+      return isSignedIn() &&
+        validPost(postId) &&
+        request.resource.data.authorID == request.auth.uid &&
+        request.resource.data.userID == request.auth.uid &&
+        request.resource.data.amenCount == 0;
+    }
+
+    function preservesPostIdentity() {
+      return request.resource.data.id == resource.data.id &&
+        request.resource.data.authorID == resource.data.authorID &&
+        request.resource.data.userID == resource.data.userID &&
+        request.resource.data.author == resource.data.author &&
+        request.resource.data.createdAt == resource.data.createdAt;
+    }
+
+    function authorUpdatesPostBody(postId) {
+      return existingOwnedBySignedInUser() &&
+        validPost(postId) &&
+        preservesPostIdentity() &&
+        request.resource.data.amenCount == resource.data.amenCount &&
+        request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+          'body',
+          'updatedAt'
+        ]);
+    }
+
+    function addsAmenToPost(postId) {
+      return isSignedIn() &&
+        validPost(postId) &&
+        preservesPostIdentity() &&
+        request.resource.data.body == resource.data.body &&
+        onlyAmenCountChanged() &&
+        incrementsAmenCount();
+    }
+
+    function validLeaderboardEntry(userId) {
+      return request.resource.data.keys().hasOnly([
+        'id',
+        'name',
+        'ovrScore',
+        'streak',
+        'userID',
+        'updatedAt'
+      ]) &&
+        request.resource.data.id == userId &&
+        request.resource.data.userID == userId &&
+        request.resource.data.name is string &&
+        request.resource.data.name.size() > 0 &&
+        request.resource.data.name.size() <= 40 &&
+        request.resource.data.ovrScore is int &&
+        request.resource.data.ovrScore >= 0 &&
+        request.resource.data.ovrScore <= 100 &&
+        request.resource.data.streak is int &&
+        request.resource.data.streak >= 0 &&
+        request.resource.data.streak <= 3650 &&
+        validOptionalTimestamp('updatedAt');
+    }
+
+    function validLeaderboardUpdate(userId) {
+      return validLeaderboardEntry(userId) &&
+        resource.data.id == userId &&
+        resource.data.userID == userId &&
+        request.resource.data.id == resource.data.id &&
+        request.resource.data.userID == resource.data.userID &&
+        request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+          'name',
+          'ovrScore',
+          'streak',
+          'updatedAt'
+        ]);
+    }
+
+    function validGroup(groupId) {
+      return request.resource.data.keys().hasOnly([
+        'id',
+        'name',
+        'subtitle',
+        'members',
+        'activeChallenge',
+        'isJoined',
+        'userID',
+        'ownerID',
+        'adminIDs',
+        'memberIDs',
+        'memberNames',
+        'createdAt',
+        'updatedAt'
+      ]) &&
+        request.resource.data.keys().hasAll([
+          'id',
+          'name',
+          'subtitle',
+          'members',
+          'activeChallenge',
+          'userID',
+          'ownerID',
+          'adminIDs',
+          'memberIDs',
+          'memberNames'
+        ]) &&
+        request.resource.data.id == groupId &&
+        request.resource.data.name is string &&
+        request.resource.data.name.size() > 0 &&
+        request.resource.data.name.size() <= 42 &&
+        request.resource.data.subtitle is string &&
+        request.resource.data.subtitle.size() > 0 &&
+        request.resource.data.subtitle.size() <= 96 &&
+        request.resource.data.activeChallenge is string &&
+        request.resource.data.activeChallenge.size() > 0 &&
+        request.resource.data.activeChallenge.size() <= 40 &&
+        request.resource.data.userID is string &&
+        request.resource.data.ownerID is string &&
+        request.resource.data.adminIDs is list &&
+        request.resource.data.memberIDs is list &&
+        request.resource.data.memberNames is map &&
+        request.resource.data.members is int &&
+        request.resource.data.members >= 0 &&
+        request.resource.data.members <= 5000 &&
+        request.resource.data.members == request.resource.data.memberIDs.size() &&
+        request.resource.data.ownerID in request.resource.data.adminIDs &&
+        request.resource.data.memberIDs.hasAll(request.resource.data.adminIDs) &&
+        validOptionalTimestamp('createdAt') &&
+        validOptionalTimestamp('updatedAt');
+    }
+
+    function validPartnerLink(linkId) {
+      return request.resource.data.keys().hasOnly([
+        'id',
+        'ownerID',
+        'ownerName',
+        'ownerFocus',
+        'acceptedByID',
+        'acceptedByName',
+        'acceptedByFocus',
+        'status',
+        'ownerCheckInCount',
+        'acceptedCheckInCount',
+        'ownerNudgeCount',
+        'acceptedNudgeCount',
+        'ownerEncouragementCount',
+        'acceptedEncouragementCount',
+        'ownerLastCheckInAt',
+        'acceptedLastCheckInAt',
+        'lastInteraction',
+        'createdAt',
+        'updatedAt',
+        'userID'
+      ]) &&
+        request.resource.data.keys().hasAll([
+          'id',
+          'ownerID',
+          'ownerName',
+          'ownerFocus',
+          'acceptedByID',
+          'acceptedByName',
+          'acceptedByFocus',
+          'status',
+          'ownerCheckInCount',
+          'acceptedCheckInCount',
+          'ownerNudgeCount',
+          'acceptedNudgeCount',
+          'ownerEncouragementCount',
+          'acceptedEncouragementCount',
+          'lastInteraction',
+          'userID'
+        ]) &&
+        request.resource.data.id == linkId &&
+        request.resource.data.userID == request.resource.data.ownerID &&
+        request.resource.data.ownerID is string &&
+        request.resource.data.ownerID.size() > 0 &&
+        request.resource.data.ownerID.size() <= 128 &&
+        request.resource.data.ownerName is string &&
+        request.resource.data.ownerName.size() > 0 &&
+        request.resource.data.ownerName.size() <= 40 &&
+        request.resource.data.ownerFocus is string &&
+        request.resource.data.ownerFocus.size() > 0 &&
+        request.resource.data.ownerFocus.size() <= 40 &&
+        request.resource.data.acceptedByID is string &&
+        request.resource.data.acceptedByID.size() <= 128 &&
+        request.resource.data.acceptedByName is string &&
+        request.resource.data.acceptedByName.size() <= 40 &&
+        request.resource.data.acceptedByFocus is string &&
+        request.resource.data.acceptedByFocus.size() <= 40 &&
+        (
+          (
+            request.resource.data.status == 'pending' &&
+            request.resource.data.acceptedByID == '' &&
+            request.resource.data.acceptedByName == '' &&
+            request.resource.data.acceptedByFocus == ''
+          ) ||
+          (
+            request.resource.data.status == 'accepted' &&
+            request.resource.data.acceptedByID.size() > 0 &&
+            request.resource.data.acceptedByID != request.resource.data.ownerID &&
+            request.resource.data.acceptedByName.size() > 0 &&
+            request.resource.data.acceptedByFocus.size() > 0
+          )
+        ) &&
+        request.resource.data.ownerCheckInCount is int &&
+        request.resource.data.acceptedCheckInCount is int &&
+        request.resource.data.ownerNudgeCount is int &&
+        request.resource.data.acceptedNudgeCount is int &&
+        request.resource.data.ownerEncouragementCount is int &&
+        request.resource.data.acceptedEncouragementCount is int &&
+        request.resource.data.ownerCheckInCount >= 0 &&
+        request.resource.data.acceptedCheckInCount >= 0 &&
+        request.resource.data.ownerNudgeCount >= 0 &&
+        request.resource.data.acceptedNudgeCount >= 0 &&
+        request.resource.data.ownerEncouragementCount >= 0 &&
+        request.resource.data.acceptedEncouragementCount >= 0 &&
+        request.resource.data.lastInteraction is string &&
+        request.resource.data.lastInteraction.size() > 0 &&
+        request.resource.data.lastInteraction.size() <= 120 &&
+        validOptionalTimestamp('ownerLastCheckInAt') &&
+        validOptionalTimestamp('acceptedLastCheckInAt') &&
+        validOptionalTimestamp('createdAt') &&
+        validOptionalTimestamp('updatedAt');
+    }
+
+    function createsPartnerLink(linkId) {
+      return isSignedIn() &&
+        validPartnerLink(linkId) &&
+        request.resource.data.ownerID == request.auth.uid &&
+        request.resource.data.acceptedByID == '' &&
+        request.resource.data.status == 'pending' &&
+        request.resource.data.ownerCheckInCount == 0 &&
+        request.resource.data.acceptedCheckInCount == 0 &&
+        request.resource.data.ownerNudgeCount == 0 &&
+        request.resource.data.acceptedNudgeCount == 0 &&
+        request.resource.data.ownerEncouragementCount == 0 &&
+        request.resource.data.acceptedEncouragementCount == 0;
+    }
+
+    function isExistingPartnerLinkMember() {
+      return isSignedIn() &&
+        (
+          resource.data.ownerID == request.auth.uid ||
+          resource.data.acceptedByID == request.auth.uid
+        );
+    }
+
+    function preservesPartnerLinkOwner() {
+      return request.resource.data.id == resource.data.id &&
+        request.resource.data.ownerID == resource.data.ownerID &&
+        request.resource.data.userID == resource.data.userID &&
+        request.resource.data.ownerName == resource.data.ownerName &&
+        request.resource.data.ownerFocus == resource.data.ownerFocus;
+    }
+
+    function incrementsField(field) {
+      return request.resource.data[field] is int &&
+        resource.data[field] is int &&
+        request.resource.data[field] == resource.data[field] + 1;
+    }
+
+    function acceptsPartnerLink(linkId) {
+      return isSignedIn() &&
+        validPartnerLink(linkId) &&
+        preservesPartnerLinkOwner() &&
+        resource.data.status == 'pending' &&
+        resource.data.acceptedByID == '' &&
+        resource.data.ownerID != request.auth.uid &&
+        request.resource.data.acceptedByID == request.auth.uid &&
+        request.resource.data.status == 'accepted' &&
+        request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+          'acceptedByID',
+          'acceptedByName',
+          'acceptedByFocus',
+          'status',
+          'lastInteraction',
+          'updatedAt'
+        ]);
+    }
+
+    function ownerCheckInAction() {
+      return request.auth.uid == resource.data.ownerID &&
+        request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+          'ownerCheckInCount',
+          'ownerLastCheckInAt',
+          'lastInteraction',
+          'updatedAt'
+        ]) &&
+        incrementsField('ownerCheckInCount') &&
+        request.resource.data.ownerLastCheckInAt is timestamp;
+    }
+
+    function ownerNudgeAction() {
+      return request.auth.uid == resource.data.ownerID &&
+        request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+          'ownerNudgeCount',
+          'lastInteraction',
+          'updatedAt'
+        ]) &&
+        incrementsField('ownerNudgeCount');
+    }
+
+    function ownerEncouragementAction() {
+      return request.auth.uid == resource.data.ownerID &&
+        request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+          'ownerEncouragementCount',
+          'lastInteraction',
+          'updatedAt'
+        ]) &&
+        incrementsField('ownerEncouragementCount');
+    }
+
+    function acceptedCheckInAction() {
+      return request.auth.uid == resource.data.acceptedByID &&
+        request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+          'acceptedCheckInCount',
+          'acceptedLastCheckInAt',
+          'lastInteraction',
+          'updatedAt'
+        ]) &&
+        incrementsField('acceptedCheckInCount') &&
+        request.resource.data.acceptedLastCheckInAt is timestamp;
+    }
+
+    function acceptedNudgeAction() {
+      return request.auth.uid == resource.data.acceptedByID &&
+        request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+          'acceptedNudgeCount',
+          'lastInteraction',
+          'updatedAt'
+        ]) &&
+        incrementsField('acceptedNudgeCount');
+    }
+
+    function acceptedEncouragementAction() {
+      return request.auth.uid == resource.data.acceptedByID &&
+        request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+          'acceptedEncouragementCount',
+          'lastInteraction',
+          'updatedAt'
+        ]) &&
+        incrementsField('acceptedEncouragementCount');
+    }
+
+    function updatesOwnPartnerAction(linkId) {
+      return isSignedIn() &&
+        validPartnerLink(linkId) &&
+        preservesPartnerLinkOwner() &&
+        resource.data.status == 'accepted' &&
+        request.resource.data.status == 'accepted' &&
+        (
+          ownerCheckInAction() ||
+          ownerNudgeAction() ||
+          ownerEncouragementAction() ||
+          acceptedCheckInAction() ||
+          acceptedNudgeAction() ||
+          acceptedEncouragementAction()
+        );
+    }
+
+    function createsOwnedGroup(groupId) {
+      return isSignedIn() &&
+        validGroup(groupId) &&
+        request.resource.data.userID == request.auth.uid &&
+        request.resource.data.ownerID == request.auth.uid &&
+        request.resource.data.adminIDs.size() == 1 &&
+        request.resource.data.adminIDs[0] == request.auth.uid &&
+        request.resource.data.memberIDs.size() == 1 &&
+        request.resource.data.memberIDs[0] == request.auth.uid &&
+        request.resource.data.members == 1;
+    }
+
+    function onlyGroupMembershipChanged() {
+      return request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+        'memberIDs',
+        'memberNames',
+        'members',
+        'updatedAt'
+      ]);
+    }
+
+    function isExistingGroupAdmin() {
+      return isSignedIn() &&
+        (
+          resource.data.userID == request.auth.uid ||
+          resource.data.keys().hasAll(['adminIDs', 'ownerID']) &&
+          (
+            request.auth.uid in resource.data.adminIDs ||
+            resource.data.ownerID == request.auth.uid
+          )
+        );
+    }
+
+    function hasExistingGroupMembership() {
+      return resource.data.keys().hasAll(['memberIDs', 'members']) &&
+        resource.data.memberIDs is list &&
+        resource.data.members is int;
+    }
+
+    function onlyCallerMemberNameChanged() {
+      return resource.data.memberNames is map &&
+        request.resource.data.memberNames is map &&
+        request.resource.data.memberNames.diff(resource.data.memberNames).affectedKeys().hasOnly([
+          request.auth.uid
+        ]);
+    }
+
+    function joinsOwnGroupMembership() {
+      return hasExistingGroupMembership() &&
+        onlyCallerMemberNameChanged() &&
+        !(request.auth.uid in resource.data.memberIDs) &&
+        request.auth.uid in request.resource.data.memberIDs &&
+        request.resource.data.memberIDs.size() == resource.data.memberIDs.size() + 1 &&
+        request.resource.data.members == resource.data.members + 1 &&
+        request.resource.data.memberIDs.hasAll(resource.data.memberIDs) &&
+        request.resource.data.memberNames[request.auth.uid] is string &&
+        request.resource.data.memberNames[request.auth.uid].size() > 0 &&
+        request.resource.data.memberNames[request.auth.uid].size() <= 40;
+    }
+
+    function leavesOwnGroupMembership() {
+      return hasExistingGroupMembership() &&
+        onlyCallerMemberNameChanged() &&
+        request.auth.uid in resource.data.memberIDs &&
+        request.auth.uid != resource.data.ownerID &&
+        !(request.auth.uid in request.resource.data.memberIDs) &&
+        request.resource.data.memberIDs.size() == resource.data.memberIDs.size() - 1 &&
+        request.resource.data.members == resource.data.members - 1 &&
+        resource.data.memberIDs.hasAll(request.resource.data.memberIDs) &&
+        !(request.auth.uid in request.resource.data.memberNames.keys());
     }
 
     match /users/{userId} {
@@ -84,26 +564,38 @@ service cloud.firestore {
 
     match /groups/{groupId} {
       allow get, list: if isSignedIn();
-      allow create: if incomingOwnedBySignedInUser();
-      allow update: if existingOwnedBySignedInUser() &&
-        incomingOwnedBySignedInUser() &&
-        preservesOwner();
-      allow delete: if existingOwnedBySignedInUser();
+      allow create: if createsOwnedGroup(groupId);
+      allow update: if isSignedIn() &&
+        validGroup(groupId) &&
+        request.resource.data.userID == resource.data.userID &&
+        request.resource.data.ownerID == resource.data.ownerID &&
+        (
+          isExistingGroupAdmin() ||
+          (
+            onlyGroupMembershipChanged() &&
+            (
+              joinsOwnGroupMembership() ||
+              leavesOwnGroupMembership()
+            )
+          )
+        );
+      allow delete: if isSignedIn() && isExistingGroupAdmin();
+    }
+
+    match /partnerLinks/{linkId} {
+      allow get: if isSignedIn();
+      allow list: if isExistingPartnerLinkMember();
+      allow create: if createsPartnerLink(linkId);
+      allow update: if acceptsPartnerLink(linkId) ||
+        updatesOwnPartnerAction(linkId);
+      allow delete: if isExistingPartnerLinkMember();
     }
 
     match /posts/{postId} {
       allow get, list: if isSignedIn();
-      allow create: if incomingOwnedBySignedInUser();
-      allow update: if (
-        existingOwnedBySignedInUser() &&
-        incomingOwnedBySignedInUser() &&
-        preservesOwner()
-      ) || (
-        isSignedIn() &&
-        preservesOwner() &&
-        onlyAmenCountChanged() &&
-        incrementsAmenCount()
-      );
+      allow create: if createsPost(postId);
+      allow update: if authorUpdatesPostBody(postId) ||
+        addsAmenToPost(postId);
       allow delete: if existingOwnedBySignedInUser();
     }
 
@@ -116,8 +608,10 @@ service cloud.firestore {
 
     match /leaderboards/{userId} {
       allow get, list: if isSignedIn();
-      allow create, update: if isUser(userId) &&
-        request.resource.data.userID == userId;
+      allow create: if isUser(userId) &&
+        validLeaderboardEntry(userId);
+      allow update: if isUser(userId) &&
+        validLeaderboardUpdate(userId);
       allow delete: if isUser(userId);
     }
 

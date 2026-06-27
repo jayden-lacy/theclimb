@@ -1,4 +1,10 @@
 import Foundation
+#if canImport(ActivityKit) && os(iOS)
+import ActivityKit
+#endif
+#if canImport(DeviceActivity) && os(iOS)
+import DeviceActivity
+#endif
 #if canImport(FamilyControls) && os(iOS)
 import FamilyControls
 import ManagedSettings
@@ -18,8 +24,15 @@ protocol FocusBlockingService {
     var state: FocusModeState { get }
     func refreshAuthorizationStatus() async -> FocusModeState
     func requestAuthorization() async -> FocusModeState
-    func startFocus(for mission: Mission) async -> FocusModeState
+    func startFocus(for mission: Mission, endsAt: Date) async -> FocusModeState
     func stopFocus() async
+    func stopFocus(preservingTimer: Bool) async
+}
+
+extension FocusBlockingService {
+    func stopFocus() async {
+        await stopFocus(preservingTimer: false)
+    }
 }
 
 final class ScreenTimeFocusBlockingService: FocusBlockingService {
@@ -64,14 +77,16 @@ final class ScreenTimeFocusBlockingService: FocusBlockingService {
         return state
     }
 
-    func startFocus(for mission: Mission) async -> FocusModeState {
+    func startFocus(for mission: Mission, endsAt: Date) async -> FocusModeState {
         guard mission.appBlockingEnabled else {
+            MissionDeviceActivityMonitorScheduler.stop()
             state = .simulated
             return state
         }
 
         let authorization = await requestAuthorization()
         guard authorization == .authorized else {
+            MissionDeviceActivityMonitorScheduler.stop()
             state = authorization
             return state
         }
@@ -80,7 +95,14 @@ final class ScreenTimeFocusBlockingService: FocusBlockingService {
         if #available(iOS 16.0, *) {
             let selection = ScreenTimeActivitySelectionStore.loadSelection()
             guard selection.hasShieldableContent else {
+                MissionDeviceActivityMonitorScheduler.stop()
                 state = .selectionRequired
+                return state
+            }
+
+            guard MissionDeviceActivityMonitorScheduler.start(until: endsAt) else {
+                managedSettingsStore.clearAllSettings()
+                state = .simulated
                 return state
             }
 
@@ -90,16 +112,21 @@ final class ScreenTimeFocusBlockingService: FocusBlockingService {
         }
 #endif
 
+        MissionDeviceActivityMonitorScheduler.stop()
         state = .simulated
         return state
     }
 
-    func stopFocus() async {
+    func stopFocus(preservingTimer: Bool = false) async {
 #if canImport(FamilyControls) && os(iOS)
         if #available(iOS 16.0, *) {
             managedSettingsStore.clearAllSettings()
         }
 #endif
+        MissionDeviceActivityMonitorScheduler.stop()
+        if !preservingTimer {
+            ActiveFocusMissionTimerStore.clear()
+        }
         state = await refreshAuthorizationStatus()
     }
 
@@ -141,6 +168,221 @@ final class ScreenTimeFocusBlockingService: FocusBlockingService {
     }
 #endif
 }
+
+#if canImport(DeviceActivity) && os(iOS)
+enum MissionDeviceActivityMonitorScheduler {
+    static let activityName = DeviceActivityName("the-climb.mission-focus")
+
+    static func start(until endsAt: Date) -> Bool {
+        guard #available(iOS 16.0, *) else { return false }
+        guard endsAt > Date().addingTimeInterval(30) else {
+            stop()
+            return false
+        }
+
+        let schedule = DeviceActivitySchedule(
+            intervalStart: components(for: Date()),
+            intervalEnd: components(for: endsAt),
+            repeats: false
+        )
+
+        let center = DeviceActivityCenter()
+        center.stopMonitoring([activityName])
+        do {
+            try center.startMonitoring(activityName, during: schedule)
+            return true
+        } catch {
+            #if DEBUG
+            print("Failed to start mission DeviceActivity monitor: \(error.localizedDescription)")
+            #endif
+            stop()
+            return false
+        }
+    }
+
+    static func stop() {
+        guard #available(iOS 16.0, *) else { return }
+        DeviceActivityCenter().stopMonitoring([activityName])
+    }
+
+    private static func components(for date: Date) -> DateComponents {
+        let calendar = Calendar.current
+        var components = calendar.dateComponents([.year, .month, .day, .hour, .minute, .second], from: date)
+        components.calendar = calendar
+        components.timeZone = TimeZone.current
+        return components
+    }
+}
+#else
+enum MissionDeviceActivityMonitorScheduler {
+    static func start(until endsAt: Date) -> Bool { false }
+    static func stop() {}
+}
+#endif
+
+struct ActiveFocusMissionEndHandoff: Equatable {
+    let missionID: String
+    let endedAt: Date
+    let reason: String
+}
+
+enum ActiveFocusMissionTimerStore {
+    private static let appGroupID = "group.com.jaydenlacy.theclimb"
+    private static let missionIDKey = "the-climb.active-focus.mission-id.v1"
+    private static let titleKey = "the-climb.active-focus.title.v1"
+    private static let startedAtKey = "the-climb.active-focus.started-at.v1"
+    private static let endsAtKey = "the-climb.active-focus.ends-at.v1"
+    private static let durationMinutesKey = "the-climb.active-focus.duration-minutes.v1"
+    private static let monitorEndedMissionIDKey = "the-climb.active-focus.monitor-ended-mission-id.v1"
+    private static let monitorEndedAtKey = "the-climb.active-focus.monitor-ended-at.v1"
+    private static let monitorEndedReasonKey = "the-climb.active-focus.monitor-ended-reason.v1"
+
+    private static var defaults: UserDefaults {
+        UserDefaults(suiteName: appGroupID) ?? .standard
+    }
+
+    static func save(mission: Mission, startedAt: Date = Date(), endsAt: Date) {
+        clearMonitorEndHandoff()
+        defaults.set(mission.id, forKey: missionIDKey)
+        defaults.set(mission.title, forKey: titleKey)
+        defaults.set(startedAt.timeIntervalSince1970, forKey: startedAtKey)
+        defaults.set(endsAt.timeIntervalSince1970, forKey: endsAtKey)
+        defaults.set(mission.durationMinutes, forKey: durationMinutesKey)
+        defaults.synchronize()
+    }
+
+    static func endDate(for missionID: String? = nil) -> Date? {
+        if let missionID, defaults.string(forKey: missionIDKey) != missionID {
+            return nil
+        }
+
+        let timestamp = defaults.double(forKey: endsAtKey)
+        guard timestamp > 0 else { return nil }
+        return Date(timeIntervalSince1970: timestamp)
+    }
+
+    static func consumeMonitorEndHandoff() -> ActiveFocusMissionEndHandoff? {
+        guard let missionID = defaults.string(forKey: monitorEndedMissionIDKey),
+              !missionID.isEmpty else {
+            return nil
+        }
+
+        let timestamp = defaults.double(forKey: monitorEndedAtKey)
+        let reason = defaults.string(forKey: monitorEndedReasonKey) ?? "device-activity-ended"
+        clearMonitorEndHandoff()
+        defaults.synchronize()
+        return ActiveFocusMissionEndHandoff(
+            missionID: missionID,
+            endedAt: timestamp > 0 ? Date(timeIntervalSince1970: timestamp) : Date(),
+            reason: reason
+        )
+    }
+
+    static func clear() {
+        defaults.removeObject(forKey: missionIDKey)
+        defaults.removeObject(forKey: titleKey)
+        defaults.removeObject(forKey: startedAtKey)
+        defaults.removeObject(forKey: endsAtKey)
+        defaults.removeObject(forKey: durationMinutesKey)
+        clearMonitorEndHandoff()
+        defaults.synchronize()
+    }
+
+    private static func clearMonitorEndHandoff() {
+        defaults.removeObject(forKey: monitorEndedMissionIDKey)
+        defaults.removeObject(forKey: monitorEndedAtKey)
+        defaults.removeObject(forKey: monitorEndedReasonKey)
+    }
+}
+
+#if canImport(ActivityKit) && os(iOS)
+struct ClimbMissionAttributes: ActivityAttributes {
+    struct ContentState: Codable, Hashable {
+        var endsAt: Date
+        var focusLabel: String
+    }
+
+    var missionID: String
+    var missionTitle: String
+    var durationMinutes: Int
+    var appBlockingEnabled: Bool
+    var isBlockingActive: Bool
+}
+
+enum MissionLiveActivityService {
+    @available(iOS 16.1, *)
+    static func start(for mission: Mission, endsAt: Date, focusState: FocusModeState) async {
+        guard endsAt > Date() else {
+            await end(missionID: mission.id)
+            return
+        }
+
+        await end()
+
+        let attributes = ClimbMissionAttributes(
+            missionID: mission.id,
+            missionTitle: mission.title,
+            durationMinutes: mission.durationMinutes,
+            appBlockingEnabled: mission.appBlockingEnabled,
+            isBlockingActive: focusState == .active
+        )
+        let content = ActivityContent(
+            state: ClimbMissionAttributes.ContentState(
+                endsAt: endsAt,
+                focusLabel: focusLabel(for: mission, focusState: focusState)
+            ),
+            staleDate: endsAt
+        )
+
+        do {
+            _ = try Activity.request(attributes: attributes, content: content, pushType: nil)
+        } catch {
+            #if DEBUG
+            print("Failed to start mission Live Activity: \(error.localizedDescription)")
+            #endif
+        }
+    }
+
+    @available(iOS 16.1, *)
+    private static func focusLabel(for mission: Mission, focusState: FocusModeState) -> String {
+        switch focusState {
+        case .active:
+            "Apps blocked"
+        case .selectionRequired:
+            "Choose apps"
+        case .permissionRequired:
+            "Needs permission"
+        case .denied:
+            "Blocking off"
+        case .authorized:
+            mission.appBlockingEnabled ? "Blocking ready" : "Focus timer"
+        case .simulated:
+            "Focus timer"
+        case .unavailable:
+            "Mission timer"
+        }
+    }
+
+    @available(iOS 16.1, *)
+    static func end(missionID: String? = nil) async {
+        for activity in Activity<ClimbMissionAttributes>.activities where missionID == nil || activity.attributes.missionID == missionID {
+            let content = ActivityContent(
+                state: ClimbMissionAttributes.ContentState(
+                    endsAt: Date(),
+                    focusLabel: "Complete"
+                ),
+                staleDate: nil
+            )
+            await activity.end(content, dismissalPolicy: .immediate)
+        }
+    }
+}
+#else
+enum MissionLiveActivityService {
+    static func start(for mission: Mission, endsAt: Date, focusState: FocusModeState) async {}
+    static func end(missionID: String? = nil) async {}
+}
+#endif
 
 #if canImport(FamilyControls) && os(iOS)
 enum ScreenTimeActivitySelectionStore {

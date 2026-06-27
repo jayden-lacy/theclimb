@@ -12,6 +12,7 @@ struct FirebaseSignedInUser: Equatable {
     var id: String
     var displayName: String
     var email: String
+    var isNewUser = false
 }
 
 enum FirebaseIntegration {
@@ -24,6 +25,7 @@ enum FirebaseIntegration {
         "journalEntries",
         "progress",
         "groups",
+        "partnerLinks",
         "posts",
         "reports",
         "leaderboards"
@@ -37,6 +39,56 @@ enum FirebaseIntegration {
         Auth.auth().currentUser?.uid
     }
 
+    static func currentSignedInUser(matchingEmail email: String) -> FirebaseSignedInUser? {
+        let normalizedEmail = email.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        guard let user = Auth.auth().currentUser,
+              user.email?.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() == normalizedEmail else {
+            return nil
+        }
+
+        return FirebaseSignedInUser(
+            id: user.uid,
+            displayName: user.displayName ?? "Climber",
+            email: user.email ?? normalizedEmail,
+            isNewUser: false
+        )
+    }
+
+    static func currentUserHasSavedProfile() async throws -> Bool {
+        guard let userID = Auth.auth().currentUser?.uid else { return false }
+
+        do {
+            let document = try await withTimeout(seconds: 4) {
+                try await Firestore.firestore()
+                    .collection("users")
+                    .document(userID)
+                    .collection("state")
+                    .document("current")
+                    .getDocumentResult()
+            }
+            guard document.exists,
+                  let payload = document.data()?["payload"] as? String else {
+                return false
+            }
+            return !payload.isEmpty
+        } catch {
+            throw FirebaseIntegrationError.syncFailed
+        }
+    }
+
+    @MainActor
+    static var requiresPasswordForAccountDeletion: Bool {
+        let providerIDs = currentProviderIDs
+        return providerIDs.contains("password") &&
+            !providerIDs.contains("google.com") &&
+            !providerIDs.contains("apple.com")
+    }
+
+    @MainActor
+    private static var currentProviderIDs: Set<String> {
+        Set(Auth.auth().currentUser?.providerData.map(\.providerID) ?? [])
+    }
+
     @MainActor
     static func signOut() throws {
         GIDSignIn.sharedInstance.signOut()
@@ -44,20 +96,37 @@ enum FirebaseIntegration {
     }
 
     @MainActor
-    static func deleteCurrentAccount() async throws {
+    static func reauthenticateForAccountDeletion(password: String? = nil) async throws {
         guard let user = Auth.auth().currentUser else { return }
         let providerIDs = Set(user.providerData.map(\.providerID))
 
         if providerIDs.contains("google.com") {
-            try await disconnectGoogleIfNeeded()
+            try await reauthenticateGoogleUser(user)
+            return
         }
 
         if providerIDs.contains("apple.com") {
-            try await revokeAppleToken()
+            try await reauthenticateAppleUserAndRevokeToken(user)
+            return
         }
 
+        if providerIDs.contains("password") {
+            try await reauthenticatePasswordUser(user, password: password)
+        }
+    }
+
+    @MainActor
+    static func deleteCurrentAuthenticatedAccount() async throws {
+        guard let user = Auth.auth().currentUser else { return }
         try await user.deleteAccountResult()
+        try? await disconnectGoogleIfNeeded()
         GIDSignIn.sharedInstance.signOut()
+    }
+
+    @MainActor
+    static func deleteCurrentAccount(password: String? = nil) async throws {
+        try await reauthenticateForAccountDeletion(password: password)
+        try await deleteCurrentAuthenticatedAccount()
     }
 
     @MainActor
@@ -109,23 +178,30 @@ enum FirebaseIntegration {
         return FirebaseSignedInUser(
             id: firebaseResult.user.uid,
             displayName: displayName,
-            email: appleCredential.email ?? firebaseResult.user.email ?? ""
+            email: appleCredential.email ?? firebaseResult.user.email ?? "",
+            isNewUser: firebaseResult.additionalUserInfo?.isNewUser ?? false
         )
     }
 
     private static func signInWithAppleSimulatorAccount() async throws -> FirebaseSignedInUser {
         let email = "apple.simulator@theclimb.local"
         let displayName = "Apple Simulator"
-        let userID = try await createOrSignInUser(
-            email: email,
-            password: "AppleSimulator123!",
-            displayName: displayName
-        )
+        let user: FirebaseSignedInUser
+        do {
+            user = try await createUser(
+                email: email,
+                password: "AppleSimulator123!",
+                displayName: displayName
+            )
+        } catch FirebaseIntegrationError.accountAlreadyExists {
+            user = try await signInExistingUser(email: email, password: "AppleSimulator123!")
+        }
 
         return FirebaseSignedInUser(
-            id: userID,
+            id: user.id,
             displayName: displayName,
-            email: email
+            email: email,
+            isNewUser: user.isNewUser
         )
     }
 
@@ -136,17 +212,69 @@ enum FirebaseIntegration {
     }
 
     @MainActor
-    private static func revokeAppleToken() async throws {
+    private static func reauthenticatePasswordUser(_ user: User, password: String?) async throws {
+        let trimmedPassword = password?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        guard let email = user.email, !trimmedPassword.isEmpty else {
+            throw FirebaseIntegrationError.accountDeletionRequiresRecentSignIn
+        }
+
+        let credential = EmailAuthProvider.credential(withEmail: email, password: trimmedPassword)
+        try await user.reauthenticateResult(with: credential)
+    }
+
+    @MainActor
+    private static func reauthenticateGoogleUser(_ user: User) async throws {
+        guard let clientID = FirebaseApp.app()?.options.clientID else {
+            throw FirebaseIntegrationError.googleClientIDMissing
+        }
+
+        guard let presentingViewController = UIApplication.shared.climbTopViewController else {
+            throw FirebaseIntegrationError.presentationUnavailable
+        }
+
+        GIDSignIn.sharedInstance.configuration = GIDConfiguration(clientID: clientID)
+        let googleResult = try await GIDSignIn.sharedInstance.signInResult(
+            withPresenting: presentingViewController
+        )
+
+        guard let idToken = googleResult.user.idToken?.tokenString else {
+            throw FirebaseIntegrationError.googleTokenMissing
+        }
+
+        let credential = GoogleAuthProvider.credential(
+            withIDToken: idToken,
+            accessToken: googleResult.user.accessToken.tokenString
+        )
+        try await user.reauthenticateResult(with: credential)
+    }
+
+    @MainActor
+    private static func reauthenticateAppleUserAndRevokeToken(_ user: User) async throws {
         guard let presentingViewController = UIApplication.shared.climbTopViewController,
               let presentationAnchor = presentingViewController.view.window ?? UIApplication.shared.climbKeyWindow else {
             throw FirebaseIntegrationError.presentationUnavailable
         }
 
+        let rawNonce = randomNonceString()
         let request = ASAuthorizationAppleIDProvider().createRequest()
+        request.nonce = sha256(rawNonce)
+
         let appleCredential = try await appleCredential(
             for: request,
             presentationAnchor: presentationAnchor
         )
+
+        guard let identityToken = appleCredential.identityToken,
+              let identityTokenString = String(data: identityToken, encoding: .utf8) else {
+            throw FirebaseIntegrationError.appleTokenMissing
+        }
+
+        let credential = OAuthProvider.appleCredential(
+            withIDToken: identityTokenString,
+            rawNonce: rawNonce,
+            fullName: nil
+        )
+        try await user.reauthenticateResult(with: credential)
 
         guard let authorizationCode = appleCredential.authorizationCode,
               let authorizationCodeString = String(data: authorizationCode, encoding: .utf8) else {
@@ -186,16 +314,17 @@ enum FirebaseIntegration {
         return FirebaseSignedInUser(
             id: firebaseResult.user.uid,
             displayName: displayName,
-            email: googleResult.user.profile?.email ?? firebaseResult.user.email ?? ""
+            email: googleResult.user.profile?.email ?? firebaseResult.user.email ?? "",
+            isNewUser: firebaseResult.additionalUserInfo?.isNewUser ?? false
         )
     }
 
     @discardableResult
-    static func createOrSignInUser(
+    static func createUser(
         email: String,
         password: String,
         displayName: String
-    ) async throws -> String {
+    ) async throws -> FirebaseSignedInUser {
         let normalizedEmail = email.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
         guard normalizedEmail.contains("@"), password.count >= 6 else {
             throw FirebaseIntegrationError.invalidAccountInfo
@@ -204,15 +333,36 @@ enum FirebaseIntegration {
         do {
             let result = try await Auth.auth().createUserResult(email: normalizedEmail, password: password)
             try await result.user.updateDisplayName(displayName)
-            return result.user.uid
+            return FirebaseSignedInUser(
+                id: result.user.uid,
+                displayName: displayName.isEmpty ? "Climber" : displayName,
+                email: result.user.email ?? normalizedEmail,
+                isNewUser: true
+            )
         } catch {
             guard isEmailAlreadyInUse(error) else {
                 throw mappedAuthError(error)
             }
+            throw FirebaseIntegrationError.accountAlreadyExists
+        }
+    }
 
+    @discardableResult
+    static func signInExistingUser(email: String, password: String) async throws -> FirebaseSignedInUser {
+        let normalizedEmail = email.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        guard normalizedEmail.contains("@"), password.count >= 6 else {
+            throw FirebaseIntegrationError.invalidAccountInfo
+        }
+
+        do {
             let result = try await Auth.auth().signInResult(email: normalizedEmail, password: password)
-            try? await result.user.updateDisplayName(displayName)
-            return result.user.uid
+            return FirebaseSignedInUser(
+                id: result.user.uid,
+                displayName: result.user.displayName ?? "Climber",
+                email: result.user.email ?? normalizedEmail
+            )
+        } catch {
+            throw mappedAuthError(error)
         }
     }
 
@@ -234,6 +384,8 @@ enum FirebaseIntegration {
             return FirebaseIntegrationError.authenticationNotConfigured
         case .invalidEmail, .missingEmail, .weakPassword:
             return FirebaseIntegrationError.invalidAccountInfo
+        case .wrongPassword, .userNotFound, .invalidCredential:
+            return FirebaseIntegrationError.invalidLoginCredentials
         case .requiresRecentLogin:
             return FirebaseIntegrationError.accountDeletionRequiresRecentSignIn
         default:
@@ -291,7 +443,11 @@ enum FirebaseIntegration {
 enum FirebaseIntegrationError: LocalizedError {
     case invalidAccountInfo
     case authenticationNotConfigured
+    case invalidLoginCredentials
+    case savedProfileMissing
     case accountDeletionRequiresRecentSignIn
+    case accountAlreadyExists
+    case syncFailed
     case appleAuthorizationCodeMissing
     case appleTokenMissing
     case googleClientIDMissing
@@ -306,8 +462,16 @@ enum FirebaseIntegrationError: LocalizedError {
             "Enter a valid email and a password with at least 6 characters."
         case .authenticationNotConfigured:
             "Firebase Authentication is not enabled for this project yet. Enable Email/Password sign-in in Firebase Console, then try again."
+        case .invalidLoginCredentials:
+            "The email or password is incorrect."
+        case .savedProfileMissing:
+            "This account does not have a saved Climb profile yet. Create a new profile to continue."
         case .accountDeletionRequiresRecentSignIn:
             "For security, sign in again and then delete your account."
+        case .accountAlreadyExists:
+            "An account already exists for this email. Log in to load your saved climb."
+        case .syncFailed:
+            "Your changes could not sync. Check your connection and try again."
         case .appleAuthorizationCodeMissing:
             "Apple did not return an authorization code. Try deleting the account again."
         case .appleTokenMissing:
@@ -393,6 +557,18 @@ private final class AppleSignInCoordinator: NSObject, ASAuthorizationControllerD
     }
 }
 
+private struct RemoteCommunityGroupState {
+    var id: String
+    var name: String
+    var subtitle: String
+    var activeChallenge: String
+    var ownerID: String
+    var creatorID: String
+    var adminIDs: [String]
+    var memberIDs: [String]
+    var memberNames: [String: String]
+}
+
 final class FirebaseAppRepository: AppRepository {
     private let firestore: Firestore
     private let fallback: LocalAppRepository
@@ -423,30 +599,452 @@ final class FirebaseAppRepository: AppRepository {
             }
             guard let payload = document.data()?["payload"] as? String,
                   let data = Data(base64Encoded: payload) else {
-                if localSnapshot != .empty {
-                    try? await saveSnapshot(localSnapshot)
+                if localSnapshot.profile?.id == userID {
+                    return localSnapshot
                 }
-                return localSnapshot
+                return .empty
             }
 
             let snapshot = try decoder.decode(AppStateSnapshot.self, from: data)
             try? await fallback.saveSnapshot(snapshot)
             return snapshot
         } catch {
-            if localSnapshot != .empty {
+            if localSnapshot.profile?.id == userID {
                 return localSnapshot
             }
             return .empty
         }
     }
 
+    func loadGlobalLeaderboard(limit: Int) async throws -> [LeaderboardEntry] {
+        guard Auth.auth().currentUser?.uid != nil else {
+            return try await fallback.loadGlobalLeaderboard(limit: limit)
+        }
+
+        do {
+            let snapshot = try await withTimeout(seconds: 4) {
+                try await self.firestore
+                    .collection("leaderboards")
+                    .order(by: "ovrScore", descending: true)
+                    .limit(to: max(1, limit))
+                    .getDocumentsResult()
+            }
+
+            let entries = snapshot.documents.compactMap { document in
+                Self.leaderboardEntry(from: document.data(), fallbackID: document.documentID)
+            }
+            return Array(entries.sortedForGlobalRank.prefix(limit))
+        } catch {
+            return try await fallback.loadGlobalLeaderboard(limit: limit)
+        }
+    }
+
+    func loadRecentEncouragementPosts(limit: Int) async throws -> [EncouragementPost] {
+        guard Auth.auth().currentUser?.uid != nil else {
+            return try await fallback.loadRecentEncouragementPosts(limit: limit)
+        }
+
+        do {
+            let snapshot = try await withTimeout(seconds: 4) {
+                try await self.firestore
+                    .collection("posts")
+                    .order(by: "createdAt", descending: true)
+                    .limit(to: max(1, limit))
+                    .getDocumentsResult()
+            }
+
+            return snapshot.documents.compactMap { document in
+                Self.encouragementPost(from: document.data(), fallbackID: document.documentID)
+            }
+        } catch {
+            return try await fallback.loadRecentEncouragementPosts(limit: limit)
+        }
+    }
+
+    func createEncouragementPost(_ post: EncouragementPost) async throws -> EncouragementPost {
+        guard let userID = Auth.auth().currentUser?.uid else {
+            return try await fallback.createEncouragementPost(post)
+        }
+
+        let createdPost = EncouragementPost(
+            id: post.id,
+            authorID: userID,
+            author: post.author,
+            body: post.body,
+            createdAt: post.createdAt,
+            amenCount: max(0, post.amenCount)
+        )
+        let data: [String: Any] = [
+            "id": createdPost.id,
+            "authorID": createdPost.authorID,
+            "author": createdPost.author,
+            "body": createdPost.body,
+            "createdAt": createdPost.createdAt,
+            "amenCount": createdPost.amenCount,
+            "userID": userID,
+            "updatedAt": FieldValue.serverTimestamp()
+        ]
+
+        try await firestore.collection("posts").document(createdPost.id).setDataResult(data, merge: false)
+        try? await fallback.createEncouragementPost(createdPost)
+        return createdPost
+    }
+
+    func addAmen(to postID: String) async throws {
+        guard Auth.auth().currentUser?.uid != nil else {
+            try await fallback.addAmen(to: postID)
+            return
+        }
+
+        try await firestore.collection("posts").document(postID).updateDataResult([
+            "amenCount": FieldValue.increment(Int64(1))
+        ])
+        try? await fallback.addAmen(to: postID)
+    }
+
+    func reportEncouragementPost(_ report: ModerationReport) async throws {
+        guard let userID = Auth.auth().currentUser?.uid else {
+            try await fallback.reportEncouragementPost(report)
+            return
+        }
+
+        let data: [String: Any] = [
+            "id": report.id,
+            "postID": report.postID,
+            "reportedUserID": report.reportedUserID,
+            "reportedByUserID": userID,
+            "reason": report.reason,
+            "postBody": report.postBody,
+            "createdAt": report.createdAt,
+            "userID": userID,
+            "updatedAt": FieldValue.serverTimestamp()
+        ]
+
+        try await firestore.collection("reports").document(report.id).setDataResult(data, merge: false)
+        try? await fallback.reportEncouragementPost(report)
+    }
+
+    func deleteEncouragementPost(postID: String, authorID: String) async throws {
+        guard let userID = Auth.auth().currentUser?.uid else {
+            try await fallback.deleteEncouragementPost(postID: postID, authorID: authorID)
+            return
+        }
+
+        guard userID == authorID else {
+            throw FirebaseIntegrationError.invalidAccountInfo
+        }
+
+        try await firestore.collection("posts").document(postID).deleteResult()
+        try? await fallback.deleteEncouragementPost(postID: postID, authorID: authorID)
+    }
+
+    func loadCommunityGroups(limit: Int) async throws -> [ClimbGroup] {
+        guard let userID = Auth.auth().currentUser?.uid else {
+            return try await fallback.loadCommunityGroups(limit: limit)
+        }
+
+        do {
+            let snapshot = try await withTimeout(seconds: 4) {
+                try await self.firestore
+                    .collection("groups")
+                    .order(by: "updatedAt", descending: true)
+                    .limit(to: max(1, limit))
+                    .getDocumentsResult()
+            }
+
+            let groups = snapshot.documents.compactMap { document in
+                Self.communityGroup(
+                    from: document.data(),
+                    fallbackID: document.documentID,
+                    currentUserID: userID
+                )
+            }
+            return groups
+        } catch {
+            return try await fallback.loadCommunityGroups(limit: limit)
+        }
+    }
+
+    func createCommunityGroup(_ group: ClimbGroup) async throws -> ClimbGroup {
+        _ = try await fallback.createCommunityGroup(group)
+
+        guard let userID = Auth.auth().currentUser?.uid else {
+            return group
+        }
+
+        let createdGroup = ClimbGroup(
+            id: group.id,
+            name: group.name,
+            subtitle: group.subtitle,
+            members: 1,
+            activeChallenge: group.activeChallenge,
+            isJoined: true,
+            ownerID: userID,
+            adminIDs: [userID],
+            memberIDs: [userID],
+            memberNames: [userID: group.memberNames[userID] ?? Auth.auth().currentUser?.displayName ?? "Climber"]
+        )
+        let data: [String: Any] = [
+            "id": createdGroup.id,
+            "name": createdGroup.name,
+            "subtitle": createdGroup.subtitle,
+            "activeChallenge": createdGroup.activeChallenge,
+            "members": 1,
+            "userID": userID,
+            "ownerID": userID,
+            "adminIDs": [userID],
+            "memberIDs": [userID],
+            "memberNames": [userID: group.memberNames[userID] ?? Auth.auth().currentUser?.displayName ?? "Climber"],
+            "createdAt": FieldValue.serverTimestamp(),
+            "updatedAt": FieldValue.serverTimestamp()
+        ]
+
+        try await firestore.collection("groups").document(createdGroup.id).setDataResult(data, merge: false)
+        return createdGroup
+    }
+
+    func joinCommunityGroup(_ groupID: String, displayName: String) async throws {
+        guard let userID = Auth.auth().currentUser?.uid else {
+            try await fallback.joinCommunityGroup(groupID, displayName: displayName)
+            return
+        }
+
+        try await updateCommunityGroupMembership(groupID: groupID, userID: userID, displayName: displayName, shouldJoin: true)
+        try? await fallback.joinCommunityGroup(groupID, displayName: displayName)
+    }
+
+    func leaveCommunityGroup(_ groupID: String) async throws {
+        guard let userID = Auth.auth().currentUser?.uid else {
+            try await fallback.leaveCommunityGroup(groupID)
+            return
+        }
+
+        try await updateCommunityGroupMembership(groupID: groupID, userID: userID, displayName: Auth.auth().currentUser?.displayName ?? "Climber", shouldJoin: false)
+        try? await fallback.leaveCommunityGroup(groupID)
+    }
+
+    func updateCommunityGroupDetails(groupID: String, name: String, subtitle: String, challenge: String) async throws {
+        try await fallback.updateCommunityGroupDetails(groupID: groupID, name: name, subtitle: subtitle, challenge: challenge)
+
+        guard Auth.auth().currentUser?.uid != nil else { return }
+
+        let reference = firestore.collection("groups").document(groupID)
+        let document = try await reference.getDocumentResult()
+        guard var state = remoteGroupState(from: document.data() ?? [:], fallbackID: document.documentID) else { return }
+        state.name = name
+        state.subtitle = subtitle
+        state.activeChallenge = challenge
+        try await updateRemoteGroup(reference: reference, state: state)
+    }
+
+    func setCommunityGroupAdmin(groupID: String, memberID: String, isAdmin: Bool) async throws {
+        try await fallback.setCommunityGroupAdmin(groupID: groupID, memberID: memberID, isAdmin: isAdmin)
+
+        guard Auth.auth().currentUser?.uid != nil else { return }
+
+        let reference = firestore.collection("groups").document(groupID)
+        let document = try await reference.getDocumentResult()
+        guard var state = remoteGroupState(from: document.data() ?? [:], fallbackID: document.documentID),
+              state.memberIDs.contains(memberID),
+              memberID != state.ownerID else {
+            return
+        }
+
+        if isAdmin {
+            if !state.adminIDs.contains(memberID) {
+                state.adminIDs.append(memberID)
+            }
+        } else {
+            state.adminIDs.removeAll { $0 == memberID }
+            if !state.adminIDs.contains(state.ownerID) {
+                state.adminIDs.append(state.ownerID)
+            }
+        }
+        try await updateRemoteGroup(reference: reference, state: state)
+    }
+
+    func removeCommunityGroupMember(groupID: String, memberID: String) async throws {
+        try await fallback.removeCommunityGroupMember(groupID: groupID, memberID: memberID)
+
+        guard Auth.auth().currentUser?.uid != nil else { return }
+
+        let reference = firestore.collection("groups").document(groupID)
+        let document = try await reference.getDocumentResult()
+        guard var state = remoteGroupState(from: document.data() ?? [:], fallbackID: document.documentID),
+              memberID != state.ownerID else {
+            return
+        }
+
+        state.memberIDs.removeAll { $0 == memberID }
+        state.adminIDs.removeAll { $0 == memberID }
+        state.memberNames.removeValue(forKey: memberID)
+        try await updateRemoteGroup(reference: reference, state: state)
+    }
+
+    func deleteCommunityGroup(_ groupID: String) async throws {
+        try await fallback.deleteCommunityGroup(groupID)
+
+        guard Auth.auth().currentUser?.uid != nil else { return }
+
+        try await firestore.collection("groups").document(groupID).deleteResult()
+    }
+
+    func loadAccountabilityPartners(for profile: UserProfile) async throws -> [AccountabilityPartner] {
+        guard let userID = Auth.auth().currentUser?.uid else {
+            return try await fallback.loadAccountabilityPartners(for: profile)
+        }
+
+        do {
+            let ownedSnapshot = try await withTimeout(seconds: 4) {
+                try await self.firestore
+                    .collection("partnerLinks")
+                    .whereField("ownerID", isEqualTo: userID)
+                    .getDocumentsResult()
+            }
+            let acceptedSnapshot = try await withTimeout(seconds: 4) {
+                try await self.firestore
+                    .collection("partnerLinks")
+                    .whereField("acceptedByID", isEqualTo: userID)
+                    .getDocumentsResult()
+            }
+
+            var partnersByID: [String: AccountabilityPartner] = [:]
+            for document in ownedSnapshot.documents + acceptedSnapshot.documents {
+                guard let partner = Self.accountabilityPartner(
+                    from: document.data(),
+                    fallbackID: document.documentID,
+                    currentUserID: userID
+                ) else { continue }
+                partnersByID[partner.id] = partner
+            }
+
+            return partnersByID.values.sorted {
+                if $0.isPending != $1.isPending {
+                    return !$0.isPending
+                }
+                return $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending
+            }
+        } catch {
+            return try await fallback.loadAccountabilityPartners(for: profile)
+        }
+    }
+
+    func createAccountabilityPartnerInvite(for profile: UserProfile) async throws -> String {
+        guard let userID = Auth.auth().currentUser?.uid else {
+            return try await fallback.createAccountabilityPartnerInvite(for: profile)
+        }
+
+        let code = Self.inviteCode()
+        let data: [String: Any] = [
+            "id": code,
+            "ownerID": userID,
+            "ownerName": profile.displayName,
+            "ownerFocus": profile.mainStruggle.rawValue,
+            "acceptedByID": "",
+            "acceptedByName": "",
+            "acceptedByFocus": "",
+            "status": "pending",
+            "ownerCheckInCount": 0,
+            "acceptedCheckInCount": 0,
+            "ownerNudgeCount": 0,
+            "acceptedNudgeCount": 0,
+            "ownerEncouragementCount": 0,
+            "acceptedEncouragementCount": 0,
+            "lastInteraction": "Invite created",
+            "createdAt": FieldValue.serverTimestamp(),
+            "updatedAt": FieldValue.serverTimestamp(),
+            "userID": userID
+        ]
+
+        try await firestore.collection("partnerLinks").document(code).setDataResult(data, merge: false)
+        _ = try? await fallback.createAccountabilityPartnerInvite(for: profile)
+        return code
+    }
+
+    func acceptAccountabilityPartnerInvite(code: String, profile: UserProfile) async throws {
+        let normalizedCode = code.trimmingCharacters(in: .whitespacesAndNewlines).uppercased()
+        guard let userID = Auth.auth().currentUser?.uid else {
+            try await fallback.acceptAccountabilityPartnerInvite(code: normalizedCode, profile: profile)
+            return
+        }
+
+        let reference = firestore.collection("partnerLinks").document(normalizedCode)
+        let document = try await reference.getDocumentResult()
+        guard document.exists,
+              let ownerID = document.data()?["ownerID"] as? String,
+              ownerID != userID else {
+            throw FirebaseIntegrationError.invalidAccountInfo
+        }
+
+        try await reference.updateDataResult([
+            "acceptedByID": userID,
+            "acceptedByName": profile.displayName,
+            "acceptedByFocus": profile.mainStruggle.rawValue,
+            "status": "accepted",
+            "lastInteraction": "\(profile.displayName) joined the accountability pair",
+            "updatedAt": FieldValue.serverTimestamp()
+        ])
+        try? await fallback.acceptAccountabilityPartnerInvite(code: normalizedCode, profile: profile)
+    }
+
+    func updateAccountabilityPartnerActivity(_ partner: AccountabilityPartner, action: AccountabilityPartnerAction, message: String?) async throws {
+        guard let userID = Auth.auth().currentUser?.uid else {
+            try await fallback.updateAccountabilityPartnerActivity(partner, action: action, message: message)
+            return
+        }
+
+        let reference = firestore.collection("partnerLinks").document(partner.id)
+        let document = try await reference.getDocumentResult()
+        guard let data = document.data(),
+              let ownerID = data["ownerID"] as? String else {
+            return
+        }
+
+        let prefix: String
+        if ownerID == userID {
+            prefix = "owner"
+        } else if data["acceptedByID"] as? String == userID {
+            prefix = "accepted"
+        } else {
+            return
+        }
+
+        let displayName = Auth.auth().currentUser?.displayName ?? "Your partner"
+        var update: [String: Any] = [
+            "updatedAt": FieldValue.serverTimestamp()
+        ]
+
+        switch action {
+        case .checkIn:
+            update["\(prefix)CheckInCount"] = FieldValue.increment(Int64(1))
+            update["\(prefix)LastCheckInAt"] = FieldValue.serverTimestamp()
+            update["lastInteraction"] = "\(displayName) checked in"
+        case .nudge:
+            update["\(prefix)NudgeCount"] = FieldValue.increment(Int64(1))
+            update["lastInteraction"] = "\(displayName) sent a nudge"
+        case .encouragement:
+            update["\(prefix)EncouragementCount"] = FieldValue.increment(Int64(1))
+            let trimmedMessage = message?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+            update["lastInteraction"] = trimmedMessage.isEmpty ? "\(displayName) sent encouragement" : String(trimmedMessage.prefix(80))
+        }
+
+        try await reference.updateDataResult(update)
+        try? await fallback.updateAccountabilityPartnerActivity(partner, action: action, message: message)
+    }
+
     func saveSnapshot(_ snapshot: AppStateSnapshot) async throws {
-        try await fallback.saveSnapshot(snapshot)
+        guard let userID = Auth.auth().currentUser?.uid else {
+            try await fallback.saveSnapshot(snapshot)
+            return
+        }
 
-        guard let userID = Auth.auth().currentUser?.uid else { return }
-
-        try? await withTimeout(seconds: 5) {
-            try await self.saveRemoteSnapshot(snapshot, userID: userID)
+        do {
+            try await withTimeout(seconds: 5) {
+                try await self.saveRemoteSnapshot(snapshot, userID: userID)
+            }
+            try await fallback.saveSnapshot(snapshot)
+        } catch {
+            throw FirebaseIntegrationError.syncFailed
         }
     }
 
@@ -456,6 +1054,7 @@ final class FirebaseAppRepository: AppRepository {
 
     func deleteAccountData(userID: String) async throws {
         try await fallback.clearLocalSnapshot()
+        try? await removeUserFromJoinedCommunityGroups(userID: userID)
 
         let collections = [
             "missions",
@@ -463,6 +1062,7 @@ final class FirebaseAppRepository: AppRepository {
             "journalEntries",
             "progress",
             "groups",
+            "partnerLinks",
             "posts",
             "reports",
             "leaderboards"
@@ -471,6 +1071,9 @@ final class FirebaseAppRepository: AppRepository {
         for collection in collections {
             try await deleteDocuments(in: collection, userID: userID)
         }
+        try await deletePartnerLinksAcceptedBy(userID: userID)
+
+        try await deleteKnownUserDocuments(userID: userID)
 
         let userDocument = firestore.collection("users").document(userID)
         let stateSnapshot = try await userDocument.collection("state").getDocumentsResult()
@@ -489,10 +1092,6 @@ final class FirebaseAppRepository: AppRepository {
     private func saveRemoteSnapshot(_ snapshot: AppStateSnapshot, userID: String) async throws {
         let data = try encoder.encode(snapshot)
         let payload = data.base64EncodedString()
-        try await snapshotDocument(for: userID).setDataResult([
-            "payload": payload,
-            "updatedAt": FieldValue.serverTimestamp()
-        ], merge: true)
 
         if let profile = snapshot.profile {
             try await writeUserDocument(profile, userID: userID)
@@ -502,12 +1101,14 @@ final class FirebaseAppRepository: AppRepository {
         try await writeEncodedCollection(snapshot.devotionals, collection: "devotionals", userID: userID)
         try await writeEncodedCollection(snapshot.journalEntries, collection: "journalEntries", userID: userID)
         try await writeEncodedCollection(snapshot.progress, collection: "progress", userID: userID)
-        try await writeEncodedCollection(snapshot.groups, collection: "groups", userID: userID)
-        try await writeEncodedCollection(snapshot.posts, collection: "posts", userID: userID)
-        try await writeEncodedCollection(snapshot.moderationReports, collection: "reports", userID: userID)
         if let ownLeaderboardEntry = snapshot.leaderboard.first(where: { $0.id == userID }) {
             try await writeEncodedCollection([ownLeaderboardEntry], collection: "leaderboards", userID: userID)
         }
+
+        try await snapshotDocument(for: userID).setDataResult([
+            "payload": payload,
+            "updatedAt": FieldValue.serverTimestamp()
+        ], merge: true)
     }
 
     private func snapshotDocument(for userID: String) -> DocumentReference {
@@ -539,6 +1140,120 @@ final class FirebaseAppRepository: AppRepository {
         }
     }
 
+    private func updateCommunityGroupMembership(
+        groupID: String,
+        userID: String,
+        displayName: String,
+        shouldJoin: Bool
+    ) async throws {
+        let reference = firestore.collection("groups").document(groupID)
+        let document = try await reference.getDocumentResult()
+        guard document.exists,
+              var state = remoteGroupState(from: document.data() ?? [:], fallbackID: document.documentID) else {
+            return
+        }
+
+        if shouldJoin {
+            guard !state.memberIDs.contains(userID) else { return }
+            state.memberIDs.append(userID)
+            state.memberNames[userID] = String(displayName.trimmingCharacters(in: .whitespacesAndNewlines).prefix(40))
+        } else {
+            guard state.memberIDs.contains(userID), userID != state.ownerID else { return }
+            state.memberIDs.removeAll { $0 == userID }
+            state.adminIDs.removeAll { $0 == userID }
+            state.memberNames.removeValue(forKey: userID)
+        }
+
+        try await updateRemoteGroup(reference: reference, state: state)
+    }
+
+    private func removeUserFromJoinedCommunityGroups(userID: String) async throws {
+        let snapshot = try await firestore
+            .collection("groups")
+            .whereField("memberIDs", arrayContains: userID)
+            .getDocumentsResult()
+
+        for document in snapshot.documents {
+            guard var state = remoteGroupState(from: document.data(), fallbackID: document.documentID) else {
+                continue
+            }
+            if state.ownerID == userID {
+                continue
+            }
+
+            guard state.memberIDs.contains(userID) else { continue }
+            state.memberIDs.removeAll { $0 == userID }
+            state.adminIDs.removeAll { $0 == userID }
+            state.memberNames.removeValue(forKey: userID)
+            try await updateRemoteGroup(reference: document.reference, state: state)
+        }
+    }
+
+    private func remoteGroupState(from data: [String: Any], fallbackID: String) -> RemoteCommunityGroupState? {
+        let id = (data["id"] as? String) ?? fallbackID
+        let name = (data["name"] as? String)?.trimmingCharacters(in: .whitespacesAndNewlines)
+        let subtitle = (data["subtitle"] as? String)?.trimmingCharacters(in: .whitespacesAndNewlines)
+        let activeChallenge = (data["activeChallenge"] as? String)?.trimmingCharacters(in: .whitespacesAndNewlines)
+
+        guard let name,
+              let subtitle,
+              let activeChallenge,
+              !name.isEmpty,
+              !subtitle.isEmpty,
+              !activeChallenge.isEmpty else {
+            return nil
+        }
+
+        let ownerID = ((data["ownerID"] as? String) ?? (data["userID"] as? String) ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+        var memberIDs = data["memberIDs"] as? [String] ?? []
+        var adminIDs = data["adminIDs"] as? [String] ?? []
+        var memberNames = Self.stringMap(from: data["memberNames"])
+
+        if ownerID.isEmpty == false {
+            if !memberIDs.contains(ownerID) {
+                memberIDs.insert(ownerID, at: 0)
+            }
+            if !adminIDs.contains(ownerID) {
+                adminIDs.insert(ownerID, at: 0)
+            }
+        }
+
+        adminIDs.removeAll { !memberIDs.contains($0) }
+        memberIDs = Array(NSOrderedSet(array: memberIDs).compactMap { $0 as? String })
+        adminIDs = Array(NSOrderedSet(array: adminIDs).compactMap { $0 as? String })
+        for memberID in memberIDs where memberNames[memberID]?.isEmpty ?? true {
+            memberNames[memberID] = memberID == ownerID ? "Group Admin" : "Member \(memberID.prefix(6))"
+        }
+
+        return RemoteCommunityGroupState(
+            id: id,
+            name: String(name.prefix(42)),
+            subtitle: String(subtitle.prefix(96)),
+            activeChallenge: String(activeChallenge.prefix(40)),
+            ownerID: ownerID,
+            creatorID: (data["userID"] as? String) ?? ownerID,
+            adminIDs: adminIDs,
+            memberIDs: memberIDs,
+            memberNames: memberNames
+        )
+    }
+
+    private func updateRemoteGroup(reference: DocumentReference, state: RemoteCommunityGroupState) async throws {
+        try await reference.updateDataResult([
+            "id": state.id,
+            "name": state.name,
+            "subtitle": state.subtitle,
+            "activeChallenge": state.activeChallenge,
+            "userID": state.creatorID,
+            "ownerID": state.ownerID,
+            "adminIDs": state.adminIDs,
+            "memberIDs": state.memberIDs,
+            "memberNames": state.memberNames,
+            "members": state.memberIDs.count,
+            "updatedAt": FieldValue.serverTimestamp()
+        ])
+    }
+
     private func encodedDictionary<T: Encodable>(from value: T) throws -> [String: Any] {
         let data = try encoder.encode(value)
         guard let dictionary = try JSONSerialization.jsonObject(with: data) as? [String: Any] else {
@@ -547,12 +1262,253 @@ final class FirebaseAppRepository: AppRepository {
         return dictionary
     }
 
+    private static func stringMap(from value: Any?) -> [String: String] {
+        guard let rawMap = value as? [String: Any] else {
+            return value as? [String: String] ?? [:]
+        }
+        return rawMap.reduce(into: [String: String]()) { result, item in
+            if let stringValue = item.value as? String {
+                result[item.key] = stringValue
+            }
+        }
+    }
+
+    private static func communityGroup(
+        from data: [String: Any],
+        fallbackID: String,
+        currentUserID: String
+    ) -> ClimbGroup? {
+        let id = (data["id"] as? String) ?? fallbackID
+        let name = (data["name"] as? String)?.trimmingCharacters(in: .whitespacesAndNewlines)
+        let subtitle = (data["subtitle"] as? String)?.trimmingCharacters(in: .whitespacesAndNewlines)
+        let activeChallenge = (data["activeChallenge"] as? String)?.trimmingCharacters(in: .whitespacesAndNewlines)
+        var memberIDs = data["memberIDs"] as? [String] ?? []
+        let ownerID = ((data["ownerID"] as? String) ?? (data["userID"] as? String) ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+        var adminIDs = data["adminIDs"] as? [String] ?? []
+        var memberNames = stringMap(from: data["memberNames"])
+
+        guard let name,
+              let subtitle,
+              let activeChallenge,
+              !name.isEmpty,
+              !subtitle.isEmpty,
+              !activeChallenge.isEmpty,
+              !isLegacySeedGroup(id: id, name: name, activeChallenge: activeChallenge) else {
+            return nil
+        }
+
+        let fallbackMemberCount = intValue(from: data["members"]) ?? 0
+        if ownerID.isEmpty == false, !memberIDs.contains(ownerID) {
+            memberIDs.insert(ownerID, at: 0)
+        }
+        let memberCount = memberIDs.isEmpty ? fallbackMemberCount : memberIDs.count
+        if ownerID.isEmpty == false, !adminIDs.contains(ownerID) {
+            adminIDs.append(ownerID)
+        }
+        adminIDs.removeAll { !memberIDs.contains($0) }
+        for memberID in memberIDs where memberNames[memberID]?.isEmpty ?? true {
+            memberNames[memberID] = memberID == ownerID ? "Group Admin" : "Member \(memberID.prefix(6))"
+        }
+
+        return ClimbGroup(
+            id: id,
+            name: String(name.prefix(42)),
+            subtitle: String(subtitle.prefix(96)),
+            members: max(0, memberCount),
+            activeChallenge: String(activeChallenge.prefix(40)),
+            isJoined: memberIDs.contains(currentUserID),
+            ownerID: ownerID,
+            adminIDs: adminIDs,
+            memberIDs: memberIDs,
+            memberNames: memberNames
+        )
+    }
+
+    private static func isLegacySeedGroup(id: String, name: String, activeChallenge: String) -> Bool {
+        guard id.hasPrefix("group-") else { return false }
+        if ["Daily Discipline", "Focus Block", "Prayer Rhythm"].contains(name) {
+            return true
+        }
+        return name.hasSuffix(" Path") && activeChallenge == "One Honest Win"
+    }
+
+    private static func accountabilityPartner(
+        from data: [String: Any],
+        fallbackID: String,
+        currentUserID: String
+    ) -> AccountabilityPartner? {
+        let id = ((data["id"] as? String) ?? fallbackID).trimmingCharacters(in: .whitespacesAndNewlines)
+        let ownerID = (data["ownerID"] as? String) ?? ""
+        let acceptedByID = (data["acceptedByID"] as? String) ?? ""
+        guard !id.isEmpty, ownerID == currentUserID || acceptedByID == currentUserID else { return nil }
+
+        let isOwner = ownerID == currentUserID
+        let isPending = (data["status"] as? String) != "accepted" || acceptedByID.isEmpty
+        let partnerName: String
+        let linkedUserID: String?
+        let focusValue: String?
+        let partnerLastCheckInAt: Date?
+        let currentCheckInCount: Int
+        let otherCheckInCount: Int
+        let currentNudgeCount: Int
+        let currentEncouragementCount: Int
+
+        if isOwner {
+            partnerName = isPending ? "Waiting for friend" : ((data["acceptedByName"] as? String) ?? "Accountability Partner")
+            linkedUserID = acceptedByID.isEmpty ? nil : acceptedByID
+            focusValue = data["acceptedByFocus"] as? String
+            partnerLastCheckInAt = dateValue(from: data["acceptedLastCheckInAt"])
+            currentCheckInCount = intValue(from: data["ownerCheckInCount"]) ?? 0
+            otherCheckInCount = intValue(from: data["acceptedCheckInCount"]) ?? 0
+            currentNudgeCount = intValue(from: data["ownerNudgeCount"]) ?? 0
+            currentEncouragementCount = intValue(from: data["ownerEncouragementCount"]) ?? 0
+        } else {
+            partnerName = (data["ownerName"] as? String) ?? "Accountability Partner"
+            linkedUserID = ownerID
+            focusValue = data["ownerFocus"] as? String
+            partnerLastCheckInAt = dateValue(from: data["ownerLastCheckInAt"])
+            currentCheckInCount = intValue(from: data["acceptedCheckInCount"]) ?? 0
+            otherCheckInCount = intValue(from: data["ownerCheckInCount"]) ?? 0
+            currentNudgeCount = intValue(from: data["acceptedNudgeCount"]) ?? 0
+            currentEncouragementCount = intValue(from: data["acceptedEncouragementCount"]) ?? 0
+        }
+
+        let focus = focusValue.flatMap(Struggle.init(rawValue:)) ?? .discipline
+        let lastCheckIn = isPending ? "Pending" : relativeDayText(for: partnerLastCheckInAt)
+        let sharedStreak = min(currentCheckInCount, otherCheckInCount)
+        let weeklyCompletions = min(7, max(currentCheckInCount, otherCheckInCount))
+        let lastInteraction = isPending ? "Share invite code \(id)" : ((data["lastInteraction"] as? String) ?? "Ready for today's check-in")
+
+        return AccountabilityPartner(
+            id: id,
+            name: String(partnerName.trimmingCharacters(in: .whitespacesAndNewlines).prefix(40)),
+            focus: focus,
+            lastCheckIn: lastCheckIn,
+            checkInCount: currentCheckInCount + otherCheckInCount,
+            nudgeCount: currentNudgeCount,
+            encouragementCount: currentEncouragementCount,
+            lastInteraction: lastInteraction,
+            inviteCode: id,
+            linkedUserID: linkedUserID,
+            isPending: isPending,
+            lastCheckInDate: partnerLastCheckInAt,
+            sharedStreak: sharedStreak,
+            weeklyCompletions: weeklyCompletions
+        )
+    }
+
+    private static func leaderboardEntry(from data: [String: Any], fallbackID: String) -> LeaderboardEntry? {
+        let id = (data["id"] as? String) ?? (data["userID"] as? String) ?? fallbackID
+        let name = (data["name"] as? String)?.trimmingCharacters(in: .whitespacesAndNewlines)
+        let ovrScore = intValue(from: data["ovrScore"])
+        let streak = intValue(from: data["streak"])
+
+        guard let ovrScore, let streak else { return nil }
+
+        return LeaderboardEntry(
+            id: id,
+            name: resolvedLeaderboardName(name),
+            ovrScore: min(100, max(0, ovrScore)),
+            streak: max(0, streak)
+        )
+    }
+
+    private static func encouragementPost(from data: [String: Any], fallbackID: String) -> EncouragementPost? {
+        let id = ((data["id"] as? String) ?? fallbackID).trimmingCharacters(in: .whitespacesAndNewlines)
+        let authorID = ((data["authorID"] as? String) ?? (data["userID"] as? String) ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+        let author = (data["author"] as? String)?.trimmingCharacters(in: .whitespacesAndNewlines)
+        let body = (data["body"] as? String)?.trimmingCharacters(in: .whitespacesAndNewlines)
+        let createdAt = dateValue(from: data["createdAt"]) ?? dateValue(from: data["updatedAt"]) ?? Date.distantPast
+        let amenCount = intValue(from: data["amenCount"]) ?? 0
+
+        guard !id.isEmpty,
+              !authorID.isEmpty,
+              let author,
+              !author.isEmpty,
+              let body,
+              !body.isEmpty else {
+            return nil
+        }
+
+        return EncouragementPost(
+            id: id,
+            authorID: authorID,
+            author: String(author.prefix(40)),
+            body: String(body.prefix(280)),
+            createdAt: createdAt,
+            amenCount: max(0, amenCount)
+        )
+    }
+
+    private static func resolvedLeaderboardName(_ name: String?) -> String {
+        guard let name, !name.isEmpty else {
+            return "Climber"
+        }
+        return String(name.prefix(40))
+    }
+
+    private static func intValue(from value: Any?) -> Int? {
+        if let int = value as? Int {
+            return int
+        }
+        if let number = value as? NSNumber {
+            return number.intValue
+        }
+        return nil
+    }
+
+    private static func dateValue(from value: Any?) -> Date? {
+        if let timestamp = value as? Timestamp {
+            return timestamp.dateValue()
+        }
+        if let date = value as? Date {
+            return date
+        }
+        if let string = value as? String {
+            return ISO8601DateFormatter().date(from: string)
+        }
+        return nil
+    }
+
+    private static func relativeDayText(for date: Date?) -> String {
+        guard let date else { return "Waiting" }
+        let calendar = Calendar.current
+        if calendar.isDateInToday(date) {
+            return "Today"
+        }
+        if calendar.isDateInYesterday(date) {
+            return "Yesterday"
+        }
+        let days = calendar.dateComponents([.day], from: date.startOfDay, to: Date().startOfDay).day ?? 0
+        return days > 0 ? "\(days)d ago" : "Recently"
+    }
+
+    private static func inviteCode() -> String {
+        let alphabet = Array("ABCDEFGHJKLMNPQRSTUVWXYZ23456789")
+        return String((0..<6).compactMap { _ in alphabet.randomElement() })
+    }
+
     private func deleteDocuments(in collection: String, userID: String) async throws {
         let snapshot = try await firestore
             .collection(collection)
             .whereField("userID", isEqualTo: userID)
             .getDocumentsResult()
         try await deleteDocuments(snapshot.documents.map { $0.reference })
+    }
+
+    private func deletePartnerLinksAcceptedBy(userID: String) async throws {
+        let snapshot = try await firestore
+            .collection("partnerLinks")
+            .whereField("acceptedByID", isEqualTo: userID)
+            .getDocumentsResult()
+        try await deleteDocuments(snapshot.documents.map { $0.reference })
+    }
+
+    private func deleteKnownUserDocuments(userID: String) async throws {
+        let references = [
+            firestore.collection("leaderboards").document(userID)
+        ]
+        try await deleteDocuments(references)
     }
 
     private func deleteDocuments(_ references: [DocumentReference]) async throws {
@@ -675,6 +1631,20 @@ private extension User {
         }
     }
 
+    func reauthenticateResult(with credential: AuthCredential) async throws {
+        _ = try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<AuthDataResult, Error>) in
+            reauthenticate(with: credential) { result, error in
+                if let error {
+                    continuation.resume(throwing: FirebaseIntegration.mappedAuthError(error))
+                } else if let result {
+                    continuation.resume(returning: result)
+                } else {
+                    continuation.resume(throwing: FirebaseIntegrationError.invalidAccountInfo)
+                }
+            }
+        }
+    }
+
     func updateDisplayName(_ displayName: String) async throws {
         let trimmedName = displayName.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmedName.isEmpty else { return }
@@ -736,6 +1706,18 @@ private extension DocumentReference {
                     continuation.resume(returning: snapshot)
                 } else {
                     continuation.resume(throwing: FirebaseIntegrationError.decodingFailed)
+                }
+            }
+        }
+    }
+
+    func updateDataResult(_ fields: [AnyHashable: Any]) async throws {
+        try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in
+            updateData(fields) { error in
+                if let error {
+                    continuation.resume(throwing: error)
+                } else {
+                    continuation.resume()
                 }
             }
         }

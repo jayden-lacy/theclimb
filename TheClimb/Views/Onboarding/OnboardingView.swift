@@ -5,10 +5,17 @@ private enum OnboardingAuthProvider {
     case google
 }
 
+private enum OnboardingAccountMode {
+    case create
+    case login
+}
+
 struct OnboardingView: View {
+    @Environment(\.openURL) private var openURL
     @ObservedObject var viewModel: AppViewModel
 
     @State private var step: OnboardingStep = .welcome
+    @State private var accountMode: OnboardingAccountMode = .create
     @State private var displayName = ""
     @State private var email = ""
     @State private var password = ""
@@ -41,20 +48,27 @@ struct OnboardingView: View {
                     .padding(.top, 10)
                 }
 
-                ScrollView(showsIndicators: false) {
-                    VStack(alignment: .leading, spacing: 18) {
-                        content
-                            .id(step)
-                            .transition(.climbScreen)
+                GeometryReader { proxy in
+                    ScrollView(showsIndicators: false) {
+                        VStack(alignment: .leading, spacing: 18) {
+                            content
+                                .id(step)
+                                .transition(.climbStep)
+                                .frame(maxWidth: .infinity, alignment: .leading)
+                                .frame(
+                                    minHeight: step == .welcome ? max(proxy.size.height - 36, 0) : nil,
+                                    alignment: .center
+                                )
+                        }
+                        .padding(.horizontal, 22)
+                        .padding(.top, step == .welcome ? 8 : 18)
+                        .padding(.bottom, scrollBottomPadding)
                     }
-                    .padding(.horizontal, 22)
-                    .padding(.top, step == .welcome ? 28 : 18)
-                    .padding(.bottom, step == .preparing ? 32 : 120)
                 }
             }
         }
         .safeAreaInset(edge: .bottom) {
-            if step != .preparing {
+            if showsPinnedCTA {
                 ctaButton
                     .padding(.horizontal, 22)
                     .padding(.top, 12)
@@ -106,46 +120,53 @@ struct OnboardingView: View {
     }
 
     private var welcomeStep: some View {
-        VStack(alignment: .leading, spacing: 22) {
-            MountainHeroCard(
-                title: "The Climb",
-                subtitle: "Discipline is built daily. Growth is earned."
-            )
-                .frame(height: 360)
+        VStack(spacing: 28) {
+            Spacer(minLength: 10)
 
-            ClimbCard(padding: 20, cornerRadius: 28) {
-                FeatureLine(systemImage: "target", title: "Personalized daily missions")
-                FeatureLine(systemImage: "book.closed", title: "Faith-based devotionals")
-                FeatureLine(systemImage: "chart.line.uptrend.xyaxis", title: "Progress you can track")
-                FeatureLine(systemImage: "shield.checkered", title: "Accountability that stays focused")
-            }
+            BrandWelcomeLockup()
 
-            HStack(spacing: 4) {
-                Text("Already have an account?")
-                    .foregroundStyle(Color.climbTextSecondary)
-                Text("Log in")
-                    .foregroundStyle(Color.climbGreen)
+            Spacer(minLength: 18)
+
+            VStack(spacing: 14) {
+                ctaButton
+                welcomeLoginPrompt
             }
-            .font(ClimbTypography.sans(13, weight: .medium))
-            .frame(maxWidth: .infinity)
-            .padding(.top, 4)
         }
+        .frame(maxWidth: .infinity)
+    }
+
+    private var welcomeLoginPrompt: some View {
+        HStack(spacing: 4) {
+            Text("Already have an account?")
+                .foregroundStyle(Color.climbTextSecondary)
+            Button("Log in") {
+                HapticFeedback.selection()
+                accountMode = .login
+                setStep(.account)
+            }
+            .buttonStyle(.plain)
+            .foregroundStyle(Color.climbSage)
+        }
+        .font(ClimbTypography.sans(13, weight: .medium))
+        .frame(maxWidth: .infinity)
     }
 
     private var accountStep: some View {
         VStack(alignment: .leading, spacing: 20) {
-            StepHeading(title: "Create Account", subtitle: "Let’s get you started.")
-            ClimbCard(padding: 20, cornerRadius: 28) {
-                TextField("Name", text: $displayName)
-                    .textContentType(.name)
-                    .formFieldStyle()
+            StepHeading(title: accountTitle, subtitle: accountSubtitle)
+            ClimbCard(padding: 20, cornerRadius: 24) {
+                if accountMode == .create {
+                    TextField("Name", text: $displayName)
+                        .textContentType(.name)
+                        .formFieldStyle()
+                }
                 TextField("Email", text: $email)
                     .textInputAutocapitalization(.never)
                     .keyboardType(.emailAddress)
                     .textContentType(.emailAddress)
                     .formFieldStyle()
                 SecureField("Password", text: $password)
-                    .textContentType(.newPassword)
+                    .textContentType(accountMode == .create ? .newPassword : .password)
                     .formFieldStyle()
 
                 if authenticatedUser == nil {
@@ -176,21 +197,30 @@ struct OnboardingView: View {
             }
 
             VStack(spacing: 6) {
-                Text("By continuing, you agree to our")
+                Text(accountMode == .create ? "By continuing, you agree to our" : "Your data stays tied to your account.")
                     .foregroundStyle(Color.climbMuted)
                 HStack(spacing: 12) {
                     Button("Terms of Service") {
-                        legalDocument = .termsOfService
+                        openURL(LegalDocument.termsOfService.onlineURL)
                     }
                     Button("Privacy Policy") {
-                        legalDocument = .privacyPolicy
+                        openURL(LegalDocument.privacyPolicy.onlineURL)
                     }
                 }
-                .foregroundStyle(Color.climbGreen)
+                .foregroundStyle(Color.climbSage)
             }
                 .font(ClimbTypography.sans(12, weight: .medium))
                 .frame(maxWidth: .infinity)
-                .padding(.top, 14)
+                .padding(.top, 4)
+
+            Button(accountMode == .create ? "Already have an account? Log in" : "Need an account? Create one") {
+                HapticFeedback.selection()
+                toggleAccountMode()
+            }
+            .buttonStyle(.plain)
+            .font(ClimbTypography.sans(13, weight: .semibold))
+            .foregroundStyle(Color.climbSage)
+            .frame(maxWidth: .infinity)
         }
     }
 
@@ -215,10 +245,12 @@ struct OnboardingView: View {
     private var goalsStep: some View {
         VStack(alignment: .leading, spacing: 18) {
             StepHeading(title: "What are your goals?", subtitle: "Select every goal that applies.")
-            LazyVGrid(columns: [GridItem(.flexible(), spacing: 12), GridItem(.flexible(), spacing: 12)], spacing: 12) {
+            VStack(spacing: 10) {
                 ForEach(goals) { goal in
-                    GoalOptionCard(
-                        goal: goal,
+                    SelectableRow(
+                        title: goal.title,
+                        subtitle: goalSubtitle(for: goal),
+                        systemImage: goal.systemImage,
                         isSelected: selectedGoals.contains(goal.title)
                     ) {
                         if selectedGoals.contains(goal.title) {
@@ -252,16 +284,7 @@ struct OnboardingView: View {
 
     private var streakStep: some View {
         VStack(alignment: .leading, spacing: 18) {
-            StepHeading(title: "What’s your streak goal?", subtitle: "Choose a goal that challenges you.")
-
-            ClimbCard(padding: 20, cornerRadius: 28) {
-                Text("What’s a streak goal?")
-                    .font(ClimbTypography.sans(16, weight: .semibold))
-                    .foregroundStyle(.white)
-                Text("It’s the number of days you want to stay consistent.")
-                    .font(ClimbTypography.sans(14))
-                    .foregroundStyle(Color.climbTextSecondary)
-            }
+            StepHeading(title: "What’s your streak goal?", subtitle: "Choose a goal that keeps you consistent.")
 
             VStack(spacing: 10) {
                 ForEach(streakOptions, id: \.self) { option in
@@ -282,20 +305,22 @@ struct OnboardingView: View {
         VStack(alignment: .leading, spacing: 18) {
             StepHeading(title: "When should we remind you?", subtitle: "We’ll send your daily mission at this time.")
 
-            ClimbCard(padding: 20, cornerRadius: 28) {
+            ClimbCard(padding: 20, cornerRadius: 22) {
                 DatePicker("", selection: $reminderTime, displayedComponents: .hourAndMinute)
                     .datePickerStyle(.wheel)
                     .labelsHidden()
                     .frame(maxWidth: .infinity)
                     .clipped()
+                Text("Daily mission reminders and streak alerts use this time.")
+                    .font(ClimbTypography.sans(13, weight: .semibold))
+                    .foregroundStyle(Color.climbTextSecondary)
+                    .frame(maxWidth: .infinity, alignment: .center)
             }
 
-            ClimbCard(padding: 20, cornerRadius: 28) {
-                Text("You’ll get:")
-                    .font(ClimbTypography.sans(15, weight: .semibold))
-                    .foregroundStyle(.white)
-                FeatureLine(systemImage: "checkmark", title: "Daily mission reminder")
-                FeatureLine(systemImage: "checkmark", title: "Streak alerts and encouragement")
+            SecondaryActionButton(title: notificationButtonTitle, systemImage: "bell") {
+                Task {
+                    await viewModel.requestNotificationAuthorization()
+                }
             }
         }
     }
@@ -303,13 +328,15 @@ struct OnboardingView: View {
     private var reviewStep: some View {
         VStack(alignment: .leading, spacing: 18) {
             StepHeading(title: "Almost there!", subtitle: "Here’s what you’ve set up.")
-            ClimbCard(padding: 20, cornerRadius: 28) {
+            ClimbCard(padding: 20, cornerRadius: 22) {
                 SetupSummaryRow(systemImage: "person.2", title: "Age Group", value: ageChoice.title)
-                SetupSummaryRow(systemImage: "heart", title: "Goals", value: "\(selectedGoals.count) selected")
+                SetupSummaryRow(systemImage: "heart", title: "Goals", value: selectedGoalsSummary)
                 SetupSummaryRow(systemImage: "shield", title: "Main Struggle", value: struggle.rawValue)
                 SetupSummaryRow(systemImage: "flame", title: "Streak Goal", value: "\(streakGoal) days")
                 SetupSummaryRow(systemImage: "alarm", title: "Reminder Time", value: reminderText)
             }
+
+            PersonalizationPreviewCard(personalization: personalization)
         }
     }
 
@@ -326,9 +353,9 @@ struct OnboardingView: View {
                     .stroke(Color.climbDivider, lineWidth: 14)
                 Circle()
                     .trim(from: 0, to: preparationProgress)
-                    .stroke(Color.climbGreen, style: StrokeStyle(lineWidth: 14, lineCap: .round))
+                    .stroke(Color.climbSage, style: StrokeStyle(lineWidth: 14, lineCap: .round))
                     .rotationEffect(.degrees(-90))
-                    .shadow(color: Color.climbGreen.opacity(0.28), radius: 18, x: 0, y: 0)
+                    .shadow(color: Color.climbSage.opacity(0.18), radius: 16, x: 0, y: 0)
                 MountainBadge()
                     .frame(width: 130, height: 130)
             }
@@ -340,10 +367,9 @@ struct OnboardingView: View {
             }
 
             VStack(alignment: .leading, spacing: 14) {
-                FeatureLine(systemImage: "checkmark.circle.fill", title: "Creating your growth path")
-                FeatureLine(systemImage: "checkmark.circle.fill", title: "Generating Day 1 mission")
-                FeatureLine(systemImage: "checkmark.circle.fill", title: "Preparing your devotional")
-                FeatureLine(systemImage: "checkmark.circle.fill", title: "Setting up your profile")
+                ForEach(personalization.preparationChecklist, id: \.self) { item in
+                    FeatureLine(systemImage: "checkmark.circle.fill", title: item)
+                }
             }
             .frame(maxWidth: .infinity, alignment: .leading)
         }
@@ -354,7 +380,7 @@ struct OnboardingView: View {
         VStack(alignment: .leading, spacing: 22) {
             VStack(alignment: .center, spacing: 10) {
                 Text("Let’s climb.")
-                    .font(ClimbTypography.sans(28, weight: .bold))
+                    .font(ClimbTypography.sans(26, weight: .bold))
                     .foregroundStyle(.white)
                 Text("Your transformation starts today.")
                     .font(ClimbTypography.sans(15, weight: .medium))
@@ -364,13 +390,13 @@ struct OnboardingView: View {
             }
             .frame(maxWidth: .infinity)
 
-            ClimbCard(padding: 20, cornerRadius: 28) {
+            ClimbCard(padding: 20, cornerRadius: 22) {
                 Text("Day 1 is ready.")
-                    .font(ClimbTypography.sans(18, weight: .semibold))
+                    .font(ClimbTypography.sans(16, weight: .semibold))
                     .foregroundStyle(.white)
-                SetupSummaryRow(systemImage: "target", title: "Your mission", value: "Deep work and focus")
-                SetupSummaryRow(systemImage: "book.closed", title: "Your devotional", value: "Prepared")
-                SetupSummaryRow(systemImage: "square.and.pencil", title: "Your reflection", value: "Ready after mission")
+                SetupSummaryRow(systemImage: "target", title: "Your mission", value: personalization.previewMissionTitle)
+                SetupSummaryRow(systemImage: "book.closed", title: "Your devotional", value: personalization.devotionalFocus.capitalized)
+                SetupSummaryRow(systemImage: "square.and.pencil", title: "Your reflection", value: personalization.primaryGoal)
             }
         }
     }
@@ -385,11 +411,30 @@ struct OnboardingView: View {
         }
     }
 
+    private var showsPinnedCTA: Bool {
+        step != .welcome && step != .preparing
+    }
+
+    private var scrollBottomPadding: CGFloat {
+        switch step {
+        case .welcome:
+            28
+        case .preparing:
+            32
+        default:
+            120
+        }
+    }
+
     private var ctaTitle: String {
-        if isSubmitting { return "Creating Home" }
+        if isSubmitting {
+            return accountMode == .login ? "Logging In" : "Creating Home"
+        }
         switch step {
         case .welcome:
             return "Get Started"
+        case .account where accountMode == .login:
+            return "Log In"
         case .review:
             return "Build My Path"
         case .ready:
@@ -403,6 +448,8 @@ struct OnboardingView: View {
         switch step {
         case .ready:
             "house.fill"
+        case .account where accountMode == .login:
+            "arrow.right.circle.fill"
         case .review:
             "sparkles"
         default:
@@ -429,6 +476,27 @@ struct OnboardingView: View {
 
     private var reminderText: String {
         reminderTime.formatted(date: .omitted, time: .shortened)
+    }
+
+    private var selectedGoalList: [String] {
+        Array(selectedGoals).sorted()
+    }
+
+    private var selectedGoalsSummary: String {
+        let goals = selectedGoalList
+        guard !goals.isEmpty else { return "None selected" }
+        let visible = goals.prefix(2).joined(separator: ", ")
+        let remaining = goals.count - min(goals.count, 2)
+        return remaining > 0 ? "\(visible) +\(remaining) more" : visible
+    }
+
+    private var personalization: GrowthPathPersonalization {
+        GrowthPathPersonalization.resolve(
+            goals: selectedGoalList,
+            struggle: struggle,
+            streakGoal: streakGoal,
+            ageGroup: ageChoice.ageGroup
+        )
     }
 
     private var normalizedEmail: String {
@@ -464,28 +532,62 @@ struct OnboardingView: View {
         if password.count < 6 {
             return "Password must be at least 6 characters."
         }
-        return "Account details are ready."
+        return accountMode == .login ? "Ready to log in." : "Account details are ready."
+    }
+
+    private var accountTitle: String {
+        accountMode == .login ? "Log In" : "Create Account"
+    }
+
+    private var accountSubtitle: String {
+        accountMode == .login ? "Welcome back. Enter your account details." : "Let’s get you started."
+    }
+
+    private var notificationButtonTitle: String {
+        switch viewModel.notificationState {
+        case .authorized:
+            "Notifications Enabled"
+        case .denied:
+            "Notifications Are Off"
+        default:
+            "Enable Notifications"
+        }
     }
 
     private func advance() {
         switch step {
+        case .welcome:
+            accountMode = .create
+            setStep(step.next)
+        case .account where accountMode == .login:
+            logInWithEmail()
         case .review:
             beginPreparing()
         case .ready:
             submit()
         default:
-            step = step.next
+            setStep(step.next)
         }
     }
 
     private func goBack() {
         guard canGoBack else { return }
-        step = step.previous
+        if step == .account {
+            accountMode = .create
+        }
+        setStep(step.previous)
+    }
+
+    private func toggleAccountMode() {
+        authenticatedUser = nil
+        authenticatedProvider = nil
+        password = ""
+        accountMode = accountMode == .create ? .login : .create
     }
 
     private func beginPreparing() {
         preparationProgress = 0.08
-        step = .preparing
+        setStep(.preparing)
     }
 
     private func runPreparation() async {
@@ -495,7 +597,9 @@ struct OnboardingView: View {
         }
         try? await Task.sleep(nanoseconds: 1_350_000_000)
         guard step == .preparing else { return }
-        step = .ready
+        await MainActor.run {
+            setStep(.ready)
+        }
     }
 
     private func submit() {
@@ -503,19 +607,29 @@ struct OnboardingView: View {
         let components = Calendar.current.dateComponents([.hour, .minute], from: reminderTime)
         let name = displayName.isEmpty ? fallbackDisplayName : displayName
         Task {
-            await viewModel.completeOnboarding(
+            _ = await viewModel.completeOnboarding(
                 displayName: name,
                 email: email,
                 password: password,
                 authenticatedUser: authenticatedUser,
                 ageGroup: ageChoice.ageGroup,
-                goals: Array(selectedGoals).sorted(),
+                goals: selectedGoalList,
                 struggle: struggle,
                 streakGoal: streakGoal,
                 notificationHour: components.hour ?? 8,
                 notificationMinute: components.minute ?? 0
             )
             isSubmitting = false
+        }
+    }
+
+    private func logInWithEmail() {
+        guard !isSubmitting else { return }
+        isSubmitting = true
+
+        Task { @MainActor in
+            defer { isSubmitting = false }
+            await viewModel.signInWithEmailForOnboarding(email: email, password: password)
         }
     }
 
@@ -526,7 +640,11 @@ struct OnboardingView: View {
         Task { @MainActor in
             defer { isSubmitting = false }
             if let user = await viewModel.signInWithGoogleForOnboarding() {
-                applyAuthenticatedUser(user, provider: .google)
+                if accountMode == .login {
+                    await viewModel.loadSignedInAccountForOnboarding()
+                } else if await viewModel.shouldContinueNewProfileAfterSocialSignIn() {
+                    applyAuthenticatedUser(user, provider: .google)
+                }
             }
         }
     }
@@ -538,7 +656,11 @@ struct OnboardingView: View {
         Task { @MainActor in
             defer { isSubmitting = false }
             if let user = await viewModel.signInWithAppleForOnboarding() {
-                applyAuthenticatedUser(user, provider: .apple)
+                if accountMode == .login {
+                    await viewModel.loadSignedInAccountForOnboarding()
+                } else if await viewModel.shouldContinueNewProfileAfterSocialSignIn() {
+                    applyAuthenticatedUser(user, provider: .apple)
+                }
             }
         }
     }
@@ -552,7 +674,13 @@ struct OnboardingView: View {
         if email.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
             email = user.email
         }
-        step = step.next
+        setStep(step.next)
+    }
+
+    private func setStep(_ newStep: OnboardingStep) {
+        withAnimation(ClimbMotion.focus) {
+            step = newStep
+        }
     }
 
     private func authButtonTitle(for provider: OnboardingAuthProvider) -> String {
@@ -562,6 +690,10 @@ struct OnboardingView: View {
 
         if let authenticatedProvider {
             return authenticatedProvider == .apple ? "Connected with Apple" : "Connected with Google"
+        }
+
+        if accountMode == .login {
+            return provider == .apple ? "Sign in with Apple" : "Sign in with Google"
         }
 
         return provider == .apple ? "Continue with Apple" : "Continue with Google"
@@ -578,6 +710,31 @@ struct OnboardingView: View {
     private var fallbackDisplayName: String {
         let prefix = email.split(separator: "@").first
         return prefix.map(String.init) ?? "Climber"
+    }
+
+    private func goalSubtitle(for goal: OnboardingGoal) -> String {
+        switch goal.id {
+        case "discipline":
+            "Do what you said you would do"
+        case "faith":
+            "Build a steady daily walk"
+        case "procrastination":
+            "Start sooner and finish cleaner"
+        case "phone":
+            "Protect focus from distraction"
+        case "focus":
+            "Train attention for deep work"
+        case "confidence":
+            "Move with more courage"
+        case "habits":
+            "Replace weak patterns"
+        case "consistency":
+            "Show up when motivation drops"
+        case "prayer":
+            "Make prayer repeatable"
+        default:
+            "Strengthen your daily self-control"
+        }
     }
 
     private func struggleSubtitle(for struggle: Struggle) -> String {
@@ -719,7 +876,7 @@ private struct OnboardingProgressHeader: View {
             .buttonStyle(ScaleButtonStyle())
             .disabled(!canGoBack)
 
-            ProgressBar(value: progress, height: 5, tint: .climbGreen)
+            ProgressBar(value: progress, height: 5, tint: .climbSage)
 
             Text("\(min(step.rawValue + 1, OnboardingStep.allCases.count))/\(OnboardingStep.allCases.count)")
                 .font(ClimbTypography.sans(11, weight: .bold))
@@ -736,11 +893,11 @@ private struct StepHeading: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
             Text(title)
-                .font(ClimbTypography.sans(30, weight: .bold))
+                .font(ClimbTypography.sans(28, weight: .bold))
                 .foregroundStyle(.white)
                 .fixedSize(horizontal: false, vertical: true)
             Text(subtitle)
-                .font(ClimbTypography.sans(15, weight: .medium))
+                .font(ClimbTypography.sans(14, weight: .semibold))
                 .foregroundStyle(Color.climbTextSecondary)
                 .lineSpacing(3)
                 .fixedSize(horizontal: false, vertical: true)
@@ -752,28 +909,28 @@ private struct AccountValidationNotice: View {
     let message: String
 
     private var isReady: Bool {
-        message == "Account details are ready."
+        message == "Account details are ready." || message == "Ready to log in."
     }
 
     var body: some View {
         HStack(alignment: .top, spacing: 10) {
             Image(systemName: isReady ? "checkmark.circle.fill" : "exclamationmark.circle.fill")
                 .font(ClimbTypography.sans(14, weight: .bold))
-                .foregroundStyle(isReady ? Color.climbGreen : Color.climbGold)
+                .foregroundStyle(isReady ? Color.climbSage : Color.climbGold)
                 .padding(.top, 1)
 
             Text(message)
                 .font(ClimbTypography.sans(12, weight: .semibold))
-                .foregroundStyle(isReady ? Color.climbGreen : Color.climbTextSecondary)
+                .foregroundStyle(isReady ? Color.climbSage : Color.climbTextSecondary)
                 .fixedSize(horizontal: false, vertical: true)
         }
         .padding(.horizontal, 14)
         .padding(.vertical, 12)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background((isReady ? Color.climbGreen : Color.climbGold).opacity(0.10), in: RoundedRectangle(cornerRadius: 18, style: .continuous))
+        .background((isReady ? Color.climbSage : Color.climbGold).opacity(0.10), in: RoundedRectangle(cornerRadius: 16, style: .continuous))
         .overlay(
-            RoundedRectangle(cornerRadius: 18, style: .continuous)
-                .stroke((isReady ? Color.climbGreen : Color.climbGold).opacity(0.20), lineWidth: 0.8)
+            RoundedRectangle(cornerRadius: 16, style: .continuous)
+                .stroke((isReady ? Color.climbSage : Color.climbGold).opacity(0.20), lineWidth: 0.8)
         )
         .animation(ClimbMotion.quick, value: message)
     }
@@ -791,7 +948,7 @@ private struct SelectableRow: View {
             HStack(spacing: 14) {
                 Image(systemName: systemImage)
                     .font(ClimbTypography.sans(16, weight: .semibold))
-                    .foregroundStyle(isSelected ? Color.climbGreen : Color.climbMuted)
+                    .foregroundStyle(isSelected ? Color.climbSage : Color.climbMuted)
                     .frame(width: 24)
 
                 VStack(alignment: .leading, spacing: 3) {
@@ -809,13 +966,13 @@ private struct SelectableRow: View {
 
                 Image(systemName: isSelected ? "checkmark.circle.fill" : "circle")
                     .font(ClimbTypography.sans(18, weight: .bold))
-                    .foregroundStyle(isSelected ? Color.climbGreen : Color.climbMuted)
+                    .foregroundStyle(isSelected ? Color.climbSage : Color.climbMuted)
             }
-            .padding(16)
-            .background(isSelected ? Color.climbGreen.opacity(0.13) : Color.climbSurfaceRaised, in: RoundedRectangle(cornerRadius: 22, style: .continuous))
+            .padding(14)
+            .background(isSelected ? Color.climbSage.opacity(0.075) : Color.climbSurfaceRaised.opacity(0.88), in: RoundedRectangle(cornerRadius: 18, style: .continuous))
             .overlay(
-                RoundedRectangle(cornerRadius: 22, style: .continuous)
-                    .stroke(isSelected ? Color.climbGreen.opacity(0.72) : Color.white.opacity(0.08), lineWidth: 0.8)
+                RoundedRectangle(cornerRadius: 18, style: .continuous)
+                    .stroke(isSelected ? Color.climbSage.opacity(0.32) : Color.white.opacity(0.07), lineWidth: 0.8)
             )
         }
         .buttonStyle(ScaleButtonStyle())
@@ -832,11 +989,11 @@ private struct GoalOptionCard: View {
             VStack(spacing: 10) {
                 ZStack {
                     Circle()
-                        .fill(isSelected ? Color.climbGreen.opacity(0.18) : Color.climbSurfaceGlass)
+                        .fill(isSelected ? Color.climbSage.opacity(0.14) : Color.climbSurfaceGlass)
                         .frame(width: 34, height: 34)
                     Image(systemName: isSelected ? "checkmark" : goal.systemImage)
                         .font(ClimbTypography.sans(14, weight: .bold))
-                        .foregroundStyle(isSelected ? Color.climbGreen : Color.climbMuted)
+                        .foregroundStyle(isSelected ? Color.climbSage : Color.climbMuted)
                 }
 
                 Text(goal.title)
@@ -849,13 +1006,202 @@ private struct GoalOptionCard: View {
             .frame(maxWidth: .infinity)
             .frame(height: 116)
             .padding(10)
-            .background(isSelected ? Color.climbGreen.opacity(0.12) : Color.climbSurfaceRaised, in: RoundedRectangle(cornerRadius: 22, style: .continuous))
+            .background(isSelected ? Color.climbSage.opacity(0.10) : Color.climbSurfaceRaised, in: RoundedRectangle(cornerRadius: 18, style: .continuous))
             .overlay(
-                RoundedRectangle(cornerRadius: 22, style: .continuous)
-                    .stroke(isSelected ? Color.climbGreen.opacity(0.72) : Color.white.opacity(0.08), lineWidth: 0.8)
+                RoundedRectangle(cornerRadius: 18, style: .continuous)
+                    .stroke(isSelected ? Color.climbSage.opacity(0.32) : Color.white.opacity(0.07), lineWidth: 0.8)
             )
         }
         .buttonStyle(ScaleButtonStyle())
+    }
+}
+
+private struct OnboardingValueStrip: View {
+    var body: some View {
+        HStack(spacing: 10) {
+            WelcomeValueTile(systemImage: "target", title: "Mission")
+            WelcomeValueTile(systemImage: "book.closed", title: "Word")
+            WelcomeValueTile(systemImage: "shield.checkered", title: "Partner")
+        }
+    }
+}
+
+private struct BrandWelcomeLockup: View {
+    var body: some View {
+        VStack(spacing: 28) {
+            ZStack {
+                Circle()
+                    .fill(
+                        RadialGradient(
+                            colors: [
+                                Color.climbAction.opacity(0.18),
+                                Color.climbAction.opacity(0.045),
+                                Color.clear
+                            ],
+                            center: .center,
+                            startRadius: 10,
+                            endRadius: 152
+                        )
+                    )
+                    .frame(width: 276, height: 276)
+                    .blur(radius: 10)
+
+                Image("BrandLogo")
+                    .resizable()
+                    .interpolation(.high)
+                    .antialiased(true)
+                    .scaledToFit()
+                    .frame(width: 198, height: 198)
+                    .clipShape(RoundedRectangle(cornerRadius: 48, style: .continuous))
+                    .shadow(color: Color.climbAction.opacity(0.16), radius: 30, x: 0, y: 16)
+                    .shadow(color: .black.opacity(0.42), radius: 34, x: 0, y: 24)
+            }
+
+            VStack(spacing: 14) {
+                Text("The Climb")
+                    .font(ClimbTypography.sans(44, weight: .bold))
+                    .foregroundStyle(Color.climbMist)
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.78)
+
+                Text("A daily rhythm for faith, discipline, and follow-through.")
+                    .font(ClimbTypography.sans(18, weight: .semibold))
+                    .foregroundStyle(Color.climbTextSecondary)
+                    .multilineTextAlignment(.center)
+                    .lineSpacing(4)
+                    .fixedSize(horizontal: false, vertical: true)
+
+                Text("Start with today.")
+                    .font(ClimbTypography.serif(24))
+                    .foregroundStyle(Color.climbWarm.opacity(0.92))
+                    .padding(.top, 4)
+            }
+            .frame(maxWidth: 340)
+        }
+        .frame(maxWidth: .infinity)
+        .climbEntrance()
+    }
+}
+
+private struct WelcomeHeroPanel: View {
+    var body: some View {
+        ZStack(alignment: .bottomLeading) {
+            MountainScene()
+
+            LinearGradient(
+                colors: [
+                    Color.black.opacity(0.18),
+                    Color.black.opacity(0.10),
+                    Color.black.opacity(0.82)
+                ],
+                startPoint: .top,
+                endPoint: .bottom
+            )
+
+            VStack(alignment: .leading, spacing: 0) {
+                HStack {
+                    Text("FAITH + DISCIPLINE")
+                        .font(ClimbTypography.sans(11, weight: .bold))
+                        .tracking(1.5)
+                        .foregroundStyle(Color.climbSage)
+                        .padding(.horizontal, 12)
+                        .padding(.vertical, 8)
+                        .background(Color.climbSage.opacity(0.10), in: Capsule())
+                    Spacer()
+                    Image(systemName: "figure.hiking")
+                        .font(ClimbTypography.sans(19, weight: .bold))
+                        .foregroundStyle(Color.climbMist.opacity(0.74))
+                        .frame(width: 38, height: 38)
+                        .background(.ultraThinMaterial, in: Circle())
+                }
+
+                Spacer(minLength: 0)
+
+                VStack(alignment: .leading, spacing: 12) {
+                    Text("The Climb")
+                        .font(ClimbTypography.sans(46, weight: .bold))
+                        .foregroundStyle(Color.climbMist)
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.78)
+
+                    Text("A quieter daily system for scripture, discipline, focus, and accountability.")
+                        .font(ClimbTypography.sans(16, weight: .semibold))
+                        .foregroundStyle(Color.climbTextSecondary)
+                        .lineSpacing(4)
+                        .fixedSize(horizontal: false, vertical: true)
+
+                    HStack(spacing: 8) {
+                        WelcomeMicroPill(text: "Daily Word")
+                        WelcomeMicroPill(text: "Focus Mission")
+                        WelcomeMicroPill(text: "Streaks")
+                    }
+                    .padding(.top, 4)
+                }
+            }
+            .padding(22)
+        }
+        .clipShape(RoundedRectangle(cornerRadius: 30, style: .continuous))
+        .overlay(
+            RoundedRectangle(cornerRadius: 30, style: .continuous)
+                .stroke(
+                    LinearGradient(
+                        colors: [
+                            Color.white.opacity(0.15),
+                            Color.climbSage.opacity(0.12),
+                            Color.black.opacity(0.28)
+                        ],
+                        startPoint: .topLeading,
+                        endPoint: .bottomTrailing
+                    ),
+                    lineWidth: 0.9
+                )
+        )
+        .shadow(color: .black.opacity(0.38), radius: 26, x: 0, y: 18)
+        .climbEntrance()
+    }
+}
+
+private struct WelcomeMicroPill: View {
+    let text: String
+
+    var body: some View {
+        Text(text)
+            .font(ClimbTypography.sans(11, weight: .bold))
+            .foregroundStyle(Color.climbWarm.opacity(0.92))
+            .lineLimit(1)
+            .minimumScaleFactor(0.72)
+            .padding(.horizontal, 10)
+            .padding(.vertical, 7)
+            .background(Color.white.opacity(0.065), in: Capsule())
+            .overlay(Capsule().stroke(Color.white.opacity(0.08), lineWidth: 0.7))
+    }
+}
+
+private struct WelcomeValueTile: View {
+    let systemImage: String
+    let title: String
+
+    var body: some View {
+        VStack(spacing: 8) {
+            Image(systemName: systemImage)
+                .font(ClimbTypography.sans(14, weight: .bold))
+                .foregroundStyle(Color.climbSage)
+                .frame(width: 32, height: 32)
+                .background(Color.climbSage.opacity(0.105), in: Circle())
+
+            Text(title)
+                .font(ClimbTypography.sans(13, weight: .bold))
+                .foregroundStyle(Color.climbMist)
+                .lineLimit(1)
+                .minimumScaleFactor(0.76)
+        }
+        .frame(maxWidth: .infinity)
+        .padding(.vertical, 14)
+        .background(Color.climbSurfaceRaised.opacity(0.66), in: RoundedRectangle(cornerRadius: 20, style: .continuous))
+        .overlay(
+            RoundedRectangle(cornerRadius: 20, style: .continuous)
+                .stroke(Color.white.opacity(0.065), lineWidth: 0.7)
+        )
     }
 }
 
@@ -867,7 +1213,7 @@ private struct FeatureLine: View {
         HStack(spacing: 12) {
             Image(systemName: systemImage)
                 .font(ClimbTypography.sans(13, weight: .bold))
-                .foregroundStyle(Color.climbGreen)
+                .foregroundStyle(Color.climbSage)
                 .frame(width: 20)
             Text(title)
                 .font(ClimbTypography.sans(14, weight: .medium))
@@ -899,6 +1245,45 @@ private struct SetupSummaryRow: View {
             Spacer()
         }
         .padding(.vertical, 4)
+    }
+}
+
+private struct PersonalizationPreviewCard: View {
+    let personalization: GrowthPathPersonalization
+
+    var body: some View {
+        ClimbCard(padding: 20, cornerRadius: 24, isProminent: true) {
+            VStack(alignment: .leading, spacing: 12) {
+                HStack(alignment: .center, spacing: 10) {
+                    Image(systemName: personalization.category.symbol)
+                        .font(ClimbTypography.sans(16, weight: .bold))
+                        .foregroundStyle(Color.climbSage)
+                        .frame(width: 30, height: 30)
+                        .background(Color.climbSage.opacity(0.10), in: Circle())
+
+                    VStack(alignment: .leading, spacing: 3) {
+                        Text("YOUR PATH")
+                            .font(ClimbTypography.sans(11, weight: .bold))
+                            .tracking(1.4)
+                            .foregroundStyle(Color.climbMuted)
+                        Text(personalization.headline)
+                            .font(ClimbTypography.sans(18, weight: .semibold))
+                            .foregroundStyle(.white)
+                    }
+                }
+
+                Text(personalization.planSummary)
+                    .font(ClimbTypography.sans(14, weight: .medium))
+                    .foregroundStyle(Color.climbTextSecondary)
+                    .lineSpacing(3)
+                    .fixedSize(horizontal: false, vertical: true)
+
+                Divider().overlay(Color.white.opacity(0.08))
+
+                FeatureLine(systemImage: "target", title: personalization.previewMissionTitle)
+                FeatureLine(systemImage: "checkmark.seal", title: personalization.habitTitle)
+            }
+        }
     }
 }
 
@@ -964,7 +1349,7 @@ private struct MountainHeroCard: View {
                     if let subtitle {
                         Text(subtitle)
                             .font(ClimbTypography.sans(15, weight: .semibold))
-                            .foregroundStyle(Color.climbGreen)
+                            .foregroundStyle(Color.climbSage)
                             .lineLimit(2)
                             .minimumScaleFactor(0.82)
                     }
@@ -1121,7 +1506,7 @@ private struct MountainBadge: View {
                 .offset(y: 8)
             Image(systemName: "flag.fill")
                 .font(ClimbTypography.sans(22, weight: .bold))
-                .foregroundStyle(Color.climbGreen)
+                .foregroundStyle(Color.climbSage)
                 .offset(x: 18, y: -28)
         }
     }
@@ -1214,8 +1599,8 @@ private struct SummitFlag: View {
                 path.addLine(to: CGPoint(x: 8, y: 18))
                 path.closeSubpath()
             }
-            .fill(Color.climbGreen)
-            .shadow(color: Color.climbGreen.opacity(0.45), radius: 8, x: 0, y: 0)
+            .fill(Color.climbSage)
+            .shadow(color: Color.climbSage.opacity(0.26), radius: 7, x: 0, y: 0)
         }
     }
 }

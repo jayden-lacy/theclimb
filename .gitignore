@@ -1,6 +1,9 @@
 .DS_Store
 DerivedData/
 build/
+.build/
+*.xcarchive/
+*.xcresult/
 *.xcuserstate
 *.xcworkspace/xcuserdata/
 *.xcodeproj/xcuserdata/
@@ -9,7 +12,23 @@ build/
 *.ipa
 *.dSYM.zip
 *.dSYM
+*.app.dSYM/
 node_modules/
 firebase/functions/lib/
 firebase/functions/.env
 firebase/functions/.env.*
+!firebase/functions/.env.example
+
+# Local deploy/build outputs
+.firebase/
+.wrangler/
+worker.js
+
+# Generated App Store and screenshot artifacts
+App Store Previews/
+App Store Previews - */
+The Climb Screenshots/
+screenshots/onboarding-sim/
+
+# Local Firebase exports may contain user data
+firebase/backups/

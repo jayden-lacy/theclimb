@@ -30,4 +30,4 @@ You can delete your account in the Profile tab. Deletion removes your account an
 
 ## Contact
 
-For privacy questions or support, contact support@jointheclimb.app.
+For privacy questions or support, contact support@theclimbapp.org.

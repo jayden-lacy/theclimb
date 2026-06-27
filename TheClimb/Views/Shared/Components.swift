@@ -14,23 +14,24 @@ extension Color {
         )
     }
 
-    static let climbBackgroundDeep = Color(hex: 0x050507)
-    static let climbBackground = Color(hex: 0x050507)
-    static let climbBackgroundLifted = Color(hex: 0x0B0B0F)
-    static let climbSurface = Color(hex: 0x121216)
-    static let climbSurfaceRaised = Color(hex: 0x1A1A20)
-    static let climbSurfaceGlass = Color(hex: 0x15151B, alpha: 0.66)
-    static let climbDivider = Color(hex: 0x2A292F)
-    static let climbTextSecondary = Color(hex: 0xB6B0A6)
-    static let climbMuted = Color(hex: 0x74706A)
-    static let climbGreen = Color(hex: 0x22C55E)
-    static let climbGold = Color(hex: 0xF59E0B)
+    static let climbBackgroundDeep = Color(hex: 0x030403)
+    static let climbBackground = Color(hex: 0x050705)
+    static let climbBackgroundLifted = Color(hex: 0x0A0D0A)
+    static let climbSurface = Color(hex: 0x0B100D)
+    static let climbSurfaceRaised = Color(hex: 0x111812)
+    static let climbSurfaceGlass = Color(hex: 0x0B100D, alpha: 0.88)
+    static let climbDivider = Color(hex: 0x253027)
+    static let climbTextSecondary = Color(hex: 0xB0A89C)
+    static let climbMuted = Color(hex: 0x746F66)
+    static let climbGreen = Color(hex: 0x2BE66B)
+    static let climbGold = Color(hex: 0xF0B24A)
     static let climbRed = Color(hex: 0xEF4444)
-    static let climbBlue = Color(hex: 0x8FB8FF)
+    static let climbBlue = Color(hex: 0x6E9DF2)
     static let climbInk = Color(hex: 0x0B0B0F)
     static let climbMist = Color(hex: 0xFFFFFF)
-    static let climbSage = Color(hex: 0x9AA891)
-    static let climbWarm = Color(hex: 0xD8D0C4)
+    static let climbSage = Color(hex: 0x86E6A2)
+    static let climbWarm = Color(hex: 0xEFE3D0)
+    static let climbAction = Color(hex: 0x2BE66B)
 }
 
 enum ClimbTypography {
@@ -59,10 +60,10 @@ enum ClimbTypography {
 }
 
 enum ClimbMotion {
-    static let quick = Animation.interpolatingSpring(stiffness: 170, damping: 20)
-    static let standard = Animation.interpolatingSpring(stiffness: 120, damping: 18)
-    static let slow = Animation.interpolatingSpring(stiffness: 92, damping: 18)
-    static let focus = Animation.interpolatingSpring(stiffness: 120, damping: 18)
+    static let quick = Animation.interpolatingSpring(stiffness: 230, damping: 28)
+    static let standard = Animation.interpolatingSpring(stiffness: 155, damping: 23)
+    static let slow = Animation.interpolatingSpring(stiffness: 112, damping: 22)
+    static let focus = Animation.interpolatingSpring(stiffness: 138, damping: 21)
 
     static func staggered(_ index: Int) -> Animation {
         standard.delay(Double(min(max(index, 0), 8)) * 0.045)
@@ -118,7 +119,7 @@ struct ScreenContainer<Content: View>: View {
                     content
                 }
                 .padding(.horizontal, 20)
-                .padding(.top, 18)
+                .padding(.top, 14)
                 .padding(.bottom, 28)
             }
             .scrollIndicators(showsScrollIndicators ? .visible : .hidden)
@@ -140,24 +141,23 @@ struct ClimbScreenBackground: View {
     var body: some View {
         ZStack {
             Color.climbBackgroundDeep
-            RadialGradient(
+            LinearGradient(
                 colors: [
-                    Color.climbGreen.opacity(0.12),
-                    Color.climbSage.opacity(0.035),
-                    Color.clear
+                    Color.climbGreen.opacity(0.070),
+                    Color.climbBackground.opacity(0.96),
+                    Color.climbBackgroundDeep
                 ],
-                center: .topTrailing,
-                startRadius: 8,
-                endRadius: 520
+                startPoint: .topTrailing,
+                endPoint: .bottomLeading
             )
-            RadialGradient(
+            LinearGradient(
                 colors: [
-                    Color.climbWarm.opacity(0.055),
-                    Color.clear
+                    Color.black.opacity(0.12),
+                    Color.clear,
+                    Color.climbGreen.opacity(0.030)
                 ],
-                center: .bottomLeading,
-                startRadius: 20,
-                endRadius: 460
+                startPoint: .top,
+                endPoint: .bottom
             )
             AmbientCanvasBackground()
         }
@@ -167,7 +167,7 @@ struct ClimbScreenBackground: View {
 
 struct ClimbCard<Content: View>: View {
     var padding: CGFloat = 20
-    var cornerRadius: CGFloat = 26
+    var cornerRadius: CGFloat = 22
     var isProminent = false
     @ViewBuilder var content: Content
 
@@ -179,15 +179,13 @@ struct ClimbCard<Content: View>: View {
         .padding(padding)
         .background {
             RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
-                .fill(.ultraThinMaterial)
-            RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
-                .fill(isProminent ? Color.climbSurface.opacity(0.86) : Color.climbSurfaceGlass)
+                .fill(isProminent ? Color.climbSurfaceRaised.opacity(0.98) : Color.climbSurfaceGlass)
                 .overlay(
                     LinearGradient(
                         colors: [
-                            Color.white.opacity(isProminent ? 0.105 : 0.065),
+                            Color.white.opacity(isProminent ? 0.060 : 0.035),
                             Color.clear,
-                            Color.black.opacity(0.20)
+                            Color.black.opacity(isProminent ? 0.20 : 0.26)
                         ],
                         startPoint: .topLeading,
                         endPoint: .bottomTrailing
@@ -201,18 +199,19 @@ struct ClimbCard<Content: View>: View {
                 .stroke(
                     LinearGradient(
                         colors: [
-                            Color.white.opacity(isProminent ? 0.18 : 0.11),
-                            Color.climbDivider.opacity(0.64),
-                            Color.black.opacity(0.16)
+                            Color.white.opacity(isProminent ? 0.16 : 0.090),
+                            Color.climbGreen.opacity(isProminent ? 0.14 : 0.050),
+                            Color.climbDivider.opacity(0.90),
+                            Color.black.opacity(0.42)
                         ],
                         startPoint: .topLeading,
                         endPoint: .bottomTrailing
                     ),
-                    lineWidth: 0.8
+                    lineWidth: isProminent ? 1.15 : 0.95
                 )
         )
-        .shadow(color: .black.opacity(isProminent ? 0.44 : 0.30), radius: isProminent ? 30 : 22, x: 0, y: isProminent ? 22 : 14)
-        .shadow(color: Color.climbGreen.opacity(isProminent ? 0.055 : 0.018), radius: isProminent ? 32 : 16, x: 0, y: 0)
+        .shadow(color: .black.opacity(isProminent ? 0.46 : 0.26), radius: isProminent ? 22 : 12, x: 0, y: isProminent ? 16 : 8)
+        .shadow(color: Color.climbGreen.opacity(isProminent ? 0.018 : 0.004), radius: isProminent ? 14 : 8, x: 0, y: 0)
         .climbEntrance()
     }
 }
@@ -225,7 +224,7 @@ private struct AmbientCanvasBackground: View {
                 let y = size.height * (0.10 + CGFloat(index) * 0.105)
                 line.move(to: CGPoint(x: -40, y: y))
                 line.addLine(to: CGPoint(x: size.width + 40, y: y - 16))
-                context.stroke(line, with: .color(Color.white.opacity(index.isMultiple(of: 2) ? 0.009 : 0.005)), lineWidth: 0.5)
+                context.stroke(line, with: .color(Color.white.opacity(index.isMultiple(of: 2) ? 0.008 : 0.004)), lineWidth: 0.5)
             }
         }
         .opacity(0.62)
@@ -258,7 +257,7 @@ struct MetricTile: View {
     var tint: Color = .climbGold
 
     var body: some View {
-        ClimbCard(cornerRadius: 24) {
+        ClimbCard(cornerRadius: 20) {
             HStack(spacing: 10) {
                 Image(systemName: symbol)
                     .font(ClimbTypography.sans(16, weight: .semibold))
@@ -273,6 +272,8 @@ struct MetricTile: View {
             Text(value)
                 .font(ClimbTypography.sans(26, weight: .bold))
                 .foregroundStyle(.white)
+                .lineLimit(1)
+                .minimumScaleFactor(0.78)
         }
     }
 }
@@ -280,7 +281,7 @@ struct MetricTile: View {
 struct PrimaryActionButton: View {
     let title: String
     let systemImage: String
-    var tint: Color = .climbGreen
+    var tint: Color = .climbAction
     var isDisabled = false
     var action: () -> Void
 
@@ -289,20 +290,44 @@ struct PrimaryActionButton: View {
             HapticFeedback.impact(.medium)
             action()
         } label: {
-            Label(title, systemImage: systemImage)
-                .font(ClimbTypography.sans(17, weight: .bold))
-                .frame(maxWidth: .infinity)
-                .padding(.vertical, 17)
+            HStack(spacing: 9) {
+                Image(systemName: systemImage)
+                Text(title)
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.82)
+            }
+            .font(ClimbTypography.sans(16, weight: .bold))
+            .frame(maxWidth: .infinity)
+            .padding(.vertical, 16)
+            .contentShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
         }
         .buttonStyle(ScaleButtonStyle())
+        .frame(maxWidth: .infinity)
         .foregroundStyle(isDisabled ? Color.climbMuted : Color.climbBackground)
-        .background(isDisabled ? Color.climbDivider : tint)
-        .clipShape(RoundedRectangle(cornerRadius: 20, style: .continuous))
+        .background {
+            RoundedRectangle(cornerRadius: 16, style: .continuous)
+                .fill(isDisabled ? Color.climbDivider : tint)
+                .overlay(
+                    LinearGradient(
+                        colors: [
+                            Color.white.opacity(isDisabled ? 0.02 : 0.18),
+                            Color.clear,
+                            Color.black.opacity(isDisabled ? 0.05 : 0.18)
+                        ],
+                        startPoint: .top,
+                        endPoint: .bottom
+                    )
+                    .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
+                )
+        }
+        .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
+        .contentShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
         .overlay(
-            RoundedRectangle(cornerRadius: 20, style: .continuous)
-                .stroke(Color.white.opacity(isDisabled ? 0.04 : 0.22), lineWidth: 0.8)
+            RoundedRectangle(cornerRadius: 16, style: .continuous)
+                .stroke(Color.white.opacity(isDisabled ? 0.04 : 0.24), lineWidth: 0.8)
         )
-        .shadow(color: isDisabled ? .clear : tint.opacity(0.22), radius: 22, x: 0, y: 13)
+        .shadow(color: isDisabled ? .clear : tint.opacity(0.12), radius: 10, x: 0, y: 6)
+        .shadow(color: isDisabled ? .clear : .black.opacity(0.18), radius: 12, x: 0, y: 7)
         .disabled(isDisabled)
         .animation(ClimbMotion.quick, value: isDisabled)
     }
@@ -321,16 +346,33 @@ struct SecondaryActionButton: View {
         } label: {
             Label(title, systemImage: systemImage)
                 .font(ClimbTypography.sans(15, weight: .semibold))
+                .lineLimit(1)
+                .minimumScaleFactor(0.82)
                 .frame(maxWidth: .infinity)
                 .padding(.vertical, 15)
         }
         .buttonStyle(ScaleButtonStyle())
         .foregroundStyle(.white)
-        .background(Color.climbSurfaceRaised.opacity(0.74), in: RoundedRectangle(cornerRadius: 18, style: .continuous))
+        .background(Color.climbSurfaceRaised.opacity(0.94), in: RoundedRectangle(cornerRadius: 16, style: .continuous))
         .overlay(
-            RoundedRectangle(cornerRadius: 18, style: .continuous)
-                .stroke(Color.white.opacity(0.08), lineWidth: 0.8)
+            RoundedRectangle(cornerRadius: 16, style: .continuous)
+                .stroke(Color.white.opacity(0.10), lineWidth: 1)
         )
+        .shadow(color: .black.opacity(0.18), radius: 12, x: 0, y: 7)
+    }
+}
+
+struct ScriptureAttributionText: View {
+    let reference: String
+
+    var body: some View {
+        if reference.localizedCaseInsensitiveContains("(NLT)") {
+            Text("New Living Translation (NLT)")
+                .font(ClimbTypography.sans(11, weight: .semibold))
+                .tracking(0.6)
+                .foregroundStyle(Color.climbMuted)
+                .textCase(.uppercase)
+        }
     }
 }
 
@@ -344,10 +386,10 @@ struct StatusBadge: View {
             .foregroundStyle(color)
             .padding(.horizontal, 10)
             .padding(.vertical, 6)
-            .background(color.opacity(0.11))
+            .background(color.opacity(0.12))
             .overlay(
                 Capsule()
-                    .stroke(color.opacity(0.22), lineWidth: 0.8)
+                    .stroke(color.opacity(0.30), lineWidth: 0.9)
             )
             .clipShape(Capsule())
             .transition(.climbToast)
@@ -360,17 +402,37 @@ struct EmptyState: View {
     let systemImage: String
 
     var body: some View {
-        ClimbCard {
+        VStack(alignment: .leading, spacing: 13) {
             Image(systemName: systemImage)
-                .font(.title2)
-                .foregroundStyle(Color.climbMuted)
-            Text(title)
-                .font(ClimbTypography.sans(18, weight: .semibold))
-                .foregroundStyle(.white)
-            Text(detail)
-                .font(ClimbTypography.sans(14))
-                .foregroundStyle(Color.climbTextSecondary)
+                .font(ClimbTypography.sans(20, weight: .semibold))
+                .foregroundStyle(Color.climbSage)
+                .frame(width: 42, height: 42)
+                .background(Color.climbSage.opacity(0.10), in: RoundedRectangle(cornerRadius: 15, style: .continuous))
+                .overlay(
+                    RoundedRectangle(cornerRadius: 15, style: .continuous)
+                        .stroke(Color.climbSage.opacity(0.14), lineWidth: 0.8)
+                )
+
+            VStack(alignment: .leading, spacing: 5) {
+                Text(title)
+                    .font(ClimbTypography.sans(19, weight: .bold))
+                    .foregroundStyle(.white)
+                    .fixedSize(horizontal: false, vertical: true)
+                Text(detail)
+                    .font(ClimbTypography.sans(14, weight: .medium))
+                    .foregroundStyle(Color.climbTextSecondary)
+                    .lineSpacing(3)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
         }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(18)
+        .background(Color.climbSurfaceGlass.opacity(0.78), in: RoundedRectangle(cornerRadius: 22, style: .continuous))
+        .overlay(
+            RoundedRectangle(cornerRadius: 22, style: .continuous)
+                .stroke(Color.white.opacity(0.07), lineWidth: 0.8)
+        )
+        .climbEntrance()
     }
 }
 
@@ -383,10 +445,11 @@ struct ProgressBar: View {
         GeometryReader { proxy in
             ZStack(alignment: .leading) {
                 Capsule()
-                    .fill(Color.climbDivider)
+                    .fill(Color.climbDivider.opacity(0.88))
                 Capsule()
                     .fill(tint)
                     .frame(width: max(0, min(1, value)) * proxy.size.width)
+                    .shadow(color: tint.opacity(0.28), radius: 8, x: 0, y: 0)
                     .animation(ClimbMotion.standard, value: value)
             }
         }
@@ -428,9 +491,9 @@ struct StreakPill: View {
         }
         .padding(.horizontal, 18)
         .padding(.vertical, 16)
-        .background(Color.climbSurfaceGlass, in: RoundedRectangle(cornerRadius: 24, style: .continuous))
+        .background(Color.climbSurfaceRaised.opacity(0.80), in: RoundedRectangle(cornerRadius: 20, style: .continuous))
         .overlay(
-            RoundedRectangle(cornerRadius: 24, style: .continuous)
+            RoundedRectangle(cornerRadius: 20, style: .continuous)
                 .stroke(Color.white.opacity(0.08), lineWidth: 0.8)
         )
         .climbEntrance()
@@ -442,7 +505,7 @@ struct OVRScoreCard: View {
     let delta: Int
 
     var body: some View {
-        ClimbCard(padding: 22, cornerRadius: 30, isProminent: true) {
+        ClimbCard(padding: 22, cornerRadius: 24, isProminent: true) {
             HStack(alignment: .center, spacing: 18) {
                 ScoreRing(value: Double(score) / 100, text: "\(score)")
 
@@ -485,7 +548,7 @@ struct ScoreRing: View {
                 .stroke(tint, style: StrokeStyle(lineWidth: 8, lineCap: .round))
                 .rotationEffect(.degrees(-90))
                 .animation(ClimbMotion.standard, value: value)
-                .shadow(color: tint.opacity(0.35), radius: 12, x: 0, y: 0)
+                .shadow(color: tint.opacity(0.18), radius: 9, x: 0, y: 0)
             Text(text)
                 .font(ClimbTypography.sans(30, weight: .bold).monospacedDigit())
                 .foregroundStyle(Color.climbMist)
@@ -500,7 +563,7 @@ struct ScaleButtonStyle: ButtonStyle {
         configuration.label
             .scaleEffect(configuration.isPressed ? 0.965 : 1)
             .opacity(configuration.isPressed ? 0.88 : 1)
-            .animation(.interpolatingSpring(stiffness: 120, damping: 18), value: configuration.isPressed)
+            .animation(ClimbMotion.quick, value: configuration.isPressed)
     }
 }
 
@@ -577,6 +640,13 @@ extension AnyTransition {
         )
     }
 
+    static var climbStep: AnyTransition {
+        .asymmetric(
+            insertion: .opacity.combined(with: .move(edge: .trailing)).combined(with: .scale(scale: 0.985)),
+            removal: .opacity.combined(with: .move(edge: .leading)).combined(with: .scale(scale: 0.995))
+        )
+    }
+
     static var climbToast: AnyTransition {
         .asymmetric(
             insertion: .opacity.combined(with: .move(edge: .top)).combined(with: .scale(scale: 0.98)),
@@ -594,9 +664,9 @@ extension View {
         font(ClimbTypography.sans(15))
             .padding(15)
             .foregroundStyle(.white)
-            .background(Color.climbSurfaceRaised.opacity(0.78), in: RoundedRectangle(cornerRadius: 18, style: .continuous))
+            .background(Color.climbSurfaceRaised.opacity(0.78), in: RoundedRectangle(cornerRadius: 16, style: .continuous))
             .overlay(
-                RoundedRectangle(cornerRadius: 18, style: .continuous)
+                RoundedRectangle(cornerRadius: 16, style: .continuous)
                     .stroke(Color.white.opacity(0.08), lineWidth: 0.8)
             )
     }
@@ -627,6 +697,15 @@ enum LegalDocument: Identifiable {
         "Last updated May 18, 2026"
     }
 
+    var onlineURL: URL {
+        switch self {
+        case .privacyPolicy:
+            URL(string: "https://theclimbapp.org/privacy.html")!
+        case .termsOfService:
+            URL(string: "https://theclimbapp.org/terms.html")!
+        }
+    }
+
     var sections: [(String, String)] {
         switch self {
         case .privacyPolicy:
@@ -636,16 +715,17 @@ enum LegalDocument: Identifiable {
                 ("AI Features", "When AI generation is enabled, profile context and recent reflection history may be sent to the secure Firebase Cloud Function to generate a daily plan. API keys are not stored in the app."),
                 ("Community Safety", "Posts can be reported, blocked, or deleted by the post owner. Reports are used to review abuse, harassment, or unsafe content."),
                 ("Deleting Data", "You can delete your account in Profile. This removes your account and synced app data tied to your user ID."),
-                ("Contact", "Questions or privacy requests can be sent to support@jointheclimb.app.")
+                ("Contact", "Questions or privacy requests can be sent to support@theclimbapp.org.")
             ]
         case .termsOfService:
             [
                 ("Use of The Climb", "The Climb is a faith-based discipline and self-improvement app. Use it respectfully and only for lawful purposes."),
                 ("Community Rules", "Do not post harassment, threats, hate, sexual content, spam, or abusive language. We may remove content or restrict access when safety rules are violated."),
                 ("Health and Spiritual Guidance", "The app provides encouragement, reflection, and habit support. It is not medical, mental health, legal, or pastoral counseling."),
+                ("Scripture Attribution", "Scripture quotations marked (NLT) are taken from the Holy Bible, New Living Translation, copyright © 1996, 2004, 2015 by Tyndale House Foundation. Used by permission of Tyndale House Publishers. All rights reserved."),
                 ("Your Content", "You are responsible for posts and reflections you create. You can delete your own community posts from the feed."),
                 ("Account Deletion", "You can sign out or delete your account in Profile. Deleting your account is permanent."),
-                ("Contact", "Support questions can be sent to support@jointheclimb.app.")
+                ("Contact", "Support questions can be sent to support@theclimbapp.org.")
             ]
         }
     }

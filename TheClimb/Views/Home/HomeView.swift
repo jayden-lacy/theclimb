@@ -13,16 +13,20 @@ struct HomeView: View {
 
             if let mission = viewModel.todayMission {
                 missionCard(mission)
+            } else if viewModel.isPreparingTodayPlan {
+                planPreparingCard
             } else {
                 EmptyState(
                     title: "No mission yet",
-                    detail: "Your next daily mission will appear after the plan syncs.",
+                    detail: "Your next daily mission will appear when your plan refreshes.",
                     systemImage: "flag"
                 )
             }
 
             if let devotional = viewModel.todayDevotional {
                 dailyWordSection(devotional)
+            } else if viewModel.isPreparingTodayPlan {
+                devotionalPreparingCard
             }
 
             quickActionRow
@@ -49,23 +53,23 @@ struct HomeView: View {
     }
 
     private func homeHeader(_ profile: UserProfile) -> some View {
-        ClimbCard(padding: 20, cornerRadius: 30, isProminent: true) {
+        VStack(alignment: .leading, spacing: 15) {
             HStack(alignment: .top, spacing: 16) {
                 VStack(alignment: .leading, spacing: 8) {
                     Text(Date.now.formatted(.dateTime.weekday(.wide).month(.abbreviated).day()))
-                        .font(ClimbTypography.sans(12, weight: .bold))
-                        .tracking(1.4)
-                        .foregroundStyle(Color.climbGreen)
+                        .font(ClimbTypography.sans(11, weight: .bold))
+                        .tracking(1.7)
+                        .foregroundStyle(Color.climbGreen.opacity(0.86))
                         .textCase(.uppercase)
 
-                    Text("One step today.")
-                        .font(ClimbTypography.sans(28, weight: .bold))
+                    Text("Protect today.")
+                        .font(ClimbTypography.sans(32, weight: .bold))
                         .foregroundStyle(Color.climbMist)
-                        .lineSpacing(1)
+                        .lineSpacing(0)
                         .fixedSize(horizontal: false, vertical: true)
 
                     Text(homeContextLine(for: profile))
-                        .font(ClimbTypography.sans(14, weight: .medium))
+                        .font(ClimbTypography.sans(14, weight: .semibold))
                         .foregroundStyle(Color.climbTextSecondary)
                         .lineSpacing(3)
                         .fixedSize(horizontal: false, vertical: true)
@@ -73,7 +77,23 @@ struct HomeView: View {
 
                 Spacer(minLength: 0)
 
-                ScoreRing(value: Double(profile.ovrScore) / 100, text: "\(profile.ovrScore)", size: 58)
+                VStack(alignment: .trailing, spacing: 5) {
+                    Text("\(profile.ovrScore)")
+                        .font(ClimbTypography.sans(30, weight: .bold).monospacedDigit())
+                        .foregroundStyle(Color.climbMist)
+                        .contentTransition(.numericText())
+                    Text("OVR")
+                        .font(ClimbTypography.sans(10, weight: .bold))
+                        .tracking(1.2)
+                        .foregroundStyle(Color.climbMuted)
+                }
+                .padding(.horizontal, 13)
+                .padding(.vertical, 11)
+                .background(Color.climbSurfaceRaised.opacity(0.74), in: RoundedRectangle(cornerRadius: 18, style: .continuous))
+                .overlay(
+                    RoundedRectangle(cornerRadius: 18, style: .continuous)
+                        .stroke(Color.white.opacity(0.08), lineWidth: 0.8)
+                )
             }
 
             StreakOverview(
@@ -82,40 +102,43 @@ struct HomeView: View {
                 delta: todayOVRDelta
             )
         }
-        .padding(.top, 2)
+        .padding(.top, 6)
+        .climbEntrance()
     }
 
     private func missionCard(_ mission: Mission) -> some View {
-        ClimbCard(padding: 20, cornerRadius: 32, isProminent: true) {
-            VStack(alignment: .leading, spacing: 14) {
+        HomeSurface(padding: 22, cornerRadius: 30, accent: statusColor(mission.status), prominence: .hero) {
+            VStack(alignment: .leading, spacing: 17) {
                 HStack(alignment: .center, spacing: 12) {
-                    VStack(alignment: .leading, spacing: 3) {
-                        Text(missionLabel(for: mission))
+                    VStack(alignment: .leading, spacing: 5) {
+                        Text("FOCUS SESSION")
                             .font(ClimbTypography.sans(11, weight: .bold))
-                            .tracking(1.5)
-                            .foregroundStyle(Color.climbMuted)
-                        Text("Primary mission")
-                            .font(ClimbTypography.sans(13, weight: .medium))
+                            .tracking(1.7)
+                            .foregroundStyle(Color.climbGreen.opacity(0.86))
+                        Text(missionLabel(for: mission))
+                            .font(ClimbTypography.sans(13, weight: .bold))
                             .foregroundStyle(Color.climbTextSecondary)
                     }
-                    Spacer()
-                    StatusBadge(text: mission.status.rawValue.capitalized, color: statusColor(mission.status))
+                    Spacer(minLength: 0)
+                    HomeStatusBadge(text: mission.status.rawValue.capitalized, color: statusColor(mission.status))
                 }
 
-                Text(mission.title)
-                    .font(ClimbTypography.sans(26, weight: .bold))
-                    .foregroundStyle(Color.climbMist)
-                    .lineSpacing(2)
-                    .fixedSize(horizontal: false, vertical: true)
+                VStack(alignment: .leading, spacing: 10) {
+                    Text(mission.title)
+                        .font(ClimbTypography.sans(29, weight: .bold))
+                        .foregroundStyle(Color.climbMist)
+                        .lineSpacing(2)
+                        .fixedSize(horizontal: false, vertical: true)
 
-                Text(missionSummaryPreview(mission.summary))
-                    .font(ClimbTypography.sans(15, weight: .medium))
-                    .foregroundStyle(Color.climbTextSecondary)
-                    .lineSpacing(4)
-                    .lineLimit(2)
-                    .fixedSize(horizontal: false, vertical: true)
+                    Text(missionSummaryPreview(mission.summary))
+                        .font(ClimbTypography.sans(15, weight: .semibold))
+                        .foregroundStyle(Color.climbTextSecondary)
+                        .lineSpacing(4)
+                        .lineLimit(3)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
 
-                MissionMetadataRow(mission: mission)
+                FocusProtectionStrip(mission: mission)
 
                 PrimaryActionButton(
                     title: missionButtonTitle(mission.status),
@@ -126,7 +149,25 @@ struct HomeView: View {
                 }
             }
         }
-        .activeShimmer(mission.status == .active, cornerRadius: 32)
+        .activeShimmer(mission.status == .active, cornerRadius: 30)
+    }
+
+    private var planPreparingCard: some View {
+        HomeSurface(padding: 20, cornerRadius: 28, accent: .climbGreen, prominence: .primary) {
+            HStack(spacing: 14) {
+                SwiftUI.ProgressView()
+                    .tint(.climbGreen)
+                VStack(alignment: .leading, spacing: 5) {
+                    Text("Building today's mission")
+                        .font(ClimbTypography.sans(21, weight: .bold))
+                        .foregroundStyle(Color.climbMist)
+                    Text("Your home is ready. The daily plan will fill in automatically.")
+                        .font(ClimbTypography.sans(14, weight: .medium))
+                        .foregroundStyle(Color.climbTextSecondary)
+                        .lineSpacing(3)
+                }
+            }
+        }
     }
 
     private func dailyWordSection(_ devotional: Devotional) -> some View {
@@ -136,78 +177,77 @@ struct HomeView: View {
                 focusedDevotional = devotional
             }
         } label: {
-            VStack(alignment: .leading, spacing: 17) {
-                HStack {
-                    Text("DAILY WORD")
-                        .font(ClimbTypography.sans(11, weight: .bold))
-                        .tracking(1.4)
-                        .foregroundStyle(Color.climbGreen)
-                    Spacer()
-                    Text(devotional.bibleVerse)
-                        .font(ClimbTypography.sans(12, weight: .semibold))
-                        .foregroundStyle(Color.climbMuted)
-                }
+            HomeSurface(padding: 0, cornerRadius: 28, accent: .climbWarm, prominence: .quiet) {
+                VStack(alignment: .leading, spacing: 18) {
+                    HStack {
+                        Text("DAILY WORD")
+                            .font(ClimbTypography.sans(11, weight: .bold))
+                            .tracking(1.6)
+                            .foregroundStyle(Color.climbWarm.opacity(0.78))
+                        Spacer()
+                        Text(devotional.bibleVerse)
+                            .font(ClimbTypography.sans(12, weight: .semibold))
+                            .foregroundStyle(Color.climbMuted)
+                    }
 
-                VStack(alignment: .leading, spacing: 10) {
-                    Text(devotional.title)
-                        .font(ClimbTypography.serif(29))
-                        .foregroundStyle(Color.climbMist)
-                        .fixedSize(horizontal: false, vertical: true)
-
-                    if let verseText = devotional.verseText, !verseText.isEmpty {
-                        Text("“\(verseText)”")
-                            .font(ClimbTypography.serif(22))
-                            .foregroundStyle(Color.climbWarm.opacity(0.92))
-                            .lineLimit(4)
-                            .lineSpacing(4)
+                    VStack(alignment: .leading, spacing: 10) {
+                        Text(devotional.title)
+                            .font(ClimbTypography.serif(30))
+                            .foregroundStyle(Color.climbMist)
                             .fixedSize(horizontal: false, vertical: true)
-                    } else {
-                        Text(devotional.explanation)
-                            .font(ClimbTypography.sans(15))
+
+                        if let verseText = devotional.verseText, !verseText.isEmpty {
+                            Text("“\(verseText)”")
+                                .font(ClimbTypography.serif(22))
+                                .foregroundStyle(Color.climbWarm.opacity(0.94))
+                                .lineLimit(4)
+                                .lineSpacing(4)
+                                .fixedSize(horizontal: false, vertical: true)
+                            ScriptureAttributionText(reference: devotional.bibleVerse)
+                        } else {
+                            Text(devotional.explanation)
+                                .font(ClimbTypography.sans(15))
+                                .foregroundStyle(Color.climbTextSecondary)
+                                .lineLimit(4)
+                                .lineSpacing(4)
+                        }
+                    }
+
+                    HStack(alignment: .center, spacing: 10) {
+                        Text(devotional.reflectionQuestion)
+                            .font(ClimbTypography.sans(14, weight: .medium))
                             .foregroundStyle(Color.climbTextSecondary)
-                            .lineLimit(4)
-                            .lineSpacing(4)
+                            .lineLimit(2)
+                        Spacer(minLength: 12)
+                        Label("Read", systemImage: "arrow.up.right")
+                            .font(ClimbTypography.sans(13, weight: .bold))
+                            .foregroundStyle(Color.climbGreen)
+                            .padding(.horizontal, 12)
+                            .padding(.vertical, 8)
+                            .background(Color.climbGreen.opacity(0.10), in: Capsule())
                     }
                 }
-
-                HStack(alignment: .center, spacing: 10) {
-                    Text(devotional.reflectionQuestion)
-                        .font(ClimbTypography.sans(14, weight: .medium))
-                        .foregroundStyle(Color.climbTextSecondary)
-                        .lineLimit(2)
-                    Spacer(minLength: 12)
-                    Label("Read", systemImage: "arrow.up.right")
-                        .font(ClimbTypography.sans(13, weight: .bold))
-                        .foregroundStyle(Color.climbGreen)
-                }
+                .padding(20)
             }
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .padding(.vertical, 22)
-            .padding(.horizontal, 20)
-            .background {
-                RoundedRectangle(cornerRadius: 30, style: .continuous)
-                    .fill(Color.climbSurfaceGlass)
-                    .overlay(
-                        RadialGradient(
-                            colors: [
-                                Color.climbWarm.opacity(0.11),
-                                Color.clear
-                            ],
-                            center: .topLeading,
-                            startRadius: 0,
-                            endRadius: 340
-                        )
-                    )
-            }
-            .overlay(
-                RoundedRectangle(cornerRadius: 30, style: .continuous)
-                    .stroke(Color.white.opacity(0.09), lineWidth: 0.8)
-            )
-            .shadow(color: .black.opacity(0.24), radius: 24, x: 0, y: 16)
         }
         .buttonStyle(.plain)
-        .contentShape(RoundedRectangle(cornerRadius: 30, style: .continuous))
+        .contentShape(RoundedRectangle(cornerRadius: 28, style: .continuous))
         .accessibilityLabel("Read full devotional")
+    }
+
+    private var devotionalPreparingCard: some View {
+        HomeSurface(padding: 20, cornerRadius: 28, accent: .climbWarm, prominence: .quiet) {
+            VStack(alignment: .leading, spacing: 13) {
+                Text("DAILY WORD")
+                    .font(ClimbTypography.sans(11, weight: .bold))
+                    .tracking(1.4)
+                    .foregroundStyle(Color.climbMuted)
+                Text("Preparing scripture for today.")
+                    .font(ClimbTypography.serif(26))
+                    .foregroundStyle(Color.climbMist)
+                ProgressBar(value: 0.42, height: 5, tint: .climbGreen)
+            }
+        }
     }
 
     private var quickActionRow: some View {
@@ -231,13 +271,14 @@ struct HomeView: View {
     }
 
     private func homeContextLine(for profile: UserProfile) -> String {
+        let path = GrowthPathPersonalization.resolve(for: profile)
         guard let mission = viewModel.todayMission else {
-            return "\(profile.mainStruggle.shortLabel) path · preparing today’s plan"
+            return "\(path.primaryGoal) · preparing today’s plan"
         }
 
         switch mission.status {
         case .active:
-            return "Focus window active."
+            return "Mission active · stay with the window"
         case .completed:
             return "\(profile.currentStreak)-day streak · reflection locked in"
         case .recovered:
@@ -246,7 +287,7 @@ struct HomeView: View {
             return "Recovery is available · don’t let one miss become two"
         case .pending:
             if profile.currentStreak == 0 {
-                return "\(profile.mainStruggle.shortLabel) path · start with one honest win"
+                return "\(path.primaryGoal) · start with one honest win"
             }
             return "\(profile.currentStreak)-day streak · protect the next small promise"
         }
@@ -355,6 +396,126 @@ struct HomeView: View {
 
 }
 
+private enum HomeSurfaceProminence {
+    case hero
+    case primary
+    case quiet
+
+    var fillOpacity: Double {
+        switch self {
+        case .hero: 0.92
+        case .primary: 0.88
+        case .quiet: 0.70
+        }
+    }
+
+    var borderOpacity: Double {
+        switch self {
+        case .hero: 0.16
+        case .primary: 0.13
+        case .quiet: 0.08
+        }
+    }
+
+    var greenOpacity: Double {
+        switch self {
+        case .hero: 0.052
+        case .primary: 0.040
+        case .quiet: 0.022
+        }
+    }
+
+    var shadowRadius: CGFloat {
+        switch self {
+        case .hero: 28
+        case .primary: 24
+        case .quiet: 18
+        }
+    }
+}
+
+private struct HomeSurface<Content: View>: View {
+    var padding: CGFloat = 20
+    var cornerRadius: CGFloat = 28
+    var accent: Color = .climbGreen
+    var prominence: HomeSurfaceProminence = .primary
+    @ViewBuilder var content: Content
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            content
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(padding)
+        .background {
+            RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
+                .fill(Color.climbSurface.opacity(prominence.fillOpacity))
+                .overlay {
+                    LinearGradient(
+                        colors: [
+                            Color.white.opacity(0.060),
+                            accent.opacity(prominence.greenOpacity),
+                            Color.black.opacity(0.26)
+                        ],
+                        startPoint: .topLeading,
+                        endPoint: .bottomTrailing
+                    )
+                    .clipShape(RoundedRectangle(cornerRadius: cornerRadius, style: .continuous))
+                }
+                .overlay {
+                    LinearGradient(
+                        colors: [
+                            accent.opacity(prominence.greenOpacity * 0.62),
+                            Color.clear
+                        ],
+                        startPoint: .topTrailing,
+                        endPoint: .center
+                    )
+                    .clipShape(RoundedRectangle(cornerRadius: cornerRadius, style: .continuous))
+                }
+        }
+        .clipShape(RoundedRectangle(cornerRadius: cornerRadius, style: .continuous))
+        .overlay {
+            RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
+                .stroke(
+                    LinearGradient(
+                        colors: [
+                            Color.white.opacity(prominence.borderOpacity),
+                            accent.opacity(prominence.borderOpacity * 0.72),
+                            Color.white.opacity(0.025)
+                        ],
+                        startPoint: .topLeading,
+                        endPoint: .bottomTrailing
+                    ),
+                    lineWidth: 0.7
+                )
+        }
+        .shadow(color: .black.opacity(0.32), radius: prominence.shadowRadius, x: 0, y: 18)
+        .shadow(color: accent.opacity(prominence.greenOpacity * 0.28), radius: prominence.shadowRadius * 0.72, x: 0, y: 0)
+        .climbEntrance()
+    }
+}
+
+private struct HomeStatusBadge: View {
+    let text: String
+    let color: Color
+
+    var body: some View {
+        HStack(spacing: 6) {
+            Circle()
+                .fill(color)
+                .frame(width: 6, height: 6)
+            Text(text)
+                .font(ClimbTypography.sans(12, weight: .bold))
+                .lineLimit(1)
+        }
+        .foregroundStyle(color)
+        .padding(.horizontal, 10)
+        .padding(.vertical, 7)
+        .background(color.opacity(0.10), in: Capsule())
+    }
+}
+
 private struct StreakOverview: View {
     let streak: Int
     let goal: Int
@@ -399,10 +560,10 @@ private struct StreakOverview: View {
             }
         }
         .padding(14)
-        .background(Color.climbBackgroundLifted.opacity(0.82), in: RoundedRectangle(cornerRadius: 24, style: .continuous))
+        .background(Color.climbBackgroundLifted.opacity(0.58), in: RoundedRectangle(cornerRadius: 18, style: .continuous))
         .overlay(
-            RoundedRectangle(cornerRadius: 24, style: .continuous)
-                .stroke(Color.white.opacity(0.08), lineWidth: 0.8)
+            RoundedRectangle(cornerRadius: 18, style: .continuous)
+                .stroke(Color.white.opacity(0.055), lineWidth: 0.6)
         )
     }
 }
@@ -419,10 +580,51 @@ private struct MissionMetadataRow: View {
             MissionMetadataItem(value: mission.category.rawValue, label: "type")
         }
         .padding(.vertical, 13)
-        .background(Color.climbBackgroundLifted.opacity(0.72), in: RoundedRectangle(cornerRadius: 22, style: .continuous))
+        .background(Color.climbBackgroundLifted.opacity(0.52), in: RoundedRectangle(cornerRadius: 22, style: .continuous))
         .overlay(
             RoundedRectangle(cornerRadius: 22, style: .continuous)
-                .stroke(Color.white.opacity(0.07), lineWidth: 0.8)
+                .stroke(Color.white.opacity(0.045), lineWidth: 0.6)
+        )
+    }
+}
+
+private struct FocusProtectionStrip: View {
+    let mission: Mission
+
+    var body: some View {
+        HStack(spacing: 12) {
+            Image(systemName: mission.appBlockingEnabled ? "lock.shield.fill" : "target")
+                .font(ClimbTypography.sans(17, weight: .bold))
+                .foregroundStyle(mission.appBlockingEnabled ? Color.climbGreen : Color.climbGold)
+                .frame(width: 42, height: 42)
+                .background(
+                    (mission.appBlockingEnabled ? Color.climbGreen : Color.climbGold).opacity(0.12),
+                    in: RoundedRectangle(cornerRadius: 16, style: .continuous)
+                )
+
+            VStack(alignment: .leading, spacing: 3) {
+                Text(mission.appBlockingEnabled ? "Blocking ready" : "Manual focus")
+                    .font(ClimbTypography.sans(15, weight: .bold))
+                    .foregroundStyle(Color.climbMist)
+                Text("\(mission.durationMinutes) min · Level \(mission.difficulty) · \(mission.category.rawValue)")
+                    .font(ClimbTypography.sans(12, weight: .bold))
+                    .foregroundStyle(Color.climbGreen.opacity(0.92))
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.75)
+                Text(mission.appBlockingEnabled ? "Selected apps stay locked during this mission." : "Start the timer and keep the promise yourself.")
+                    .font(ClimbTypography.sans(12, weight: .semibold))
+                    .foregroundStyle(Color.climbTextSecondary)
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.82)
+            }
+
+            Spacer(minLength: 0)
+        }
+        .padding(14)
+        .background(Color.climbBackgroundLifted.opacity(0.66), in: RoundedRectangle(cornerRadius: 21, style: .continuous))
+        .overlay(
+            RoundedRectangle(cornerRadius: 21, style: .continuous)
+                .stroke(Color.white.opacity(0.065), lineWidth: 0.75)
         )
     }
 }
@@ -480,10 +682,10 @@ private struct HomeMicroStat: View {
         }
         .frame(maxWidth: .infinity, minHeight: 52, alignment: .leading)
         .padding(.horizontal, 12)
-        .background(Color.climbSurfaceRaised, in: RoundedRectangle(cornerRadius: 18, style: .continuous))
+        .background(Color.climbSurfaceRaised.opacity(0.66), in: RoundedRectangle(cornerRadius: 18, style: .continuous))
         .overlay(
             RoundedRectangle(cornerRadius: 18, style: .continuous)
-                .stroke(Color.white.opacity(0.07), lineWidth: 0.8)
+                .stroke(Color.white.opacity(0.045), lineWidth: 0.6)
         )
     }
 }
@@ -530,7 +732,7 @@ private struct DevotionalFocusOverlay: View {
                         Text("TODAY’S DEVOTIONAL")
                             .font(ClimbTypography.sans(12, weight: .bold))
                             .tracking(1.4)
-                            .foregroundStyle(Color.climbGreen)
+                            .foregroundStyle(Color.climbMuted)
 
                         Text(devotional.title)
                             .font(ClimbTypography.serif(40))
@@ -548,6 +750,7 @@ private struct DevotionalFocusOverlay: View {
                                 .lineSpacing(5)
                                 .fixedSize(horizontal: false, vertical: true)
                                 .padding(.top, 8)
+                            ScriptureAttributionText(reference: devotional.bibleVerse)
                         }
 
                         Text(devotional.explanation)
@@ -558,7 +761,7 @@ private struct DevotionalFocusOverlay: View {
                     }
                     .padding(.bottom, 4)
 
-                    ClimbCard(padding: 22, cornerRadius: 28) {
+                    ClimbCard(padding: 22, cornerRadius: 24) {
                         Text("Reflection")
                             .font(ClimbTypography.sans(13, weight: .bold))
                             .tracking(1)
@@ -569,7 +772,7 @@ private struct DevotionalFocusOverlay: View {
                             .fixedSize(horizontal: false, vertical: true)
                     }
 
-                    ClimbCard(padding: 22, cornerRadius: 28) {
+                    ClimbCard(padding: 22, cornerRadius: 24) {
                         Text("Action")
                             .font(ClimbTypography.sans(13, weight: .bold))
                             .tracking(1)
@@ -610,11 +813,11 @@ private struct DevotionalDetailView: View {
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 16) {
-                ClimbCard(padding: 24, cornerRadius: 32, isProminent: true) {
+                ClimbCard(padding: 24, cornerRadius: 24, isProminent: true) {
                     Label("Today’s Devotional", systemImage: "book.closed.fill")
                         .font(ClimbTypography.sans(12, weight: .bold))
                         .tracking(1.1)
-                        .foregroundStyle(Color.climbGreen)
+                        .foregroundStyle(Color.climbMuted)
 
                     Text(devotional.title)
                         .font(ClimbTypography.serif(38))
@@ -632,6 +835,7 @@ private struct DevotionalDetailView: View {
                             .lineSpacing(5)
                             .fixedSize(horizontal: false, vertical: true)
                             .padding(.vertical, 4)
+                        ScriptureAttributionText(reference: devotional.bibleVerse)
                     }
 
                     Text(devotional.explanation)
@@ -641,7 +845,7 @@ private struct DevotionalDetailView: View {
                         .fixedSize(horizontal: false, vertical: true)
                 }
 
-                ClimbCard(padding: 22, cornerRadius: 28) {
+                ClimbCard(padding: 22, cornerRadius: 24) {
                     Text("Reflection")
                         .font(ClimbTypography.sans(13, weight: .bold))
                         .tracking(1)
@@ -652,7 +856,7 @@ private struct DevotionalDetailView: View {
                         .fixedSize(horizontal: false, vertical: true)
                 }
 
-                ClimbCard(padding: 22, cornerRadius: 28) {
+                ClimbCard(padding: 22, cornerRadius: 24) {
                     Text("Action")
                         .font(ClimbTypography.sans(13, weight: .bold))
                         .tracking(1)
@@ -693,11 +897,12 @@ private struct QuickActionTile: View {
         .foregroundStyle(.white)
         .frame(maxWidth: .infinity)
         .padding(.vertical, 15)
-        .background(Color.climbSurfaceGlass, in: RoundedRectangle(cornerRadius: 20, style: .continuous))
+        .background(Color.climbSurfaceRaised.opacity(0.70), in: RoundedRectangle(cornerRadius: 20, style: .continuous))
         .overlay(
             RoundedRectangle(cornerRadius: 20, style: .continuous)
-                .stroke(Color.white.opacity(0.08), lineWidth: 0.8)
+                .stroke(Color.white.opacity(0.070), lineWidth: 0.7)
         )
+        .shadow(color: .black.opacity(0.16), radius: 12, x: 0, y: 8)
     }
 }
 
@@ -714,7 +919,7 @@ private struct JournalHistoryView: View {
                 )
             } else {
                 ForEach(entries) { entry in
-                    ClimbCard(cornerRadius: 28) {
+                    ClimbCard(cornerRadius: 22) {
                         Text(entry.date, style: .date)
                             .font(ClimbTypography.sans(12, weight: .semibold))
                             .foregroundStyle(Color.climbMuted)

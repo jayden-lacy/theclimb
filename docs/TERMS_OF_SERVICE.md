@@ -30,4 +30,4 @@ These terms may be updated as the app changes. Continued use of The Climb after 
 
 ## Contact
 
-For support questions, contact support@jointheclimb.app.
+For support questions, contact support@theclimbapp.org.

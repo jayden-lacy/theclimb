@@ -24,6 +24,9 @@ final class RemoteAIContentService: MissionGenerationService {
         guard let proxyURL else {
             return try await fallback.dailyPlan(for: profile, history: history)
         }
+        guard Auth.auth().currentUser != nil else {
+            return try await fallback.dailyPlan(for: profile, history: history)
+        }
 
         do {
             var request = URLRequest(url: proxyURL)
@@ -55,7 +58,7 @@ final class RemoteAIContentService: MissionGenerationService {
                 throw AIContentError.invalidPayload
             }
 
-            return decodedResponse.dailyPlan(for: profile)
+            return decodedResponse.dailyPlan(for: profile, recentHistory: history)
         } catch {
             return try await fallback.dailyPlan(for: profile, history: history)
         }
@@ -110,9 +113,13 @@ private struct AIDailyPlanResponse: Decodable {
             challenges.prefix(4).allSatisfy(\.isUsable)
     }
 
-    func dailyPlan(for profile: UserProfile) -> DailyPlan {
+    func dailyPlan(for profile: UserProfile, recentHistory: [ReflectionEntry]) -> DailyPlan {
         let devotionalID = UUID().uuidString
         let category = MissionCategory(rawValue: mission.category) ?? fallbackCategory(for: profile.mainStruggle)
+        let recentFailureCount = recentHistory.prefix(5).filter { $0.failureReason != nil }.count
+        let targetDifficulty = OVRScoring.targetMissionDifficulty(for: profile, recentFailureCount: recentFailureCount)
+        let missionDifficulty = targetDifficulty
+        let minimumDuration = OVRScoring.minimumMissionMinutes(for: missionDifficulty, ageGroup: profile.ageGroup)
 
         return DailyPlan(
             devotional: Devotional(
@@ -132,12 +139,12 @@ private struct AIDailyPlanResponse: Decodable {
                 title: mission.title,
                 summary: mission.summary,
                 category: category,
-                durationMinutes: min(max(mission.durationMinutes, 5), 120),
-                difficulty: min(max(mission.difficulty, 1), 5),
+                durationMinutes: min(max(mission.durationMinutes, minimumDuration), 120),
+                difficulty: missionDifficulty,
                 status: .pending,
                 fallbackTitle: mission.fallbackTitle,
                 fallbackSummary: mission.fallbackSummary,
-                extraChallenges: mission.extraChallenges,
+                extraChallenges: ([OVRScoring.missionPressureLine(for: missionDifficulty)] + mission.extraChallenges).uniquedPreservingOrder,
                 devotionalID: devotionalID,
                 appBlockingEnabled: profile.appBlockingEnabled
             ),
@@ -150,12 +157,20 @@ private struct AIDailyPlanResponse: Decodable {
                 )
             },
             challenges: challenges.map {
-                GrowthChallenge(
+                let difficulty = targetDifficulty
+                let target = max(
+                    $0.targetCompletions ?? OVRScoring.requiredChallengeCompletions(for: difficulty),
+                    OVRScoring.requiredChallengeCompletions(for: difficulty)
+                )
+                return GrowthChallenge(
                     id: $0.id.isEmpty ? UUID().uuidString : $0.id,
                     title: $0.title,
                     detail: $0.detail,
                     category: MissionCategory(rawValue: $0.category) ?? category,
-                    daysRemaining: max(1, $0.daysRemaining)
+                    daysRemaining: max(OVRScoring.challengeWindowDays(for: difficulty), $0.daysRemaining),
+                    difficulty: difficulty,
+                    targetCompletions: target,
+                    completedCount: 0
                 )
             }
         )
@@ -238,6 +253,8 @@ private struct AIChallenge: Decodable {
     let detail: String
     let category: String
     let daysRemaining: Int
+    let difficulty: Int?
+    let targetCompletions: Int?
 
     var isUsable: Bool {
         [
@@ -251,5 +268,17 @@ private struct AIChallenge: Decodable {
 private extension String {
     var trimmedForValidation: String {
         trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+}
+
+private extension Array where Element == String {
+    var uniquedPreservingOrder: [String] {
+        var seen = Set<String>()
+        return filter { value in
+            let key = value.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+            guard !key.isEmpty, !seen.contains(key) else { return false }
+            seen.insert(key)
+            return true
+        }
     }
 }

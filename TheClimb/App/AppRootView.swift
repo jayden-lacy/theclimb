@@ -10,16 +10,22 @@ struct AppRootView: View {
         let appearance = UITabBarAppearance()
         appearance.configureWithTransparentBackground()
         appearance.backgroundEffect = UIBlurEffect(style: .systemUltraThinMaterialDark)
-        appearance.backgroundColor = UIColor(Color.climbBackground.opacity(0.72))
-        appearance.shadowColor = UIColor(Color.white.opacity(0.06))
+        appearance.backgroundColor = UIColor(Color.climbBackground.opacity(0.86))
+        appearance.shadowColor = UIColor(Color.climbGreen.opacity(0.08))
 
-        let selectedColor = UIColor(Color.climbGreen)
+        let selectedColor = UIColor(Color.climbAction)
         let normalColor = UIColor(Color.climbMuted)
         [appearance.stackedLayoutAppearance, appearance.inlineLayoutAppearance, appearance.compactInlineLayoutAppearance].forEach { itemAppearance in
             itemAppearance.selected.iconColor = selectedColor
-            itemAppearance.selected.titleTextAttributes = [.foregroundColor: selectedColor]
+            itemAppearance.selected.titleTextAttributes = [
+                .foregroundColor: selectedColor,
+                .font: UIFont.systemFont(ofSize: 11, weight: .semibold)
+            ]
             itemAppearance.normal.iconColor = normalColor
-            itemAppearance.normal.titleTextAttributes = [.foregroundColor: normalColor]
+            itemAppearance.normal.titleTextAttributes = [
+                .foregroundColor: normalColor,
+                .font: UIFont.systemFont(ofSize: 11, weight: .medium)
+            ]
         }
 
         UITabBar.appearance().standardAppearance = appearance
@@ -56,7 +62,7 @@ struct AppRootView: View {
                         .tabItem { Label(AppTab.profile.rawValue, systemImage: AppTab.profile.symbol) }
                         .tag(AppTab.profile)
                 }
-                .tint(.climbGreen)
+                .tint(.climbAction)
                 .toolbarBackground(.ultraThinMaterial, for: .tabBar)
                 .toolbarBackground(.visible, for: .tabBar)
                 .transition(.climbScreen)

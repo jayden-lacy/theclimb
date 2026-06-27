@@ -45,7 +45,7 @@ If you deploy to a different Firebase project, replace that URL with the deploye
 
 ## Verse Accuracy
 
-The backend gives the model a struggle-specific list of public-domain KJV verses and then overwrites the response with the exact allowed verse reference and quote. That keeps the devotional AI-generated while preventing invented Bible quotes.
+The backend gives the model a struggle-specific list of approved verse references and then overwrites the response with scripture text fetched from the NLT API. That keeps the devotional AI-generated while preventing invented Bible quotes. If the NLT API is unavailable, the function falls back to public-domain verse text so the app can still return a usable plan.
 
 ## Security
 

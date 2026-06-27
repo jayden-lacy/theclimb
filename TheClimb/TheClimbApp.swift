@@ -1,8 +1,10 @@
 import FirebaseAppCheck
 import FirebaseCore
+import FirebaseCrashlytics
 import GoogleSignIn
 import SwiftUI
 import UIKit
+import UserNotifications
 
 final class AppDelegate: NSObject, UIApplicationDelegate {
     func application(
@@ -11,11 +13,15 @@ final class AppDelegate: NSObject, UIApplicationDelegate {
     ) -> Bool {
         #if DEBUG
         AppCheck.setAppCheckProviderFactory(AppCheckDebugProviderFactory())
+        #else
+        AppCheck.setAppCheckProviderFactory(DeviceCheckProviderFactory())
         #endif
 
         if FirebaseApp.app() == nil {
             FirebaseApp.configure()
         }
+        Crashlytics.crashlytics().log("The Climb launched")
+        UNUserNotificationCenter.current().delegate = self
         return true
     }
 
@@ -25,6 +31,15 @@ final class AppDelegate: NSObject, UIApplicationDelegate {
         options: [UIApplication.OpenURLOptionsKey: Any] = [:]
     ) -> Bool {
         GIDSignIn.sharedInstance.handle(url)
+    }
+}
+
+extension AppDelegate: UNUserNotificationCenterDelegate {
+    func userNotificationCenter(
+        _ center: UNUserNotificationCenter,
+        willPresent notification: UNNotification
+    ) async -> UNNotificationPresentationOptions {
+        [.banner, .list, .sound]
     }
 }
 

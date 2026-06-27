@@ -14,7 +14,7 @@ The Climb is a SwiftUI iOS app for daily Christian discipline: devotional, missi
 - Community groups, partners, encouragement feed, group challenges, and leaderboard interactions
 - Widget target for mission, streak, and OVR using shared App Group state
 - Custom Screen Time shield extensions for The Climb-branded blocked app screens and shield button handling
-- Watch app source for mission start/complete flow
+- Watch app source files are present, but no Watch native target is registered in the Xcode project; do not market Watch support for 1.0.
 
 ## Release Integrations
 
@@ -23,7 +23,9 @@ The app is intentionally wired through protocols so release services can replace
 - Firebase Auth and Firestore: implement `AppRepository` in `TheClimb/Services/FirebaseIntegration.swift`
 - OpenAI: `TheClimb/Info.plist` points at the Firebase Functions proxy; deploy `firebase/functions`, set the `OPENAI_API_KEY` secret, and keep prompt IDs and model settings backend-only
 - Screen Time app blocking: request Apple Family Controls approval before relying on app/category shielding in production
-- Watch sync: connect the watch app to iPhone state through WatchConnectivity
+- Watch sync: add a real Watch target, archive path, screenshots, and WatchConnectivity sync before advertising Watch support
+
+Canonical release domain: `https://theclimbapp.org`. Support contact: `support@theclimbapp.org`.
 
 No payments, subscriptions, admin dashboard, or church admin system are included.
 

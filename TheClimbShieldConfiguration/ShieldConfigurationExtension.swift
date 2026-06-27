@@ -37,7 +37,7 @@ final class ShieldConfigurationExtension: ShieldConfigurationDataSource {
             backgroundColor: Palette.background,
             icon: Self.icon,
             title: ShieldConfiguration.Label(text: title, color: Palette.primaryText),
-            subtitle: ShieldConfiguration.Label(text: subtitle, color: Palette.secondaryText),
+            subtitle: ShieldConfiguration.Label(text: FocusShieldTimerStore.subtitle(fallback: subtitle), color: Palette.secondaryText),
             primaryButtonLabel: ShieldConfiguration.Label(text: "Stay Focused", color: .white),
             primaryButtonBackgroundColor: Palette.green
         )
@@ -47,6 +47,56 @@ final class ShieldConfigurationExtension: ShieldConfigurationDataSource {
         let configuration = UIImage.SymbolConfiguration(pointSize: 64, weight: .semibold)
         return UIImage(systemName: "mountain.2.fill", withConfiguration: configuration)?
             .withTintColor(Palette.green, renderingMode: .alwaysOriginal)
+    }
+}
+
+private enum FocusShieldTimerStore {
+    private static let appGroupID = "group.com.jaydenlacy.theclimb"
+    private static let titleKey = "the-climb.active-focus.title.v1"
+    private static let endsAtKey = "the-climb.active-focus.ends-at.v1"
+
+    private static var defaults: UserDefaults {
+        UserDefaults(suiteName: appGroupID) ?? .standard
+    }
+
+    static func subtitle(fallback: String) -> String {
+        let timestamp = defaults.double(forKey: endsAtKey)
+        guard timestamp > 0 else { return fallback }
+
+        let endDate = Date(timeIntervalSince1970: timestamp)
+        let remainingSeconds = Int(ceil(endDate.timeIntervalSinceNow))
+        guard remainingSeconds > 0 else {
+            return "The focus timer has ended. Return to The Climb to reflect and clear this block."
+        }
+
+        let title = trimmedTitle(defaults.string(forKey: titleKey) ?? "Your mission")
+        let remaining = formattedDuration(remainingSeconds)
+        let endTime = DateFormatter.localizedString(from: endDate, dateStyle: .none, timeStyle: .short)
+        return "\(title) - \(remaining) left. Ends at \(endTime)."
+    }
+
+    private static func trimmedTitle(_ title: String) -> String {
+        let cleanTitle = title.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard cleanTitle.count > 44 else { return cleanTitle.isEmpty ? "Your mission" : cleanTitle }
+        return "\(cleanTitle.prefix(44))..."
+    }
+
+    private static func formattedDuration(_ seconds: Int) -> String {
+        if seconds < 60 {
+            return "less than 1 min"
+        }
+
+        let minutes = Int(ceil(Double(seconds) / 60.0))
+        if minutes < 60 {
+            return "\(minutes) min"
+        }
+
+        let hours = minutes / 60
+        let remainingMinutes = minutes % 60
+        if remainingMinutes == 0 {
+            return "\(hours) hr"
+        }
+        return "\(hours) hr \(remainingMinutes) min"
     }
 }
 

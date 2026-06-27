@@ -1,0 +1,110 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <base href="/" />
+    <title>Privacy Policy | The Climb</title>
+    <meta name="description" content="The Climb Privacy Policy." />
+    <meta name="robots" content="index,follow" />
+    <meta name="theme-color" content="#f6f6f2" media="(prefers-color-scheme: light)" />
+    <meta name="theme-color" content="#10110f" media="(prefers-color-scheme: dark)" />
+    <link rel="canonical" href="https://theclimbapp.org/privacy" />
+    <link rel="icon" href="/assets/icons/app-icon.png" />
+    <link rel="apple-touch-icon" href="/assets/icons/app-icon.png" />
+    <script nonce="__CSP_NONCE__">
+      (() => {
+        try {
+          const theme = localStorage.getItem("the-climb-theme") || "system";
+          if (theme === "light" || theme === "dark") {
+            document.documentElement.dataset.theme = theme;
+          }
+        } catch {
+          /* Keep system theme if storage is unavailable. */
+        }
+      })();
+    </script>
+    <link rel="stylesheet" href="/styles.css" />
+  </head>
+  <body>
+    <header class="site-header" aria-label="Primary navigation">
+      <a class="brand" href="/" aria-label="The Climb home">
+        <span class="brand-mark" aria-hidden="true">▲</span>
+        <span>The Climb</span>
+      </a>
+      <nav class="nav-links" aria-label="Site">
+        <a href="/#mission">Mission</a>
+        <a href="/#loop">Loop</a>
+        <a href="/#features">Features</a>
+        <a href="/#download">App Store</a>
+        <a href="/terms">Terms</a>
+      </nav>
+      <div class="header-actions">
+        <div class="theme-control" role="group" aria-label="Theme">
+          <button type="button" data-theme-option="system" aria-label="Use system theme" title="System">
+            <span aria-hidden="true">◐</span>
+          </button>
+          <button type="button" data-theme-option="light" aria-label="Use light theme" title="Light">
+            <span aria-hidden="true">☀</span>
+          </button>
+          <button type="button" data-theme-option="dark" aria-label="Use dark theme" title="Dark">
+            <span aria-hidden="true">☾</span>
+          </button>
+        </div>
+        <a class="nav-action" href="/download">App Store</a>
+      </div>
+    </header>
+
+    <main class="legal-page">
+      <article class="legal-card">
+        <p class="eyebrow">Legal</p>
+        <h1>The Climb Privacy Policy</h1>
+        <p class="legal-updated">Last updated: May 18, 2026</p>
+        <p>
+          The Climb is a faith-based discipline and self-improvement app. This policy
+          explains what the app collects and how that data is used.
+        </p>
+
+        <h2>Data We Collect</h2>
+        <ul>
+          <li>Account information, including authentication ID, email address, and display name.</li>
+          <li>Onboarding choices, including goals, age group, main struggle, streak goal, and notification preferences.</li>
+          <li>Missions, devotionals, journal entries, reflections, progress, streaks, and OVR history.</li>
+          <li>Community content, including posts, group activity, accountability interactions, reports, and blocked users.</li>
+          <li>Technical data needed to sync app state, support widgets, and operate Firebase services.</li>
+        </ul>
+
+        <h2>How We Use Data</h2>
+        <p>
+          We use data to personalize daily missions and devotionals, sync your progress
+          across devices, power accountability features, maintain community safety,
+          respond to support requests, and improve app reliability.
+        </p>
+
+        <h2>AI Features</h2>
+        <p>
+          When AI generation is enabled, profile context and recent reflection history may
+          be sent to a secure Firebase Cloud Function to generate daily missions and devotionals.
+          OpenAI API keys are stored server-side only and are not included in the iOS app.
+        </p>
+
+        <h2>Community Safety</h2>
+        <p>
+          Users can report posts, block users, and delete their own posts. Reports may include
+          the reported post, the reported user ID, the reporting user ID, the reason, and the report time.
+        </p>
+
+        <h2>Account Deletion</h2>
+        <p>
+          You can delete your account in the Profile tab. Deletion removes your account and synced
+          app data tied to your user ID, including profile data, missions, devotionals, journal entries,
+          progress, posts, reports, and leaderboard records.
+        </p>
+
+        <h2>Contact</h2>
+        <p>For privacy questions or support, contact <a href="mailto:support@theclimbapp.org">support@theclimbapp.org</a>.</p>
+      </article>
+    </main>
+    <script src="/script.js"></script>
+  </body>
+</html>

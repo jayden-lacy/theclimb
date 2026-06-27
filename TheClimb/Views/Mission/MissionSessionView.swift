@@ -1,26 +1,52 @@
 import SwiftUI
+#if canImport(FamilyControls) && os(iOS)
+import FamilyControls
+#endif
 
 struct MissionSessionView: View {
     @ObservedObject var viewModel: AppViewModel
     let mission: Mission
 
     @Environment(\.dismiss) private var dismiss
+    @Environment(\.scenePhase) private var scenePhase
     @State private var phase: MissionPhase
     @State private var remainingSeconds: Int
+    @State private var focusEndsAt: Date?
     @State private var hardestPart = ""
     @State private var lessonLearned = ""
     @State private var effortRating = 3.0
     @State private var improvementPlan = ""
     @State private var mood: MoodRating = .steady
     @State private var failureReason = ""
+    @State private var isSubmittingResult = false
+#if canImport(FamilyControls) && os(iOS)
+    @State private var showActivityPicker = false
+    @State private var activitySelection = FamilyActivitySelection()
+    @State private var shouldStartAfterActivityPicker = false
+#endif
 
     private let timer = Timer.publish(every: 1, on: .main, in: .common).autoconnect()
 
     init(viewModel: AppViewModel, mission: Mission) {
         self.viewModel = viewModel
         self.mission = mission
-        _remainingSeconds = State(initialValue: mission.durationMinutes * 60)
-        _phase = State(initialValue: mission.status == .completed ? .complete : .ready)
+        let storedEndDate = ActiveFocusMissionTimerStore.endDate(for: mission.id)
+        let initialRemainingSeconds = storedEndDate.map(Self.remainingSeconds(until:)) ?? mission.durationMinutes * 60
+        _remainingSeconds = State(initialValue: initialRemainingSeconds)
+        _focusEndsAt = State(initialValue: storedEndDate)
+
+        let initialPhase: MissionPhase
+        switch mission.status {
+        case .completed, .recovered:
+            initialPhase = .complete
+        case .active:
+            initialPhase = initialRemainingSeconds <= 0 ? .reflection : .running
+        case .failed:
+            initialPhase = .fallback
+        case .pending:
+            initialPhase = .ready
+        }
+        _phase = State(initialValue: initialPhase)
     }
 
     var body: some View {
@@ -58,12 +84,33 @@ struct MissionSessionView: View {
         .animation(ClimbMotion.standard, value: phase)
         .onReceive(timer) { _ in
             guard phase == .running else { return }
-            if remainingSeconds > 0 {
-                remainingSeconds -= 1
-            } else {
-                phase = .reflection
+            updateRemainingTime()
+        }
+        .onChange(of: scenePhase) { _, newPhase in
+            if newPhase == .active, phase == .running {
+                updateRemainingTime()
             }
         }
+#if canImport(FamilyControls) && os(iOS)
+        .familyActivityPicker(
+            headerText: "Choose the apps, categories, or websites The Climb should block during this mission.",
+            footerText: "These choices stay on this device and will be reused for future focus missions.",
+            isPresented: $showActivityPicker,
+            selection: $activitySelection
+        )
+        .onAppear {
+            activitySelection = ScreenTimeActivitySelectionStore.loadSelection()
+        }
+        .onChange(of: activitySelection) { _, newSelection in
+            ScreenTimeActivitySelectionStore.saveSelection(newSelection)
+        }
+        .onChange(of: showActivityPicker) { _, isPresented in
+            guard !isPresented, shouldStartAfterActivityPicker else { return }
+            shouldStartAfterActivityPicker = false
+            guard activitySelection.hasShieldableContent else { return }
+            startFocusTimer()
+        }
+#endif
     }
 
     private var header: some View {
@@ -93,7 +140,7 @@ struct MissionSessionView: View {
             EmptyView()
         case .reflection:
             reflectionContent
-        case .failed:
+        case .failurePrompt:
             failureContent
         case .fallback:
             fallbackContent
@@ -103,23 +150,14 @@ struct MissionSessionView: View {
     }
 
     private var readyContent: some View {
-        ClimbCard(padding: 22, cornerRadius: 30, isProminent: true) {
+        ClimbCard(padding: 22, cornerRadius: 24, isProminent: true) {
             SectionTitle(title: "Before You Start", subtitle: "Make the room quiet before the timer begins.")
-            VStack(spacing: 10) {
-                ForEach(mission.extraChallenges, id: \.self) { challenge in
-                    Label(challenge, systemImage: "checkmark.circle")
-                        .font(ClimbTypography.sans(14, weight: .medium))
-                        .foregroundStyle(Color.climbTextSecondary)
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                        .padding(13)
-                        .background(Color.climbBackgroundLifted.opacity(0.72), in: RoundedRectangle(cornerRadius: 18, style: .continuous))
-                }
-            }
-            PrimaryActionButton(title: "Begin Focus", systemImage: "play.fill") {
-                phase = .running
-                Task {
-                    await viewModel.startMission(mission)
-                }
+            Text("Set your phone down, breathe once, and give this mission your full attention.")
+                .font(ClimbTypography.sans(15, weight: .medium))
+                .foregroundStyle(Color.climbTextSecondary)
+                .lineSpacing(3)
+            PrimaryActionButton(title: beginFocusButtonTitle, systemImage: "play.fill") {
+                beginFocusFlow()
             }
         }
     }
@@ -173,10 +211,16 @@ struct MissionSessionView: View {
                 VStack(spacing: 12) {
                     PrimaryActionButton(title: "Complete Mission", systemImage: "checkmark.circle.fill") {
                         phase = .reflection
+                        Task {
+                            await viewModel.stopMissionFocus()
+                        }
                     }
 
                     Button {
-                        phase = .failed
+                        phase = .failurePrompt
+                        Task {
+                            await viewModel.stopMissionFocus()
+                        }
                     } label: {
                         Text("End Early")
                             .font(ClimbTypography.sans(14, weight: .semibold))
@@ -192,7 +236,7 @@ struct MissionSessionView: View {
     }
 
     private var reflectionContent: some View {
-        ClimbCard(padding: 22, cornerRadius: 30, isProminent: true) {
+        ClimbCard(padding: 22, cornerRadius: 24, isProminent: true) {
             Text("What did this mission reveal?")
                 .font(ClimbTypography.serif(27))
                 .foregroundStyle(.white)
@@ -209,7 +253,7 @@ struct MissionSessionView: View {
                     .font(ClimbTypography.sans(14, weight: .semibold))
                     .foregroundStyle(.white)
                 Slider(value: $effortRating, in: 1...5, step: 1)
-                    .tint(.climbGreen)
+                    .tint(.climbSage)
             }
 
             TextField("Improvement plan", text: $improvementPlan, axis: .vertical)
@@ -217,12 +261,14 @@ struct MissionSessionView: View {
                 .formFieldStyle()
 
             PrimaryActionButton(
-                title: "Submit Reflection",
+                title: isSubmittingResult ? "Saving Reflection" : "Submit Reflection",
                 systemImage: "square.and.pencil",
-                isDisabled: !reflectionIsValid
+                isDisabled: !reflectionIsValid || isSubmittingResult
             ) {
+                guard !isSubmittingResult else { return }
+                isSubmittingResult = true
                 Task {
-                    await viewModel.completeMission(
+                    let didComplete = await viewModel.completeMission(
                         missionID: mission.id,
                         hardestPart: hardestPart,
                         lessonLearned: lessonLearned,
@@ -230,52 +276,72 @@ struct MissionSessionView: View {
                         improvementPlan: improvementPlan,
                         mood: mood
                     )
-                    phase = .complete
+                    if didComplete {
+                        phase = .complete
+                    }
+                    isSubmittingResult = false
                 }
             }
         }
     }
 
     private var failureContent: some View {
-        ClimbCard(cornerRadius: 30) {
-            SectionTitle(title: "Recovery")
+        ClimbCard(cornerRadius: 22) {
+            SectionTitle(
+                title: "Log the Miss",
+                subtitle: "Be honest, then take the recovery step. One missed mission should not become a missed day."
+            )
             TextField("Why did this mission fail?", text: $failureReason, axis: .vertical)
                 .lineLimit(2...5)
                 .formFieldStyle()
             PrimaryActionButton(
-                title: "Log Failure",
+                title: isSubmittingResult ? "Saving Failure" : "Log Failure",
                 systemImage: "arrow.counterclockwise.circle",
                 tint: .climbRed,
-                isDisabled: failureReason.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+                isDisabled: failureReason.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || isSubmittingResult
             ) {
+                guard !isSubmittingResult else { return }
+                isSubmittingResult = true
                 Task {
-                    await viewModel.failMission(missionID: mission.id, reason: failureReason)
-                    phase = .fallback
+                    let didLogFailure = await viewModel.failMission(missionID: mission.id, reason: failureReason)
+                    if didLogFailure {
+                        phase = .fallback
+                    }
+                    isSubmittingResult = false
                 }
             }
         }
     }
 
     private var fallbackContent: some View {
-        ClimbCard(cornerRadius: 30) {
+        ClimbCard(cornerRadius: 22) {
             SectionTitle(title: mission.fallbackTitle)
             Text(mission.fallbackSummary)
                 .font(ClimbTypography.sans(15))
                 .foregroundStyle(Color.climbTextSecondary)
-            PrimaryActionButton(title: "Complete Recovery", systemImage: "checkmark.seal") {
+            PrimaryActionButton(
+                title: isSubmittingResult ? "Saving Recovery" : "Complete Recovery",
+                systemImage: "checkmark.seal",
+                isDisabled: isSubmittingResult
+            ) {
+                guard !isSubmittingResult else { return }
+                isSubmittingResult = true
                 Task {
-                    await viewModel.completeFallback(missionID: mission.id)
-                    dismiss()
+                    let didCompleteRecovery = await viewModel.completeFallback(missionID: mission.id)
+                    if didCompleteRecovery {
+                        dismiss()
+                    }
+                    isSubmittingResult = false
                 }
             }
         }
     }
 
     private var completeContent: some View {
-        ClimbCard(cornerRadius: 30, isProminent: true) {
+        ClimbCard(cornerRadius: 24, isProminent: true) {
             Image(systemName: "checkmark.seal.fill")
                 .font(.largeTitle)
-                .foregroundStyle(Color.climbGreen)
+                .foregroundStyle(Color.climbSage)
             Text("Mission Complete")
                 .font(ClimbTypography.sans(24, weight: .bold))
                 .foregroundStyle(.white)
@@ -292,6 +358,70 @@ struct MissionSessionView: View {
         !hardestPart.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty &&
         !lessonLearned.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty &&
         !improvementPlan.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+    }
+
+    private func updateRemainingTime() {
+        guard let focusEndsAt else {
+            remainingSeconds = max(remainingSeconds - 1, 0)
+            if remainingSeconds == 0 {
+                phase = .reflection
+                Task {
+                    await viewModel.stopMissionFocus()
+                }
+            }
+            return
+        }
+
+        remainingSeconds = Self.remainingSeconds(until: focusEndsAt)
+        guard remainingSeconds == 0 else { return }
+        phase = .reflection
+        Task {
+            await viewModel.stopMissionFocus()
+        }
+    }
+
+    private static func remainingSeconds(until endDate: Date) -> Int {
+        max(0, Int(ceil(endDate.timeIntervalSinceNow)))
+    }
+
+    private func beginFocusFlow() {
+#if canImport(FamilyControls) && os(iOS)
+        activitySelection = ScreenTimeActivitySelectionStore.loadSelection()
+        if mission.appBlockingEnabled, !activitySelection.hasShieldableContent {
+            shouldStartAfterActivityPicker = true
+            Task {
+                if viewModel.focusState != .authorized, viewModel.focusState != .active {
+                    await viewModel.requestScreenTimeAuthorization()
+                }
+                await MainActor.run {
+                    showActivityPicker = true
+                }
+            }
+            return
+        }
+#endif
+        startFocusTimer()
+    }
+
+    private func startFocusTimer() {
+        let existingEndDate = ActiveFocusMissionTimerStore.endDate(for: mission.id)
+        let endDate = existingEndDate.flatMap { $0 > Date() ? $0 : nil }
+            ?? Date().addingTimeInterval(TimeInterval(max(mission.durationMinutes, 1) * 60))
+        focusEndsAt = endDate
+        remainingSeconds = Self.remainingSeconds(until: endDate)
+        phase = .running
+        Task {
+            await viewModel.startMission(mission, endsAt: endDate)
+        }
+    }
+
+    private var beginFocusButtonTitle: String {
+#if canImport(FamilyControls) && os(iOS)
+        if mission.appBlockingEnabled, !ScreenTimeActivitySelectionStore.loadSelection().hasShieldableContent {
+            return "Choose Apps & Begin"
+        }
+#endif
+        return "Begin Focus"
     }
 
     private var timeString: String {
@@ -327,7 +457,7 @@ struct MissionSessionView: View {
     private var focusStateColor: Color {
         switch viewModel.focusState {
         case .active, .authorized, .simulated:
-            .climbGreen
+            .climbSage
         case .permissionRequired, .selectionRequired, .unavailable:
             .climbGold
         case .denied:
@@ -344,7 +474,7 @@ struct MissionSessionView: View {
         case .permissionRequired:
             "Screen Time permission is needed to block apps."
         case .selectionRequired:
-            "Choose apps to block in Profile to enable shielding."
+            "Choose apps to block, then restart focus."
         case .denied:
             "Screen Time permission was denied."
         case .simulated:
@@ -378,7 +508,7 @@ private enum MissionPhase: Hashable {
     case ready
     case running
     case reflection
-    case failed
+    case failurePrompt
     case fallback
     case complete
 }
