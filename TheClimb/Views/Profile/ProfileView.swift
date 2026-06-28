@@ -102,13 +102,13 @@ struct ProfileView: View {
                     .overlay(Circle().stroke(Color.climbGreen.opacity(0.18), lineWidth: 1))
                     .overlay(
                         Text(String(profile.displayName.prefix(1)))
-                            .font(ClimbTypography.sans(25, weight: .bold))
+                            .font(ClimbTypography.sans(25, weight: .semibold))
                             .foregroundStyle(Color.climbAction)
                     )
 
                 VStack(alignment: .leading, spacing: 5) {
                     Text(profile.displayName)
-                        .font(ClimbTypography.sans(22, weight: .bold))
+                        .font(ClimbTypography.sans(22, weight: .semibold))
                         .foregroundStyle(.white)
                         .lineLimit(1)
                         .minimumScaleFactor(0.78)
@@ -424,7 +424,7 @@ private struct DeleteAccountPasswordSheet: View {
 
                 VStack(alignment: .leading, spacing: 8) {
                     Text("Confirm deletion")
-                        .font(ClimbTypography.sans(28, weight: .bold))
+                        .font(ClimbTypography.sans(28, weight: .semibold))
                         .foregroundStyle(.white)
                     Text("Enter your password so Firebase can verify this is really you before deleting the account.")
                         .font(ClimbTypography.sans(14, weight: .medium))
@@ -471,7 +471,7 @@ private struct SupportContactSheet: View {
 
                 VStack(alignment: .leading, spacing: 8) {
                     Text("Contact Support")
-                        .font(ClimbTypography.sans(28, weight: .bold))
+                        .font(ClimbTypography.sans(28, weight: .semibold))
                         .foregroundStyle(.white)
                     Text("For help, account deletion questions, privacy requests, or community safety concerns.")
                         .font(ClimbTypography.sans(14, weight: .medium))
@@ -482,7 +482,7 @@ private struct SupportContactSheet: View {
 
                 ClimbCard(cornerRadius: 24) {
                     Text(SupportEmail.address)
-                        .font(ClimbTypography.sans(16, weight: .bold))
+                        .font(ClimbTypography.sans(16, weight: .semibold))
                         .foregroundStyle(Color.climbMist)
                     Text("If your email app does not open, copy this address and send us a message from your preferred inbox.")
                         .font(ClimbTypography.sans(13, weight: .medium))
@@ -514,19 +514,19 @@ private struct ProfileDestinationRow: View {
     var body: some View {
         HStack(spacing: 12) {
             Image(systemName: systemImage)
-                .font(ClimbTypography.sans(15, weight: .bold))
+                .font(ClimbTypography.sans(15, weight: .semibold))
                 .foregroundStyle(Color.climbSage)
                 .frame(width: 34, height: 34)
                 .background(Color.climbSage.opacity(0.10), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
 
             Text(title)
-                .font(ClimbTypography.sans(15, weight: .bold))
+                .font(ClimbTypography.sans(15, weight: .semibold))
                 .foregroundStyle(.white)
 
             Spacer(minLength: 0)
 
             Image(systemName: "chevron.right")
-                .font(ClimbTypography.sans(12, weight: .bold))
+                .font(ClimbTypography.sans(12, weight: .semibold))
                 .foregroundStyle(Color.climbMuted)
         }
         .padding(.vertical, 10)

@@ -380,7 +380,7 @@ struct OnboardingView: View {
         VStack(alignment: .leading, spacing: 22) {
             VStack(alignment: .center, spacing: 10) {
                 Text("Let’s climb.")
-                    .font(ClimbTypography.sans(26, weight: .bold))
+                    .font(ClimbTypography.sans(26, weight: .semibold))
                     .foregroundStyle(.white)
                 Text("Your transformation starts today.")
                     .font(ClimbTypography.sans(15, weight: .medium))
@@ -869,7 +869,7 @@ private struct OnboardingProgressHeader: View {
         HStack(spacing: 14) {
             Button(action: onBack) {
                 Image(systemName: "chevron.left")
-                    .font(ClimbTypography.sans(17, weight: .bold))
+                    .font(ClimbTypography.sans(17, weight: .semibold))
                     .foregroundStyle(canGoBack ? .white : Color.climbMuted.opacity(0.45))
                     .frame(width: 34, height: 34)
             }
@@ -879,7 +879,7 @@ private struct OnboardingProgressHeader: View {
             ProgressBar(value: progress, height: 5, tint: .climbSage)
 
             Text("\(min(step.rawValue + 1, OnboardingStep.allCases.count))/\(OnboardingStep.allCases.count)")
-                .font(ClimbTypography.sans(11, weight: .bold))
+                .font(ClimbTypography.sans(11, weight: .semibold))
                 .foregroundStyle(Color.climbMuted)
                 .monospacedDigit()
         }
@@ -893,7 +893,7 @@ private struct StepHeading: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
             Text(title)
-                .font(ClimbTypography.sans(28, weight: .bold))
+                .font(ClimbTypography.sans(28, weight: .semibold))
                 .foregroundStyle(.white)
                 .fixedSize(horizontal: false, vertical: true)
             Text(subtitle)
@@ -915,7 +915,7 @@ private struct AccountValidationNotice: View {
     var body: some View {
         HStack(alignment: .top, spacing: 10) {
             Image(systemName: isReady ? "checkmark.circle.fill" : "exclamationmark.circle.fill")
-                .font(ClimbTypography.sans(14, weight: .bold))
+                .font(ClimbTypography.sans(14, weight: .semibold))
                 .foregroundStyle(isReady ? Color.climbSage : Color.climbGold)
                 .padding(.top, 1)
 
@@ -965,7 +965,7 @@ private struct SelectableRow: View {
                 Spacer()
 
                 Image(systemName: isSelected ? "checkmark.circle.fill" : "circle")
-                    .font(ClimbTypography.sans(18, weight: .bold))
+                    .font(ClimbTypography.sans(18, weight: .semibold))
                     .foregroundStyle(isSelected ? Color.climbSage : Color.climbMuted)
             }
             .padding(14)
@@ -992,7 +992,7 @@ private struct GoalOptionCard: View {
                         .fill(isSelected ? Color.climbSage.opacity(0.14) : Color.climbSurfaceGlass)
                         .frame(width: 34, height: 34)
                     Image(systemName: isSelected ? "checkmark" : goal.systemImage)
-                        .font(ClimbTypography.sans(14, weight: .bold))
+                        .font(ClimbTypography.sans(14, weight: .semibold))
                         .foregroundStyle(isSelected ? Color.climbSage : Color.climbMuted)
                 }
 
@@ -1059,7 +1059,7 @@ private struct BrandWelcomeLockup: View {
 
             VStack(spacing: 14) {
                 Text("The Climb")
-                    .font(ClimbTypography.sans(44, weight: .bold))
+                    .font(ClimbTypography.sans(44, weight: .semibold))
                     .foregroundStyle(Color.climbMist)
                     .lineLimit(1)
                     .minimumScaleFactor(0.78)
@@ -1101,7 +1101,7 @@ private struct WelcomeHeroPanel: View {
             VStack(alignment: .leading, spacing: 0) {
                 HStack {
                     Text("FAITH + DISCIPLINE")
-                        .font(ClimbTypography.sans(11, weight: .bold))
+                        .font(ClimbTypography.sans(11, weight: .semibold))
                         .tracking(1.5)
                         .foregroundStyle(Color.climbSage)
                         .padding(.horizontal, 12)
@@ -1109,7 +1109,7 @@ private struct WelcomeHeroPanel: View {
                         .background(Color.climbSage.opacity(0.10), in: Capsule())
                     Spacer()
                     Image(systemName: "figure.hiking")
-                        .font(ClimbTypography.sans(19, weight: .bold))
+                        .font(ClimbTypography.sans(19, weight: .semibold))
                         .foregroundStyle(Color.climbMist.opacity(0.74))
                         .frame(width: 38, height: 38)
                         .background(.ultraThinMaterial, in: Circle())
@@ -1119,7 +1119,7 @@ private struct WelcomeHeroPanel: View {
 
                 VStack(alignment: .leading, spacing: 12) {
                     Text("The Climb")
-                        .font(ClimbTypography.sans(46, weight: .bold))
+                        .font(ClimbTypography.sans(46, weight: .semibold))
                         .foregroundStyle(Color.climbMist)
                         .lineLimit(1)
                         .minimumScaleFactor(0.78)
@@ -1166,7 +1166,7 @@ private struct WelcomeMicroPill: View {
 
     var body: some View {
         Text(text)
-            .font(ClimbTypography.sans(11, weight: .bold))
+            .font(ClimbTypography.sans(11, weight: .semibold))
             .foregroundStyle(Color.climbWarm.opacity(0.92))
             .lineLimit(1)
             .minimumScaleFactor(0.72)
@@ -1184,13 +1184,13 @@ private struct WelcomeValueTile: View {
     var body: some View {
         VStack(spacing: 8) {
             Image(systemName: systemImage)
-                .font(ClimbTypography.sans(14, weight: .bold))
+                .font(ClimbTypography.sans(14, weight: .semibold))
                 .foregroundStyle(Color.climbSage)
                 .frame(width: 32, height: 32)
                 .background(Color.climbSage.opacity(0.105), in: Circle())
 
             Text(title)
-                .font(ClimbTypography.sans(13, weight: .bold))
+                .font(ClimbTypography.sans(13, weight: .semibold))
                 .foregroundStyle(Color.climbMist)
                 .lineLimit(1)
                 .minimumScaleFactor(0.76)
@@ -1212,7 +1212,7 @@ private struct FeatureLine: View {
     var body: some View {
         HStack(spacing: 12) {
             Image(systemName: systemImage)
-                .font(ClimbTypography.sans(13, weight: .bold))
+                .font(ClimbTypography.sans(13, weight: .semibold))
                 .foregroundStyle(Color.climbSage)
                 .frame(width: 20)
             Text(title)
@@ -1256,14 +1256,14 @@ private struct PersonalizationPreviewCard: View {
             VStack(alignment: .leading, spacing: 12) {
                 HStack(alignment: .center, spacing: 10) {
                     Image(systemName: personalization.category.symbol)
-                        .font(ClimbTypography.sans(16, weight: .bold))
+                        .font(ClimbTypography.sans(16, weight: .semibold))
                         .foregroundStyle(Color.climbSage)
                         .frame(width: 30, height: 30)
                         .background(Color.climbSage.opacity(0.10), in: Circle())
 
                     VStack(alignment: .leading, spacing: 3) {
                         Text("YOUR PATH")
-                            .font(ClimbTypography.sans(11, weight: .bold))
+                            .font(ClimbTypography.sans(11, weight: .semibold))
                             .tracking(1.4)
                             .foregroundStyle(Color.climbMuted)
                         Text(personalization.headline)
@@ -1339,10 +1339,10 @@ private struct MountainHeroCard: View {
                 VStack(alignment: .leading, spacing: 8) {
                     Spacer()
                     Image(systemName: "figure.hiking")
-                        .font(ClimbTypography.sans(34, weight: .bold))
+                        .font(ClimbTypography.sans(34, weight: .semibold))
                         .foregroundStyle(.white.opacity(0.82))
                     Text(title ?? "Begin with one honest step.")
-                        .font(title == nil ? ClimbTypography.serif(26) : ClimbTypography.sans(40, weight: .bold))
+                        .font(title == nil ? ClimbTypography.serif(26) : ClimbTypography.sans(40, weight: .semibold))
                         .foregroundStyle(.white)
                         .lineLimit(2)
                         .minimumScaleFactor(0.85)
@@ -1501,11 +1501,11 @@ private struct MountainBadge: View {
                 .fill(Color.climbSurfaceRaised)
                 .overlay(Circle().stroke(Color.climbDivider, lineWidth: 1))
             Image(systemName: "mountain.2.fill")
-                .font(ClimbTypography.sans(48, weight: .bold))
+                .font(ClimbTypography.sans(48, weight: .semibold))
                 .foregroundStyle(.white.opacity(0.72))
                 .offset(y: 8)
             Image(systemName: "flag.fill")
-                .font(ClimbTypography.sans(22, weight: .bold))
+                .font(ClimbTypography.sans(22, weight: .semibold))
                 .foregroundStyle(Color.climbSage)
                 .offset(x: 18, y: -28)
         }

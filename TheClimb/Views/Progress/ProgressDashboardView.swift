@@ -26,12 +26,12 @@ struct ProgressDashboardView: View {
     private func progressHeader(_ profile: UserProfile) -> some View {
         ClimbCard(padding: 22, cornerRadius: 26, isProminent: true) {
             Text("FOCUS REPORT")
-                .font(ClimbTypography.sans(13, weight: .bold))
+                .font(ClimbTypography.sans(13, weight: .semibold))
                 .foregroundStyle(Color.climbGreen.opacity(0.86))
                 .tracking(1.3)
                 .textCase(.uppercase)
-            Text("Proof you came back.")
-                .font(ClimbTypography.sans(30, weight: .bold))
+            Text("Proof of return.")
+                .font(ClimbTypography.sans(30, weight: .semibold))
                 .foregroundStyle(Color.climbMist)
             Text("\(profile.currentStreak) day streak · \(Int(viewModel.completionRate * 100))% completion · \(profile.mainStruggle.shortLabel) path")
                 .font(ClimbTypography.sans(14, weight: .medium))
@@ -124,7 +124,7 @@ struct ProgressDashboardView: View {
                         .foregroundStyle(.white)
                     Spacer()
                     Text("\(completed)")
-                        .font(ClimbTypography.sans(16, weight: .bold).monospacedDigit())
+                        .font(ClimbTypography.sans(16, weight: .semibold).monospacedDigit())
                         .foregroundStyle(completed > 0 ? Color.climbSage : Color.secondary)
                 }
                 if category != MissionCategory.allCases.last {
@@ -158,13 +158,13 @@ private struct OVRRuleRow: View {
     var body: some View {
         HStack(alignment: .top, spacing: 12) {
             Text(points)
-                .font(ClimbTypography.sans(14, weight: .bold).monospacedDigit())
+                .font(ClimbTypography.sans(14, weight: .semibold).monospacedDigit())
                 .foregroundStyle(points.hasPrefix("-") ? Color.climbRed : Color.climbSage)
                 .frame(width: 46, alignment: .leading)
 
             VStack(alignment: .leading, spacing: 3) {
                 Text(title)
-                    .font(ClimbTypography.sans(15, weight: .bold))
+                    .font(ClimbTypography.sans(15, weight: .semibold))
                     .foregroundStyle(.white)
                 Text(detail)
                     .font(ClimbTypography.sans(12, weight: .medium))

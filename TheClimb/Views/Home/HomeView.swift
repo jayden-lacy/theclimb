@@ -57,13 +57,13 @@ struct HomeView: View {
             HStack(alignment: .top, spacing: 16) {
                 VStack(alignment: .leading, spacing: 8) {
                     Text(Date.now.formatted(.dateTime.weekday(.wide).month(.abbreviated).day()))
-                        .font(ClimbTypography.sans(11, weight: .bold))
+                        .font(ClimbTypography.sans(11, weight: .semibold))
                         .tracking(1.7)
                         .foregroundStyle(Color.climbGreen.opacity(0.86))
                         .textCase(.uppercase)
 
-                    Text("Protect today.")
-                        .font(ClimbTypography.sans(32, weight: .bold))
+                    Text("Hold the line.")
+                        .font(ClimbTypography.sans(32, weight: .semibold))
                         .foregroundStyle(Color.climbMist)
                         .lineSpacing(0)
                         .fixedSize(horizontal: false, vertical: true)
@@ -79,11 +79,11 @@ struct HomeView: View {
 
                 VStack(alignment: .trailing, spacing: 5) {
                     Text("\(profile.ovrScore)")
-                        .font(ClimbTypography.sans(30, weight: .bold).monospacedDigit())
+                        .font(ClimbTypography.sans(30, weight: .semibold).monospacedDigit())
                         .foregroundStyle(Color.climbMist)
                         .contentTransition(.numericText())
                     Text("OVR")
-                        .font(ClimbTypography.sans(10, weight: .bold))
+                        .font(ClimbTypography.sans(10, weight: .semibold))
                         .tracking(1.2)
                         .foregroundStyle(Color.climbMuted)
                 }
@@ -111,12 +111,12 @@ struct HomeView: View {
             VStack(alignment: .leading, spacing: 17) {
                 HStack(alignment: .center, spacing: 12) {
                     VStack(alignment: .leading, spacing: 5) {
-                        Text("FOCUS SESSION")
-                            .font(ClimbTypography.sans(11, weight: .bold))
+                        Text("TODAY'S MISSION")
+                            .font(ClimbTypography.sans(11, weight: .semibold))
                             .tracking(1.7)
                             .foregroundStyle(Color.climbGreen.opacity(0.86))
                         Text(missionLabel(for: mission))
-                            .font(ClimbTypography.sans(13, weight: .bold))
+                            .font(ClimbTypography.sans(13, weight: .semibold))
                             .foregroundStyle(Color.climbTextSecondary)
                     }
                     Spacer(minLength: 0)
@@ -125,7 +125,7 @@ struct HomeView: View {
 
                 VStack(alignment: .leading, spacing: 10) {
                     Text(mission.title)
-                        .font(ClimbTypography.sans(29, weight: .bold))
+                        .font(ClimbTypography.sans(29, weight: .semibold))
                         .foregroundStyle(Color.climbMist)
                         .lineSpacing(2)
                         .fixedSize(horizontal: false, vertical: true)
@@ -159,7 +159,7 @@ struct HomeView: View {
                     .tint(.climbGreen)
                 VStack(alignment: .leading, spacing: 5) {
                     Text("Building today's mission")
-                        .font(ClimbTypography.sans(21, weight: .bold))
+                        .font(ClimbTypography.sans(21, weight: .semibold))
                         .foregroundStyle(Color.climbMist)
                     Text("Your home is ready. The daily plan will fill in automatically.")
                         .font(ClimbTypography.sans(14, weight: .medium))
@@ -181,7 +181,7 @@ struct HomeView: View {
                 VStack(alignment: .leading, spacing: 18) {
                     HStack {
                         Text("DAILY WORD")
-                            .font(ClimbTypography.sans(11, weight: .bold))
+                            .font(ClimbTypography.sans(11, weight: .semibold))
                             .tracking(1.6)
                             .foregroundStyle(Color.climbWarm.opacity(0.78))
                         Spacer()
@@ -220,7 +220,7 @@ struct HomeView: View {
                             .lineLimit(2)
                         Spacer(minLength: 12)
                         Label("Read", systemImage: "arrow.up.right")
-                            .font(ClimbTypography.sans(13, weight: .bold))
+                            .font(ClimbTypography.sans(13, weight: .semibold))
                             .foregroundStyle(Color.climbGreen)
                             .padding(.horizontal, 12)
                             .padding(.vertical, 8)
@@ -239,7 +239,7 @@ struct HomeView: View {
         HomeSurface(padding: 20, cornerRadius: 28, accent: .climbWarm, prominence: .quiet) {
             VStack(alignment: .leading, spacing: 13) {
                 Text("DAILY WORD")
-                    .font(ClimbTypography.sans(11, weight: .bold))
+                    .font(ClimbTypography.sans(11, weight: .semibold))
                     .tracking(1.4)
                     .foregroundStyle(Color.climbMuted)
                 Text("Preparing scripture for today.")
@@ -403,40 +403,40 @@ private enum HomeSurfaceProminence {
 
     var fillOpacity: Double {
         switch self {
-        case .hero: 0.92
-        case .primary: 0.88
-        case .quiet: 0.70
+        case .hero: 0.86
+        case .primary: 0.76
+        case .quiet: 0.58
         }
     }
 
     var borderOpacity: Double {
         switch self {
-        case .hero: 0.16
-        case .primary: 0.13
-        case .quiet: 0.08
+        case .hero: 0.115
+        case .primary: 0.085
+        case .quiet: 0.060
         }
     }
 
-    var greenOpacity: Double {
+    var accentOpacity: Double {
         switch self {
-        case .hero: 0.052
-        case .primary: 0.040
-        case .quiet: 0.022
+        case .hero: 0.050
+        case .primary: 0.030
+        case .quiet: 0.014
         }
     }
 
     var shadowRadius: CGFloat {
         switch self {
-        case .hero: 28
-        case .primary: 24
-        case .quiet: 18
+        case .hero: 22
+        case .primary: 16
+        case .quiet: 10
         }
     }
 }
 
 private struct HomeSurface<Content: View>: View {
     var padding: CGFloat = 20
-    var cornerRadius: CGFloat = 28
+    var cornerRadius: CGFloat = 24
     var accent: Color = .climbGreen
     var prominence: HomeSurfaceProminence = .primary
     @ViewBuilder var content: Content
@@ -450,26 +450,11 @@ private struct HomeSurface<Content: View>: View {
         .background {
             RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
                 .fill(Color.climbSurface.opacity(prominence.fillOpacity))
-                .overlay {
+                .overlay(alignment: .topLeading) {
                     LinearGradient(
-                        colors: [
-                            Color.white.opacity(0.060),
-                            accent.opacity(prominence.greenOpacity),
-                            Color.black.opacity(0.26)
-                        ],
+                        colors: [Color.white.opacity(0.045), accent.opacity(prominence.accentOpacity), Color.clear],
                         startPoint: .topLeading,
                         endPoint: .bottomTrailing
-                    )
-                    .clipShape(RoundedRectangle(cornerRadius: cornerRadius, style: .continuous))
-                }
-                .overlay {
-                    LinearGradient(
-                        colors: [
-                            accent.opacity(prominence.greenOpacity * 0.62),
-                            Color.clear
-                        ],
-                        startPoint: .topTrailing,
-                        endPoint: .center
                     )
                     .clipShape(RoundedRectangle(cornerRadius: cornerRadius, style: .continuous))
                 }
@@ -477,21 +462,9 @@ private struct HomeSurface<Content: View>: View {
         .clipShape(RoundedRectangle(cornerRadius: cornerRadius, style: .continuous))
         .overlay {
             RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
-                .stroke(
-                    LinearGradient(
-                        colors: [
-                            Color.white.opacity(prominence.borderOpacity),
-                            accent.opacity(prominence.borderOpacity * 0.72),
-                            Color.white.opacity(0.025)
-                        ],
-                        startPoint: .topLeading,
-                        endPoint: .bottomTrailing
-                    ),
-                    lineWidth: 0.7
-                )
+                .stroke(Color.white.opacity(prominence.borderOpacity), lineWidth: 0.75)
         }
-        .shadow(color: .black.opacity(0.32), radius: prominence.shadowRadius, x: 0, y: 18)
-        .shadow(color: accent.opacity(prominence.greenOpacity * 0.28), radius: prominence.shadowRadius * 0.72, x: 0, y: 0)
+        .shadow(color: .black.opacity(0.22), radius: prominence.shadowRadius, x: 0, y: prominence == .hero ? 14 : 8)
         .climbEntrance()
     }
 }
@@ -506,7 +479,7 @@ private struct HomeStatusBadge: View {
                 .fill(color)
                 .frame(width: 6, height: 6)
             Text(text)
-                .font(ClimbTypography.sans(12, weight: .bold))
+                .font(ClimbTypography.sans(12, weight: .semibold))
                 .lineLimit(1)
         }
         .foregroundStyle(color)
@@ -539,7 +512,7 @@ private struct StreakOverview: View {
         HStack(alignment: .center, spacing: 13) {
             HStack(alignment: .firstTextBaseline, spacing: 8) {
                 Text("\(streak)")
-                    .font(ClimbTypography.sans(24, weight: .bold).monospacedDigit())
+                    .font(ClimbTypography.sans(24, weight: .semibold).monospacedDigit())
                     .foregroundStyle(Color.climbMist)
                     .contentTransition(.numericText())
                 Text(streak == 1 ? "day steady" : "days steady")
@@ -553,7 +526,7 @@ private struct StreakOverview: View {
                     Spacer(minLength: 6)
                     Text(delta == 0 ? "Steady" : "\(deltaText) OVR")
                 }
-                .font(ClimbTypography.sans(12, weight: .bold))
+                .font(ClimbTypography.sans(12, weight: .semibold))
                 .foregroundStyle(delta >= 0 ? Color.climbGreen : Color.climbRed)
 
                 ProgressBar(value: progress, height: 4, tint: .climbGreen)
@@ -594,7 +567,7 @@ private struct FocusProtectionStrip: View {
     var body: some View {
         HStack(spacing: 12) {
             Image(systemName: mission.appBlockingEnabled ? "lock.shield.fill" : "target")
-                .font(ClimbTypography.sans(17, weight: .bold))
+                .font(ClimbTypography.sans(17, weight: .semibold))
                 .foregroundStyle(mission.appBlockingEnabled ? Color.climbGreen : Color.climbGold)
                 .frame(width: 42, height: 42)
                 .background(
@@ -604,10 +577,10 @@ private struct FocusProtectionStrip: View {
 
             VStack(alignment: .leading, spacing: 3) {
                 Text(mission.appBlockingEnabled ? "Blocking ready" : "Manual focus")
-                    .font(ClimbTypography.sans(15, weight: .bold))
+                    .font(ClimbTypography.sans(15, weight: .semibold))
                     .foregroundStyle(Color.climbMist)
                 Text("\(mission.durationMinutes) min · Level \(mission.difficulty) · \(mission.category.rawValue)")
-                    .font(ClimbTypography.sans(12, weight: .bold))
+                    .font(ClimbTypography.sans(12, weight: .semibold))
                     .foregroundStyle(Color.climbGreen.opacity(0.92))
                     .lineLimit(1)
                     .minimumScaleFactor(0.75)
@@ -636,12 +609,12 @@ private struct MissionMetadataItem: View {
     var body: some View {
         VStack(spacing: 3) {
             Text(value)
-                .font(ClimbTypography.sans(14, weight: .bold).monospacedDigit())
+                .font(ClimbTypography.sans(14, weight: .semibold).monospacedDigit())
                 .foregroundStyle(Color.climbMist)
                 .lineLimit(1)
                 .minimumScaleFactor(0.72)
             Text(label)
-                .font(ClimbTypography.sans(10, weight: .bold))
+                .font(ClimbTypography.sans(10, weight: .semibold))
                 .tracking(0.8)
                 .foregroundStyle(Color.climbMuted)
                 .textCase(.uppercase)
@@ -667,14 +640,14 @@ private struct HomeMicroStat: View {
     var body: some View {
         HStack(spacing: 8) {
             Image(systemName: systemImage)
-                .font(ClimbTypography.sans(12, weight: .bold))
+                .font(ClimbTypography.sans(12, weight: .semibold))
                 .foregroundStyle(tint)
             VStack(alignment: .leading, spacing: 1) {
                 Text(value)
-                    .font(ClimbTypography.sans(16, weight: .bold).monospacedDigit())
+                    .font(ClimbTypography.sans(16, weight: .semibold).monospacedDigit())
                     .foregroundStyle(Color.climbMist)
                 Text(label)
-                    .font(ClimbTypography.sans(10, weight: .bold))
+                    .font(ClimbTypography.sans(10, weight: .semibold))
                     .foregroundStyle(Color.climbMuted)
                     .textCase(.uppercase)
             }
@@ -697,12 +670,12 @@ private struct MissionFact: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 3) {
             Text(value)
-                .font(ClimbTypography.sans(15, weight: .bold).monospacedDigit())
+                .font(ClimbTypography.sans(15, weight: .semibold).monospacedDigit())
                 .foregroundStyle(Color.climbMist)
                 .lineLimit(1)
                 .minimumScaleFactor(0.72)
             Text(label)
-                .font(ClimbTypography.sans(10, weight: .bold))
+                .font(ClimbTypography.sans(10, weight: .semibold))
                 .foregroundStyle(Color.climbMuted)
                 .textCase(.uppercase)
         }
@@ -730,7 +703,7 @@ private struct DevotionalFocusOverlay: View {
                 VStack(alignment: .leading, spacing: 22) {
                     VStack(alignment: .leading, spacing: 16) {
                         Text("TODAY’S DEVOTIONAL")
-                            .font(ClimbTypography.sans(12, weight: .bold))
+                            .font(ClimbTypography.sans(12, weight: .semibold))
                             .tracking(1.4)
                             .foregroundStyle(Color.climbMuted)
 
@@ -763,7 +736,7 @@ private struct DevotionalFocusOverlay: View {
 
                     ClimbCard(padding: 22, cornerRadius: 24) {
                         Text("Reflection")
-                            .font(ClimbTypography.sans(13, weight: .bold))
+                            .font(ClimbTypography.sans(13, weight: .semibold))
                             .tracking(1)
                             .foregroundStyle(Color.climbMuted)
                         Text(devotional.reflectionQuestion)
@@ -774,7 +747,7 @@ private struct DevotionalFocusOverlay: View {
 
                     ClimbCard(padding: 22, cornerRadius: 24) {
                         Text("Action")
-                            .font(ClimbTypography.sans(13, weight: .bold))
+                            .font(ClimbTypography.sans(13, weight: .semibold))
                             .tracking(1)
                             .foregroundStyle(Color.climbMuted)
                         Text(devotional.practicalAction)
@@ -792,7 +765,7 @@ private struct DevotionalFocusOverlay: View {
 
             Button(action: onClose) {
                 Image(systemName: "xmark")
-                    .font(ClimbTypography.sans(15, weight: .bold))
+                    .font(ClimbTypography.sans(15, weight: .semibold))
                     .foregroundStyle(.white)
                     .frame(width: 42, height: 42)
                     .background(Color.climbSurfaceGlass, in: Circle())
@@ -815,7 +788,7 @@ private struct DevotionalDetailView: View {
             VStack(alignment: .leading, spacing: 16) {
                 ClimbCard(padding: 24, cornerRadius: 24, isProminent: true) {
                     Label("Today’s Devotional", systemImage: "book.closed.fill")
-                        .font(ClimbTypography.sans(12, weight: .bold))
+                        .font(ClimbTypography.sans(12, weight: .semibold))
                         .tracking(1.1)
                         .foregroundStyle(Color.climbMuted)
 
@@ -847,7 +820,7 @@ private struct DevotionalDetailView: View {
 
                 ClimbCard(padding: 22, cornerRadius: 24) {
                     Text("Reflection")
-                        .font(ClimbTypography.sans(13, weight: .bold))
+                        .font(ClimbTypography.sans(13, weight: .semibold))
                         .tracking(1)
                         .foregroundStyle(Color.climbMuted)
                     Text(devotional.reflectionQuestion)
@@ -858,7 +831,7 @@ private struct DevotionalDetailView: View {
 
                 ClimbCard(padding: 22, cornerRadius: 24) {
                     Text("Action")
-                        .font(ClimbTypography.sans(13, weight: .bold))
+                        .font(ClimbTypography.sans(13, weight: .semibold))
                         .tracking(1)
                         .foregroundStyle(Color.climbMuted)
                     Text(devotional.practicalAction)

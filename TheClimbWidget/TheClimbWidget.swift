@@ -254,7 +254,7 @@ struct TheClimbWidgetEntryView: View {
                         .frame(width: 58, height: 58)
                     VStack(alignment: .trailing, spacing: 4) {
                         Text("\(entry.streak)")
-                            .font(.system(size: 22, weight: .bold))
+                            .font(.system(size: 22, weight: .semibold))
                             .foregroundStyle(WidgetTheme.primaryText)
                             .lineLimit(1)
                             .minimumScaleFactor(0.62)
@@ -267,7 +267,7 @@ struct TheClimbWidgetEntryView: View {
 
                 VStack(alignment: .leading, spacing: 4) {
                     Text(entry.verseReference)
-                        .font(.system(size: 10, weight: .bold))
+                        .font(.system(size: 10, weight: .semibold))
                         .foregroundStyle(WidgetTheme.warmText)
                         .lineLimit(1)
                         .minimumScaleFactor(0.68)
@@ -283,10 +283,10 @@ struct TheClimbWidgetEntryView: View {
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .padding(9)
-                .background(WidgetTheme.surfaceRaised.opacity(0.78), in: RoundedRectangle(cornerRadius: 15, style: .continuous))
+                .background(WidgetTheme.surfaceRaised.opacity(0.66), in: RoundedRectangle(cornerRadius: 15, style: .continuous))
                 .overlay {
                     RoundedRectangle(cornerRadius: 15, style: .continuous)
-                        .stroke(WidgetTheme.divider.opacity(0.76), lineWidth: 1)
+                        .stroke(WidgetTheme.divider, lineWidth: 1)
                 }
             }
             .frame(width: 110, alignment: .trailing)
@@ -711,20 +711,20 @@ private struct WidgetPartner: Decodable {
 }
 
 private enum WidgetTheme {
-    static let black = Color(red: 0.012, green: 0.016, blue: 0.012)
-    static let surface = Color(red: 0.033, green: 0.047, blue: 0.035)
-    static let surfaceRaised = Color(red: 0.067, green: 0.094, blue: 0.071)
-    static let divider = Color(red: 0.145, green: 0.188, blue: 0.153)
-    static let primaryText = Color.white
-    static let secondaryText = Color(red: 0.690, green: 0.659, blue: 0.612)
-    static let tertiaryText = Color(red: 0.455, green: 0.431, blue: 0.392)
-    static let warmText = Color(red: 0.937, green: 0.890, blue: 0.816)
-    static let green = Color(red: 0.169, green: 0.902, blue: 0.420)
-    static let sage = Color(red: 0.525, green: 0.902, blue: 0.635)
-    static let amber = Color(red: 0.941, green: 0.698, blue: 0.290)
-    static let blue = Color(red: 0.431, green: 0.616, blue: 0.949)
-    static let red = Color(red: 0.937, green: 0.267, blue: 0.267)
-    static let ink = Color(red: 0.027, green: 0.035, blue: 0.029)
+    static let black = Color(red: 0.008, green: 0.012, blue: 0.008)
+    static let ink = Color(red: 0.018, green: 0.024, blue: 0.018)
+    static let surface = Color(red: 0.030, green: 0.041, blue: 0.030)
+    static let surfaceRaised = Color(red: 0.058, green: 0.076, blue: 0.056)
+    static let divider = Color.white.opacity(0.085)
+    static let primaryText = Color(red: 0.973, green: 0.969, blue: 0.949)
+    static let secondaryText = Color(red: 0.718, green: 0.694, blue: 0.655)
+    static let tertiaryText = Color(red: 0.471, green: 0.447, blue: 0.408)
+    static let warmText = Color(red: 0.910, green: 0.866, blue: 0.792)
+    static let green = Color(red: 0.220, green: 0.851, blue: 0.471)
+    static let sage = Color(red: 0.549, green: 0.859, blue: 0.635)
+    static let amber = Color(red: 0.863, green: 0.651, blue: 0.290)
+    static let blue = Color(red: 0.470, green: 0.650, blue: 0.910)
+    static let red = Color(red: 0.910, green: 0.357, blue: 0.357)
 }
 
 private extension ClimbWidgetEntry {
@@ -775,7 +775,7 @@ private struct WidgetTopline: View {
             Spacer(minLength: 4)
 
             Text(trailing)
-                .font(.system(size: 10, weight: .bold))
+                .font(.system(size: 10, weight: .semibold))
                 .foregroundStyle(tint)
                 .lineLimit(1)
                 .minimumScaleFactor(0.62)
@@ -834,13 +834,13 @@ private struct WidgetMetricTile: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 2) {
             Text(value)
-                .font(.system(size: 16, weight: .bold))
+                .font(.system(size: 16, weight: .semibold))
                 .foregroundStyle(WidgetTheme.primaryText)
                 .lineLimit(1)
                 .minimumScaleFactor(0.58)
                 .allowsTightening(true)
             Text(label.uppercased())
-                .font(.system(size: 8, weight: .bold))
+                .font(.system(size: 8, weight: .semibold))
                 .foregroundStyle(tint)
                 .lineLimit(1)
                 .minimumScaleFactor(0.70)
@@ -848,10 +848,10 @@ private struct WidgetMetricTile: View {
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(.horizontal, 8)
         .padding(.vertical, 7)
-        .background(WidgetTheme.surfaceRaised.opacity(0.82), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+        .background(WidgetTheme.surfaceRaised.opacity(0.62), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
         .overlay {
             RoundedRectangle(cornerRadius: 12, style: .continuous)
-                .stroke(WidgetTheme.divider.opacity(0.88), lineWidth: 1)
+                .stroke(WidgetTheme.divider, lineWidth: 1)
         }
     }
 }
@@ -892,10 +892,10 @@ private struct WidgetMissionPanel: View {
             }
         }
         .padding(12)
-        .background(WidgetTheme.surfaceRaised.opacity(0.88), in: RoundedRectangle(cornerRadius: 19, style: .continuous))
+        .background(WidgetTheme.surfaceRaised.opacity(0.74), in: RoundedRectangle(cornerRadius: 19, style: .continuous))
         .overlay(alignment: .leading) {
             RoundedRectangle(cornerRadius: 19, style: .continuous)
-                .stroke(WidgetTheme.divider.opacity(0.92), lineWidth: 1)
+                .stroke(WidgetTheme.divider, lineWidth: 1)
         }
     }
 }
@@ -907,7 +907,7 @@ private struct WidgetDailyWordPanel: View {
         VStack(alignment: .leading, spacing: 6) {
             HStack(spacing: 7) {
                 Text(entry.verseReference)
-                    .font(.system(size: 10, weight: .bold))
+                    .font(.system(size: 10, weight: .semibold))
                     .foregroundStyle(WidgetTheme.amber)
                     .lineLimit(1)
                     .minimumScaleFactor(0.64)
@@ -915,7 +915,7 @@ private struct WidgetDailyWordPanel: View {
                     .truncationMode(.tail)
                 Spacer(minLength: 4)
                 Text("Daily Word")
-                    .font(.system(size: 9, weight: .bold))
+                    .font(.system(size: 9, weight: .semibold))
                     .foregroundStyle(WidgetTheme.tertiaryText)
                     .lineLimit(1)
                     .minimumScaleFactor(0.74)
@@ -941,7 +941,7 @@ private struct WidgetDailyWordPanel: View {
         .padding(11)
         .background(
             LinearGradient(
-                colors: [WidgetTheme.surfaceRaised.opacity(0.88), WidgetTheme.amber.opacity(0.055)],
+                colors: [WidgetTheme.surfaceRaised.opacity(0.74), WidgetTheme.amber.opacity(0.035)],
                 startPoint: .topLeading,
                 endPoint: .bottomTrailing
             ),
@@ -949,7 +949,7 @@ private struct WidgetDailyWordPanel: View {
         )
         .overlay {
             RoundedRectangle(cornerRadius: 18, style: .continuous)
-                .stroke(WidgetTheme.divider.opacity(0.82), lineWidth: 1)
+                .stroke(WidgetTheme.divider, lineWidth: 1)
         }
     }
 }
@@ -967,19 +967,19 @@ private struct WidgetMiniPanel: View {
                 Circle()
                     .fill(tint.opacity(0.13))
                 Image(systemName: symbol)
-                    .font(.system(size: 11, weight: .bold))
+                    .font(.system(size: 11, weight: .semibold))
                     .foregroundStyle(tint)
             }
             .frame(width: 26, height: 26)
 
             VStack(alignment: .leading, spacing: 2) {
                 Text(title)
-                    .font(.system(size: 9, weight: .bold))
+                    .font(.system(size: 9, weight: .semibold))
                     .foregroundStyle(WidgetTheme.tertiaryText)
                     .lineLimit(1)
                     .minimumScaleFactor(0.72)
                 Text(value)
-                    .font(.system(size: 11, weight: .bold))
+                    .font(.system(size: 11, weight: .semibold))
                     .foregroundStyle(WidgetTheme.primaryText)
                     .lineLimit(1)
                     .minimumScaleFactor(0.58)
@@ -999,10 +999,10 @@ private struct WidgetMiniPanel: View {
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(9)
-        .background(WidgetTheme.surfaceRaised.opacity(0.78), in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+        .background(WidgetTheme.surfaceRaised.opacity(0.66), in: RoundedRectangle(cornerRadius: 16, style: .continuous))
         .overlay {
             RoundedRectangle(cornerRadius: 16, style: .continuous)
-                .stroke(WidgetTheme.divider.opacity(0.80), lineWidth: 1)
+                .stroke(WidgetTheme.divider, lineWidth: 1)
         }
     }
 }
@@ -1014,7 +1014,7 @@ private struct CompactMetric: View {
     var body: some View {
         HStack(alignment: .firstTextBaseline, spacing: 3) {
             Text(value)
-                .font(.system(size: 14, weight: .bold))
+                .font(.system(size: 14, weight: .semibold))
                 .foregroundStyle(WidgetTheme.primaryText)
                 .lineLimit(1)
                 .minimumScaleFactor(0.58)
@@ -1035,7 +1035,7 @@ private struct WidgetBadge: View {
 
     var body: some View {
         Label(text, systemImage: symbol)
-            .font(.system(size: 10, weight: .bold))
+            .font(.system(size: 10, weight: .semibold))
             .foregroundStyle(tint)
             .lineLimit(1)
             .minimumScaleFactor(0.58)
@@ -1044,7 +1044,7 @@ private struct WidgetBadge: View {
             .labelStyle(.titleAndIcon)
             .padding(.horizontal, 7)
             .padding(.vertical, 5)
-            .background(WidgetTheme.surfaceRaised.opacity(0.70), in: Capsule())
+            .background(WidgetTheme.surfaceRaised.opacity(0.62), in: Capsule())
     }
 }
 
@@ -1055,7 +1055,7 @@ private struct ProgressBar: View {
     var body: some View {
         GeometryReader { proxy in
             ZStack(alignment: .leading) {
-                Capsule().fill(WidgetTheme.divider.opacity(0.72))
+                Capsule().fill(WidgetTheme.divider)
                 Capsule()
                     .fill(tint)
                     .frame(width: max(0, min(1, value)) * proxy.size.width)
@@ -1072,20 +1072,20 @@ private struct ScoreRing: View {
     var body: some View {
         ZStack {
             Circle()
-                .stroke(WidgetTheme.divider.opacity(0.72), lineWidth: 7)
+                .stroke(WidgetTheme.divider, lineWidth: 7)
             Circle()
                 .trim(from: 0, to: max(0, min(1, value)))
                 .stroke(WidgetTheme.green, style: StrokeStyle(lineWidth: 7, lineCap: .round))
                 .rotationEffect(.degrees(-90))
             VStack(spacing: 1) {
                 Text(label)
-                    .font(.system(size: 21, weight: .bold))
+                    .font(.system(size: 21, weight: .semibold))
                     .foregroundStyle(WidgetTheme.primaryText)
                     .lineLimit(1)
                     .minimumScaleFactor(0.58)
                     .allowsTightening(true)
                 Text(caption)
-                    .font(.system(size: 8, weight: .bold))
+                    .font(.system(size: 8, weight: .semibold))
                     .foregroundStyle(WidgetTheme.tertiaryText)
                     .lineLimit(1)
                     .minimumScaleFactor(0.70)
@@ -1111,7 +1111,7 @@ private struct WidgetProgressRow: View {
                     .allowsTightening(true)
                 Spacer(minLength: 6)
                 Text(value)
-                    .font(.system(size: 11, weight: .bold))
+                    .font(.system(size: 11, weight: .semibold))
                     .foregroundStyle(tint)
                     .lineLimit(1)
                     .minimumScaleFactor(0.62)
@@ -1131,7 +1131,7 @@ private struct PartnerStrip: View {
         HStack(spacing: 10) {
             ZStack {
                 Circle()
-                    .fill(WidgetTheme.green.opacity(0.16))
+                    .fill(WidgetTheme.green.opacity(0.12))
                 Image(systemName: "person.2.fill")
                     .font(.caption.weight(.bold))
                     .foregroundStyle(WidgetTheme.green)
@@ -1140,7 +1140,7 @@ private struct PartnerStrip: View {
 
             VStack(alignment: .leading, spacing: 2) {
                 Text(name)
-                    .font(.system(size: 12, weight: .bold))
+                    .font(.system(size: 12, weight: .semibold))
                     .foregroundStyle(WidgetTheme.primaryText)
                     .lineLimit(1)
                     .minimumScaleFactor(0.78)
@@ -1154,10 +1154,10 @@ private struct PartnerStrip: View {
             Spacer(minLength: 0)
         }
         .padding(10)
-        .background(WidgetTheme.surfaceRaised.opacity(0.78), in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+        .background(WidgetTheme.surfaceRaised.opacity(0.66), in: RoundedRectangle(cornerRadius: 16, style: .continuous))
         .overlay {
             RoundedRectangle(cornerRadius: 16, style: .continuous)
-                .stroke(WidgetTheme.divider.opacity(0.82), lineWidth: 1)
+                .stroke(WidgetTheme.divider, lineWidth: 1)
         }
     }
 }
@@ -1169,7 +1169,7 @@ private extension View {
                 WidgetTheme.black
                 LinearGradient(
                     colors: [
-                        WidgetTheme.green.opacity(0.075),
+                        WidgetTheme.green.opacity(0.040),
                         WidgetTheme.surface.opacity(0.98),
                         WidgetTheme.ink,
                         WidgetTheme.black

@@ -117,11 +117,11 @@ struct MissionSessionView: View {
         ClimbCard(padding: 22, cornerRadius: 24) {
             VStack(alignment: .leading, spacing: 10) {
                 Text("MISSION")
-                    .font(ClimbTypography.sans(12, weight: .bold))
+                    .font(ClimbTypography.sans(12, weight: .semibold))
                     .tracking(1.4)
                     .foregroundStyle(Color.climbMuted)
                 Text(mission.title)
-                    .font(ClimbTypography.sans(28, weight: .bold))
+                    .font(ClimbTypography.sans(28, weight: .semibold))
                     .foregroundStyle(.white)
                 Text(mission.summary)
                     .font(ClimbTypography.sans(15))
@@ -170,7 +170,7 @@ struct MissionSessionView: View {
                     StatusBadge(text: focusStateLabel, color: focusStateColor)
                     Spacer()
                     Text("FOCUS WINDOW")
-                        .font(ClimbTypography.sans(11, weight: .bold))
+                        .font(ClimbTypography.sans(11, weight: .semibold))
                         .tracking(1.5)
                         .foregroundStyle(Color.climbMuted)
                 }
@@ -189,7 +189,7 @@ struct MissionSessionView: View {
 
                     VStack(spacing: 10) {
                         Text(mission.title)
-                            .font(ClimbTypography.sans(26, weight: .bold))
+                            .font(ClimbTypography.sans(26, weight: .semibold))
                             .foregroundStyle(.white)
                             .multilineTextAlignment(.center)
                             .lineSpacing(2)
@@ -343,7 +343,7 @@ struct MissionSessionView: View {
                 .font(.largeTitle)
                 .foregroundStyle(Color.climbSage)
             Text("Mission Complete")
-                .font(ClimbTypography.sans(24, weight: .bold))
+                .font(ClimbTypography.sans(24, weight: .semibold))
                 .foregroundStyle(.white)
             Text("Your OVR, streak, journal, and progress history have been updated.")
                 .font(ClimbTypography.sans(15))
@@ -541,18 +541,18 @@ private struct FocusTimerRing: View {
 
             VStack(spacing: 12) {
                 Image(systemName: icon)
-                    .font(ClimbTypography.sans(22, weight: .bold))
+                    .font(ClimbTypography.sans(22, weight: .semibold))
                     .foregroundStyle(tint)
                     .frame(width: 48, height: 48)
                     .background(tint.opacity(0.12), in: Circle())
 
                 Text(time)
-                    .font(ClimbTypography.sans(54, weight: .bold).monospacedDigit())
+                    .font(ClimbTypography.sans(54, weight: .semibold).monospacedDigit())
                     .foregroundStyle(.white)
                     .contentTransition(.numericText())
 
                 Text("stay present")
-                    .font(ClimbTypography.sans(11, weight: .bold))
+                    .font(ClimbTypography.sans(11, weight: .semibold))
                     .tracking(1.5)
                     .foregroundStyle(Color.climbMuted)
                     .textCase(.uppercase)

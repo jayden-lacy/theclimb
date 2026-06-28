@@ -10,10 +10,10 @@ struct AppRootView: View {
         let appearance = UITabBarAppearance()
         appearance.configureWithTransparentBackground()
         appearance.backgroundEffect = UIBlurEffect(style: .systemUltraThinMaterialDark)
-        appearance.backgroundColor = UIColor(Color.climbBackground.opacity(0.86))
-        appearance.shadowColor = UIColor(Color.climbGreen.opacity(0.08))
+        appearance.backgroundColor = UIColor(Color.climbBackground.opacity(0.92))
+        appearance.shadowColor = UIColor(Color.white.opacity(0.08))
 
-        let selectedColor = UIColor(Color.climbAction)
+        let selectedColor = UIColor(Color.climbMist)
         let normalColor = UIColor(Color.climbMuted)
         [appearance.stackedLayoutAppearance, appearance.inlineLayoutAppearance, appearance.compactInlineLayoutAppearance].forEach { itemAppearance in
             itemAppearance.selected.iconColor = selectedColor
@@ -113,7 +113,7 @@ private struct LaunchLoadingView: View {
                 SwiftUI.ProgressView()
                     .tint(.climbGreen)
                 Text("Preparing your climb")
-                    .font(ClimbTypography.sans(18, weight: .bold))
+                    .font(ClimbTypography.sans(18, weight: .semibold))
                     .foregroundStyle(.white)
             }
         }

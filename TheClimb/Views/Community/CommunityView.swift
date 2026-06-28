@@ -68,12 +68,12 @@ struct CommunityView: View {
     private var communityHeader: some View {
         VStack(alignment: .leading, spacing: 6) {
             Text("Accountability")
-                .font(ClimbTypography.sans(13, weight: .bold))
+                .font(ClimbTypography.sans(13, weight: .semibold))
                 .foregroundStyle(Color.climbGreen.opacity(0.86))
                 .tracking(1.3)
                 .textCase(.uppercase)
             Text("Close circle.")
-                .font(ClimbTypography.sans(32, weight: .bold))
+                .font(ClimbTypography.sans(32, weight: .semibold))
                 .foregroundStyle(Color.climbMist)
                 .fixedSize(horizontal: false, vertical: true)
             Text(primaryPartner.map { "\($0.name) is your pressure point today. Keep it personal, honest, and small." } ?? "Invite someone to climb with you.")
@@ -120,13 +120,13 @@ struct CommunityView: View {
                     .overlay(Circle().stroke(Color.climbSage.opacity(0.20), lineWidth: 1))
                     .overlay(
                         Text(String(partner.name.prefix(1)))
-                            .font(ClimbTypography.sans(21, weight: .bold))
+                            .font(ClimbTypography.sans(21, weight: .semibold))
                             .foregroundStyle(Color.climbAction)
                     )
 
                 VStack(alignment: .leading, spacing: 5) {
                     Text(partner.name)
-                        .font(ClimbTypography.sans(24, weight: .bold))
+                        .font(ClimbTypography.sans(24, weight: .semibold))
                         .foregroundStyle(Color.climbMist)
                     Text(partner.focus.shortLabel + " partner")
                         .font(ClimbTypography.sans(13, weight: .medium))
@@ -136,7 +136,7 @@ struct CommunityView: View {
                 Spacer(minLength: 0)
 
                 Text(isPending ? "Pending" : (hasCheckedIn ? "Partner's turn" : "Your move"))
-                    .font(ClimbTypography.sans(11, weight: .bold))
+                    .font(ClimbTypography.sans(11, weight: .semibold))
                     .foregroundStyle(isPending ? Color.climbMuted : (hasCheckedIn ? Color.climbSage : Color.climbGold))
                     .padding(.horizontal, 10)
                     .padding(.vertical, 6)
@@ -175,14 +175,14 @@ struct CommunityView: View {
         ClimbCard(padding: 15, cornerRadius: 22) {
             HStack(spacing: 12) {
                 Image(systemName: "square.and.arrow.up")
-                    .font(ClimbTypography.sans(16, weight: .bold))
+                    .font(ClimbTypography.sans(16, weight: .semibold))
                     .foregroundStyle(Color.climbSage)
                     .frame(width: 36, height: 36)
                     .background(Color.climbSage.opacity(0.10), in: RoundedRectangle(cornerRadius: 14, style: .continuous))
 
                 VStack(alignment: .leading, spacing: 2) {
                     Text("Invite a friend")
-                        .font(ClimbTypography.sans(15, weight: .bold))
+                        .font(ClimbTypography.sans(15, weight: .semibold))
                         .foregroundStyle(.white)
                     Text("Start another accountability pair.")
                         .font(ClimbTypography.sans(12, weight: .medium))
@@ -196,7 +196,7 @@ struct CommunityView: View {
                         showOrCreatePartnerInvite()
                     } label: {
                         Label(isCreatingPartnerInvite ? "Creating" : "Invite", systemImage: "person.badge.plus")
-                            .font(ClimbTypography.sans(13, weight: .bold))
+                            .font(ClimbTypography.sans(13, weight: .semibold))
                             .lineLimit(1)
                             .minimumScaleFactor(0.75)
                             .foregroundStyle(Color.climbBackground)
@@ -211,7 +211,7 @@ struct CommunityView: View {
                         showAcceptPartnerInvite = true
                     } label: {
                         Label("Enter", systemImage: "number")
-                            .font(ClimbTypography.sans(13, weight: .bold))
+                            .font(ClimbTypography.sans(13, weight: .semibold))
                             .lineLimit(1)
                             .minimumScaleFactor(0.75)
                             .foregroundStyle(Color.climbTextSecondary)
@@ -234,7 +234,7 @@ struct CommunityView: View {
 
                 VStack(alignment: .leading, spacing: 3) {
                     Text("View all partners")
-                        .font(ClimbTypography.sans(15, weight: .bold))
+                        .font(ClimbTypography.sans(15, weight: .semibold))
                         .foregroundStyle(.white)
                     Text(partnerStatusSummary)
                         .font(ClimbTypography.sans(12, weight: .medium))
@@ -244,7 +244,7 @@ struct CommunityView: View {
                 Spacer(minLength: 0)
 
                 Image(systemName: "chevron.right")
-                    .font(ClimbTypography.sans(12, weight: .bold))
+                    .font(ClimbTypography.sans(12, weight: .semibold))
                     .foregroundStyle(Color.climbMuted)
             }
             .padding(14)
@@ -338,11 +338,11 @@ struct CommunityView: View {
                             Image(systemName: "person.2.fill")
                                 .foregroundStyle(Color.climbGreen)
                             Text("\(viewModel.partners.count - 1) more partner")
-                                .font(ClimbTypography.sans(13, weight: .bold))
+                                .font(ClimbTypography.sans(13, weight: .semibold))
                                 .foregroundStyle(.white)
                             Spacer()
                             Image(systemName: "chevron.right")
-                                .font(ClimbTypography.sans(12, weight: .bold))
+                                .font(ClimbTypography.sans(12, weight: .semibold))
                                 .foregroundStyle(Color.climbMuted)
                         }
                         .padding(.horizontal, 14)
@@ -363,13 +363,13 @@ struct CommunityView: View {
                     .frame(width: 48, height: 48)
                     .overlay(
                         Text(String(partner.name.prefix(1)))
-                            .font(ClimbTypography.sans(17, weight: .bold))
+                            .font(ClimbTypography.sans(17, weight: .semibold))
                             .foregroundStyle(Color.climbGreen)
                     )
                 
                 VStack(alignment: .leading, spacing: 4) {
                     Text(partner.name)
-                        .font(ClimbTypography.sans(19, weight: .bold))
+                        .font(ClimbTypography.sans(19, weight: .semibold))
                         .foregroundStyle(.white)
                     Text("\(partner.focus.shortLabel) partner - \(partner.lastCheckIn)")
                         .font(ClimbTypography.sans(13, weight: .medium))
@@ -382,7 +382,7 @@ struct CommunityView: View {
                     selectedPartner = partner
                 } label: {
                     Image(systemName: "chevron.right")
-                        .font(ClimbTypography.sans(14, weight: .bold))
+                        .font(ClimbTypography.sans(14, weight: .semibold))
                         .foregroundStyle(Color.climbMuted)
                         .frame(width: 36, height: 36)
                         .background(Color.climbSurfaceRaised, in: Circle())
@@ -404,7 +404,7 @@ struct CommunityView: View {
                     }
                 } label: {
                     Label("Check in", systemImage: "checkmark.message.fill")
-                        .font(ClimbTypography.sans(14, weight: .bold))
+                        .font(ClimbTypography.sans(14, weight: .semibold))
                         .frame(maxWidth: .infinity)
                         .padding(.vertical, 13)
                         .foregroundStyle(Color.climbBackground)
@@ -419,7 +419,7 @@ struct CommunityView: View {
                     }
                 } label: {
                     Image(systemName: "bell.fill")
-                        .font(ClimbTypography.sans(15, weight: .bold))
+                        .font(ClimbTypography.sans(15, weight: .semibold))
                         .foregroundStyle(Color.climbGreen)
                         .frame(width: 48, height: 48)
                         .background(Color.climbGreen.opacity(0.13), in: RoundedRectangle(cornerRadius: 14, style: .continuous))
@@ -438,7 +438,7 @@ struct CommunityView: View {
                     .frame(width: 38, height: 38)
                     .overlay(
                         Text(String(partner.name.prefix(1)))
-                            .font(ClimbTypography.sans(14, weight: .bold))
+                            .font(ClimbTypography.sans(14, weight: .semibold))
                             .foregroundStyle(Color.climbGreen)
                     )
                 
@@ -461,7 +461,7 @@ struct CommunityView: View {
                     }
                 } label: {
                     Image(systemName: "checkmark.message.fill")
-                        .font(ClimbTypography.sans(13, weight: .bold))
+                        .font(ClimbTypography.sans(13, weight: .semibold))
                         .foregroundStyle(Color.climbBackground)
                         .frame(width: 36, height: 36)
                         .background(Color.climbGreen, in: Circle())
@@ -473,7 +473,7 @@ struct CommunityView: View {
                     selectedPartner = partner
                 } label: {
                     Image(systemName: "chevron.right")
-                        .font(ClimbTypography.sans(13, weight: .bold))
+                        .font(ClimbTypography.sans(13, weight: .semibold))
                         .foregroundStyle(Color.climbMuted)
                         .frame(width: 34, height: 34)
                         .background(Color.climbSurfaceRaised, in: Circle())
@@ -526,7 +526,7 @@ struct CommunityView: View {
                                     }
                                 } label: {
                                     Label(group.isJoined ? "Joined" : "Join Group", systemImage: group.isJoined ? "checkmark.circle.fill" : "plus.circle")
-                                        .font(ClimbTypography.sans(13, weight: .bold))
+                                        .font(ClimbTypography.sans(13, weight: .semibold))
                                         .frame(maxWidth: .infinity)
                                         .padding(.vertical, 10)
                                 }
@@ -601,7 +601,7 @@ struct CommunityView: View {
                     GlobalLeaderboardView(viewModel: viewModel)
                 } label: {
                     Label("View all", systemImage: "chevron.right")
-                        .font(ClimbTypography.sans(12, weight: .bold))
+                        .font(ClimbTypography.sans(12, weight: .semibold))
                         .foregroundStyle(Color.climbGreen)
                 }
                 .buttonStyle(.plain)
@@ -756,12 +756,12 @@ private struct AccountabilityMetric: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 4) {
             Text(value)
-                .font(ClimbTypography.sans(16, weight: .bold).monospacedDigit())
+                .font(ClimbTypography.sans(16, weight: .semibold).monospacedDigit())
                 .foregroundStyle(.white)
                 .lineLimit(1)
                 .minimumScaleFactor(0.7)
             Text(label)
-                .font(ClimbTypography.sans(10, weight: .bold))
+                .font(ClimbTypography.sans(10, weight: .semibold))
                 .foregroundStyle(Color.climbMuted)
                 .textCase(.uppercase)
                 .lineLimit(1)
@@ -789,7 +789,7 @@ private struct MiniAvatarStack: View {
                     .frame(width: 32, height: 32)
                     .overlay(
                         Text(String(partner.name.prefix(1)))
-                            .font(ClimbTypography.sans(12, weight: .bold))
+                            .font(ClimbTypography.sans(12, weight: .semibold))
                             .foregroundStyle(Color.climbGreen)
                     )
                     .overlay(
@@ -818,14 +818,14 @@ private struct CommunityDestinationRow: View {
     var body: some View {
         HStack(spacing: 12) {
             Image(systemName: systemImage)
-                .font(ClimbTypography.sans(15, weight: .bold))
+                .font(ClimbTypography.sans(15, weight: .semibold))
                 .foregroundStyle(tint)
                 .frame(width: 34, height: 34)
                 .background(tint.opacity(0.13), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
 
             VStack(alignment: .leading, spacing: 2) {
                 Text(title)
-                    .font(ClimbTypography.sans(15, weight: .bold))
+                    .font(ClimbTypography.sans(15, weight: .semibold))
                     .foregroundStyle(.white)
                 Text(subtitle)
                     .font(ClimbTypography.sans(12, weight: .medium))
@@ -835,7 +835,7 @@ private struct CommunityDestinationRow: View {
             Spacer(minLength: 0)
 
             Image(systemName: "chevron.right")
-                .font(ClimbTypography.sans(12, weight: .bold))
+                .font(ClimbTypography.sans(12, weight: .semibold))
                 .foregroundStyle(Color.climbMuted)
         }
         .padding(.vertical, 12)
@@ -875,7 +875,7 @@ private struct CommunityPostCard: View {
                     }
                 } label: {
                     Image(systemName: "ellipsis")
-                        .font(ClimbTypography.sans(14, weight: .bold))
+                        .font(ClimbTypography.sans(14, weight: .semibold))
                         .foregroundStyle(Color.climbMuted)
                         .frame(width: 34, height: 34)
                         .background(Color.climbSurfaceRaised, in: Circle())
@@ -910,7 +910,7 @@ private struct CommunitySummaryMetric: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 4) {
             Text(value)
-                .font(ClimbTypography.sans(18, weight: .bold).monospacedDigit())
+                .font(ClimbTypography.sans(18, weight: .semibold).monospacedDigit())
                 .foregroundStyle(.white)
                 .lineLimit(1)
                 .minimumScaleFactor(0.75)
@@ -938,10 +938,10 @@ private struct CommunityStatTile: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
             Image(systemName: systemImage)
-                .font(ClimbTypography.sans(15, weight: .bold))
+                .font(ClimbTypography.sans(15, weight: .semibold))
                 .foregroundStyle(tint)
             Text(value)
-                .font(ClimbTypography.sans(20, weight: .bold))
+                .font(ClimbTypography.sans(20, weight: .semibold))
                 .foregroundStyle(.white)
                 .minimumScaleFactor(0.75)
             Text(title)
@@ -967,7 +967,7 @@ private struct PartnerActivityChip: View {
     var body: some View {
         HStack(spacing: 6) {
             Text(value)
-                .font(ClimbTypography.sans(13, weight: .bold).monospacedDigit())
+                .font(ClimbTypography.sans(13, weight: .semibold).monospacedDigit())
                 .foregroundStyle(.white)
             Text(label)
                 .font(ClimbTypography.sans(11, weight: .semibold))
@@ -986,7 +986,7 @@ private struct PartnerMetric: View {
     var body: some View {
         VStack(spacing: 4) {
             Text(value)
-                .font(ClimbTypography.sans(17, weight: .bold))
+                .font(ClimbTypography.sans(17, weight: .semibold))
                 .foregroundStyle(.white)
             Text(label)
                 .font(ClimbTypography.sans(10, weight: .semibold))
@@ -1049,7 +1049,7 @@ private struct PartnersListView: View {
                                     .frame(width: 44, height: 44)
                                     .overlay(
                                         Text(String(partner.name.prefix(1)))
-                                            .font(ClimbTypography.sans(16, weight: .bold))
+                                            .font(ClimbTypography.sans(16, weight: .semibold))
                                             .foregroundStyle(Color.climbGreen)
                                     )
                                     .overlay(alignment: .bottomTrailing) {
@@ -1061,7 +1061,7 @@ private struct PartnersListView: View {
 
                                 VStack(alignment: .leading, spacing: 4) {
                                     Text(partner.name)
-                                        .font(ClimbTypography.sans(17, weight: .bold))
+                                        .font(ClimbTypography.sans(17, weight: .semibold))
                                         .foregroundStyle(.white)
                                     Text(partner.isPending ? "Waiting for invite acceptance" : "\(partner.focus.shortLabel) partner - \(partner.lastCheckIn)")
                                         .font(ClimbTypography.sans(12, weight: .medium))
@@ -1074,7 +1074,7 @@ private struct PartnersListView: View {
                                     selectedPartner = partner
                                 } label: {
                                     Image(systemName: "chevron.right")
-                                        .font(ClimbTypography.sans(13, weight: .bold))
+                                        .font(ClimbTypography.sans(13, weight: .semibold))
                                         .foregroundStyle(Color.climbMuted)
                                         .frame(width: 34, height: 34)
                                         .background(Color.climbSurface, in: Circle())
@@ -1179,7 +1179,7 @@ private struct PartnerInviteShareSheet: View {
                 VStack(alignment: .leading, spacing: 18) {
                     VStack(alignment: .leading, spacing: 7) {
                         Text("Invite partner")
-                            .font(ClimbTypography.sans(29, weight: .bold))
+                            .font(ClimbTypography.sans(29, weight: .semibold))
                             .foregroundStyle(.white)
                         Text("Send this to one person you trust. Code entry connects inside the app; the link is a shareable invite page.")
                             .font(ClimbTypography.sans(14, weight: .medium))
@@ -1190,13 +1190,13 @@ private struct PartnerInviteShareSheet: View {
                     ClimbCard(padding: 22, cornerRadius: 28, isProminent: true) {
                         VStack(alignment: .leading, spacing: 8) {
                             Text("Invite code")
-                                .font(ClimbTypography.sans(12, weight: .bold))
+                                .font(ClimbTypography.sans(12, weight: .semibold))
                                 .foregroundStyle(Color.climbMuted)
                                 .tracking(1.1)
                                 .textCase(.uppercase)
 
                             Text(invite.code)
-                                .font(.system(size: 38, weight: .bold, design: .monospaced))
+                                .font(.system(size: 38, weight: .semibold, design: .monospaced))
                                 .foregroundStyle(Color.climbMist)
                                 .lineLimit(1)
                                 .minimumScaleFactor(0.58)
@@ -1215,7 +1215,7 @@ private struct PartnerInviteShareSheet: View {
 
                     ShareLink(item: invite.message, subject: Text("Join my accountability pair")) {
                         Label("Share Link + Code", systemImage: "square.and.arrow.up")
-                            .font(ClimbTypography.sans(17, weight: .bold))
+                            .font(ClimbTypography.sans(17, weight: .semibold))
                             .frame(maxWidth: .infinity)
                             .padding(.vertical, 17)
                             .foregroundStyle(Color.climbBackground)
@@ -1275,7 +1275,7 @@ private struct AcceptPartnerInviteSheet: View {
                 VStack(alignment: .leading, spacing: 16) {
                     VStack(alignment: .leading, spacing: 6) {
                         Text("Accept invite")
-                            .font(ClimbTypography.sans(28, weight: .bold))
+                            .font(ClimbTypography.sans(28, weight: .semibold))
                             .foregroundStyle(.white)
                         Text("Enter the code your friend shared. Codes connect inside the app even when the invite link opens the web page.")
                             .font(ClimbTypography.sans(14, weight: .medium))
@@ -1408,7 +1408,7 @@ private struct GroupsBrowserView: View {
                     showCreateGroup = true
                 } label: {
                     Image(systemName: "plus")
-                        .font(ClimbTypography.sans(14, weight: .bold))
+                        .font(ClimbTypography.sans(14, weight: .semibold))
                 }
                 .accessibilityLabel("Create group")
             }
@@ -1469,7 +1469,7 @@ private struct GroupCard<Destination: View>: View {
             } label: {
                 HStack(alignment: .top, spacing: 12) {
                     Image(systemName: group.isJoined ? "checkmark.seal.fill" : "person.3.fill")
-                        .font(ClimbTypography.sans(18, weight: .bold))
+                        .font(ClimbTypography.sans(18, weight: .semibold))
                         .foregroundStyle(group.isJoined ? Color.climbSage : Color.climbBlue)
                         .frame(width: 42, height: 42)
                         .background((group.isJoined ? Color.climbSage : Color.climbBlue).opacity(0.11), in: RoundedRectangle(cornerRadius: 14, style: .continuous))
@@ -1477,7 +1477,7 @@ private struct GroupCard<Destination: View>: View {
                     VStack(alignment: .leading, spacing: 5) {
                         HStack(spacing: 8) {
                             Text(group.name)
-                                .font(ClimbTypography.sans(18, weight: .bold))
+                                .font(ClimbTypography.sans(18, weight: .semibold))
                                 .foregroundStyle(.white)
                                 .lineLimit(1)
                                 .minimumScaleFactor(0.82)
@@ -1492,7 +1492,7 @@ private struct GroupCard<Destination: View>: View {
                     Spacer(minLength: 0)
 
                     Image(systemName: "chevron.right")
-                        .font(ClimbTypography.sans(12, weight: .bold))
+                        .font(ClimbTypography.sans(12, weight: .semibold))
                         .foregroundStyle(Color.climbMuted)
                 }
             }
@@ -1504,7 +1504,7 @@ private struct GroupCard<Destination: View>: View {
                     GroupStatPill(text: group.isJoined ? "Active" : "Joinable", systemImage: group.isJoined ? "checkmark.circle.fill" : "plus.circle", color: group.isJoined ? .climbSage : .climbGold)
                 }
                 Label(group.activeChallenge, systemImage: "flag.fill")
-                    .font(ClimbTypography.sans(13, weight: .bold))
+                    .font(ClimbTypography.sans(13, weight: .semibold))
                     .foregroundStyle(Color.climbTextSecondary)
                     .lineLimit(2)
                     .minimumScaleFactor(0.82)
@@ -1515,7 +1515,7 @@ private struct GroupCard<Destination: View>: View {
                     destination
                 } label: {
                     Label("Manage Group", systemImage: "slider.horizontal.3")
-                        .font(ClimbTypography.sans(14, weight: .bold))
+                        .font(ClimbTypography.sans(14, weight: .semibold))
                         .frame(maxWidth: .infinity)
                         .padding(.vertical, 12)
                 }
@@ -1526,7 +1526,7 @@ private struct GroupCard<Destination: View>: View {
             } else {
                 Button(action: onJoinLeave) {
                     Label(group.isJoined ? "Leave Group" : "Join Group", systemImage: group.isJoined ? "xmark.circle" : "plus.circle")
-                        .font(ClimbTypography.sans(14, weight: .bold))
+                        .font(ClimbTypography.sans(14, weight: .semibold))
                         .frame(maxWidth: .infinity)
                         .padding(.vertical, 12)
                 }
@@ -1550,7 +1550,7 @@ private struct GroupStatPill: View {
 
     var body: some View {
         Label(text, systemImage: systemImage)
-            .font(ClimbTypography.sans(12, weight: .bold))
+            .font(ClimbTypography.sans(12, weight: .semibold))
             .foregroundStyle(color)
             .lineLimit(1)
             .minimumScaleFactor(0.76)
@@ -1589,7 +1589,7 @@ private struct GroupDetailView: View {
                                 color: isAdmin ? .climbBlue : (group.isJoined ? .climbSage : .climbGold)
                             )
                             Text(group.name)
-                                .font(ClimbTypography.sans(31, weight: .bold))
+                                .font(ClimbTypography.sans(31, weight: .semibold))
                                 .foregroundStyle(.white)
                                 .fixedSize(horizontal: false, vertical: true)
                             Text(group.subtitle)
@@ -1609,14 +1609,14 @@ private struct GroupDetailView: View {
                         SectionTitle(title: "Shared focus", subtitle: "Small shared pressure for this week.")
                         HStack(spacing: 12) {
                             Image(systemName: "flag.fill")
-                                .font(ClimbTypography.sans(18, weight: .bold))
+                                .font(ClimbTypography.sans(18, weight: .semibold))
                                 .foregroundStyle(Color.climbWarm)
                                 .frame(width: 42, height: 42)
                                 .background(Color.climbWarm.opacity(0.09), in: RoundedRectangle(cornerRadius: 14, style: .continuous))
 
                             VStack(alignment: .leading, spacing: 3) {
                                 Text(group.activeChallenge)
-                                    .font(ClimbTypography.sans(18, weight: .bold))
+                                    .font(ClimbTypography.sans(18, weight: .semibold))
                                     .foregroundStyle(.white)
                                 Text("\(group.members) people in this circle")
                                     .font(ClimbTypography.sans(13, weight: .medium))
@@ -1821,13 +1821,13 @@ private struct GroupMemberRow: View {
                 .frame(width: 38, height: 38)
                 .overlay(
                     Text(String(group.displayName(for: memberID).prefix(1)))
-                        .font(ClimbTypography.sans(14, weight: .bold))
+                        .font(ClimbTypography.sans(14, weight: .semibold))
                         .foregroundStyle(group.isAdmin(memberID) ? Color.climbBlue : Color.climbAction)
                 )
 
             VStack(alignment: .leading, spacing: 3) {
                 Text(isSelf ? "\(group.displayName(for: memberID)) (You)" : group.displayName(for: memberID))
-                    .font(ClimbTypography.sans(15, weight: .bold))
+                    .font(ClimbTypography.sans(15, weight: .semibold))
                     .foregroundStyle(.white)
                 Text(roleText)
                     .font(ClimbTypography.sans(12, weight: .medium))
@@ -1852,7 +1852,7 @@ private struct GroupMemberRow: View {
                     }
                 } label: {
                     Image(systemName: "ellipsis")
-                        .font(ClimbTypography.sans(15, weight: .bold))
+                        .font(ClimbTypography.sans(15, weight: .semibold))
                         .foregroundStyle(Color.climbMuted)
                         .frame(width: 36, height: 36)
                         .background(Color.climbSurfaceRaised, in: Circle())
@@ -1887,7 +1887,7 @@ private struct CreateGroupSheet: View {
                     VStack(alignment: .leading, spacing: 16) {
                         VStack(alignment: .leading, spacing: 8) {
                             Text("Create a group")
-                                .font(ClimbTypography.sans(28, weight: .bold))
+                                .font(ClimbTypography.sans(28, weight: .semibold))
                                 .foregroundStyle(.white)
                             Text("Keep it small, honest, and action-focused.")
                                 .font(ClimbTypography.sans(14, weight: .medium))
@@ -1969,7 +1969,7 @@ private struct EditGroupSheet: View {
                     VStack(alignment: .leading, spacing: 16) {
                         VStack(alignment: .leading, spacing: 8) {
                             Text("Edit group")
-                                .font(ClimbTypography.sans(28, weight: .bold))
+                                .font(ClimbTypography.sans(28, weight: .semibold))
                                 .foregroundStyle(.white)
                             Text("Keep the purpose clear and the shared focus specific.")
                                 .font(ClimbTypography.sans(14, weight: .medium))
@@ -2186,12 +2186,12 @@ private struct PartnerDetailSheet: View {
                                     .frame(width: 56, height: 56)
                                     .overlay(
                                         Text(String(partner.name.prefix(1)))
-                                            .font(ClimbTypography.sans(20, weight: .bold))
+                                            .font(ClimbTypography.sans(20, weight: .semibold))
                                             .foregroundStyle(Color.climbGreen)
                                     )
                                 VStack(alignment: .leading, spacing: 4) {
                                     Text(partner.name)
-                                        .font(ClimbTypography.sans(24, weight: .bold))
+                                        .font(ClimbTypography.sans(24, weight: .semibold))
                                         .foregroundStyle(.white)
                                     Text("\(partner.focus.shortLabel) partner")
                                         .font(ClimbTypography.sans(13, weight: .semibold))
@@ -2372,7 +2372,7 @@ private struct LeaderboardRow: View {
     var body: some View {
         HStack(spacing: 12) {
             Text("\(rank)")
-                .font(ClimbTypography.sans(15, weight: .bold))
+                .font(ClimbTypography.sans(15, weight: .semibold))
                 .foregroundStyle(rank == 1 ? Color.climbGold : Color.climbMuted)
                 .frame(width: 28, alignment: .leading)
 
@@ -2383,7 +2383,7 @@ private struct LeaderboardRow: View {
                         .foregroundStyle(.white)
                     if isCurrentUser {
                         Text("You")
-                            .font(ClimbTypography.sans(10, weight: .bold))
+                            .font(ClimbTypography.sans(10, weight: .semibold))
                             .foregroundStyle(Color.climbBackground)
                             .padding(.horizontal, 7)
                             .padding(.vertical, 3)
@@ -2399,10 +2399,10 @@ private struct LeaderboardRow: View {
 
             VStack(alignment: .trailing, spacing: 2) {
                 Text("\(entry.ovrScore)")
-                    .font(ClimbTypography.sans(17, weight: .bold).monospacedDigit())
+                    .font(ClimbTypography.sans(17, weight: .semibold).monospacedDigit())
                     .foregroundStyle(.white)
                 Text("OVR")
-                    .font(ClimbTypography.sans(10, weight: .bold))
+                    .font(ClimbTypography.sans(10, weight: .semibold))
                     .foregroundStyle(Color.climbMuted)
             }
         }

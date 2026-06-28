@@ -26,14 +26,14 @@ struct GrowView: View {
     private var growHeader: some View {
         VStack(alignment: .leading, spacing: 7) {
             Text("GROWTH PATH")
-                .font(ClimbTypography.sans(11, weight: .bold))
+                .font(ClimbTypography.sans(11, weight: .semibold))
                 .tracking(1.7)
                 .foregroundStyle(Color.climbGreen.opacity(0.86))
-            Text("Practice over impulse.")
-                .font(ClimbTypography.sans(30, weight: .bold))
+            Text("Practice, then repeat.")
+                .font(ClimbTypography.sans(30, weight: .semibold))
                 .foregroundStyle(Color.climbMist)
                 .fixedSize(horizontal: false, vertical: true)
-            Text("Choose one practice. Keep the screen quiet. Finish the next honest step.")
+            Text("One practice at a time. Small enough to keep, serious enough to matter.")
                 .font(ClimbTypography.sans(14, weight: .semibold))
                 .foregroundStyle(Color.climbTextSecondary)
                 .lineSpacing(3)
@@ -69,7 +69,7 @@ struct GrowView: View {
     private func devotionalCard(_ devotional: Devotional) -> some View {
         ClimbCard(padding: 22, cornerRadius: 26, isProminent: true) {
             Text("DAILY WORD")
-                .font(ClimbTypography.sans(12, weight: .bold))
+                .font(ClimbTypography.sans(12, weight: .semibold))
                 .tracking(1.5)
                 .foregroundStyle(Color.climbWarm.opacity(0.76))
             Text(devotional.title)
@@ -98,7 +98,7 @@ struct GrowView: View {
 
             VStack(alignment: .leading, spacing: 8) {
                 Text("Reflection")
-                    .font(ClimbTypography.sans(13, weight: .bold))
+                    .font(ClimbTypography.sans(13, weight: .semibold))
                     .tracking(1)
                     .foregroundStyle(Color.climbMuted)
                 Text(devotional.reflectionQuestion)
@@ -108,7 +108,7 @@ struct GrowView: View {
 
             VStack(alignment: .leading, spacing: 8) {
                 Text("Action")
-                    .font(ClimbTypography.sans(13, weight: .bold))
+                    .font(ClimbTypography.sans(13, weight: .semibold))
                     .tracking(1)
                     .foregroundStyle(Color.climbMuted)
                 Text(devotional.practicalAction)
@@ -230,7 +230,7 @@ private struct GrowSectionSwitcher: View {
                     }
                 } label: {
                     Label(section.rawValue, systemImage: section.symbol)
-                        .font(ClimbTypography.sans(13, weight: .bold))
+                        .font(ClimbTypography.sans(13, weight: .semibold))
                         .lineLimit(1)
                         .minimumScaleFactor(0.78)
                         .foregroundStyle(selection == section ? Color.climbMist : Color.climbTextSecondary)
@@ -271,11 +271,11 @@ private struct HabitSummaryCard: View {
             HStack(alignment: .top, spacing: 14) {
                 VStack(alignment: .leading, spacing: 7) {
                     Text("HABIT CHECK-IN")
-                        .font(ClimbTypography.sans(11, weight: .bold))
+                        .font(ClimbTypography.sans(11, weight: .semibold))
                         .tracking(1.6)
                         .foregroundStyle(Color.climbGreen.opacity(0.86))
                     Text(total == 0 ? "No active habits" : "\(completed) of \(total) done today")
-                        .font(ClimbTypography.sans(24, weight: .bold))
+                        .font(ClimbTypography.sans(24, weight: .semibold))
                         .foregroundStyle(Color.climbMist)
                         .contentTransition(.numericText())
                     Text(total == 0 ? "Turn on a habit to start tracking daily rhythm." : summaryLine)
@@ -322,7 +322,7 @@ private struct HabitTrackerCard: View {
         HStack(alignment: .center, spacing: 13) {
             Button(action: onToggleToday) {
                 Image(systemName: isDoneToday ? "checkmark.circle.fill" : "circle")
-                    .font(ClimbTypography.sans(25, weight: .bold))
+                    .font(ClimbTypography.sans(25, weight: .semibold))
                     .foregroundStyle(isDoneToday ? Color.climbGreen : Color.climbMuted)
                     .frame(width: 36, height: 44)
                     .contentShape(Rectangle())
@@ -334,13 +334,13 @@ private struct HabitTrackerCard: View {
                 VStack(alignment: .leading, spacing: 6) {
                     HStack(spacing: 8) {
                         Text(habit.title)
-                            .font(ClimbTypography.sans(17, weight: .bold))
+                            .font(ClimbTypography.sans(17, weight: .semibold))
                             .foregroundStyle(habit.isEnabled ? Color.climbMist : Color.climbMuted)
                             .lineLimit(1)
                             .minimumScaleFactor(0.82)
                         if !habit.isEnabled {
                             Text("PAUSED")
-                                .font(ClimbTypography.sans(9, weight: .bold))
+                                .font(ClimbTypography.sans(9, weight: .semibold))
                                 .tracking(0.8)
                                 .foregroundStyle(Color.climbGold)
                         }
@@ -366,7 +366,7 @@ private struct HabitTrackerCard: View {
 
             Button(action: onToggleEnabled) {
                 Image(systemName: habit.isEnabled ? "pause" : "play.fill")
-                    .font(ClimbTypography.sans(12, weight: .bold))
+                    .font(ClimbTypography.sans(12, weight: .semibold))
                     .foregroundStyle(habit.isEnabled ? Color.climbMuted : Color.climbGreen)
                     .frame(width: 34, height: 34)
                     .background(Color.climbBackgroundLifted.opacity(0.74), in: Circle())
@@ -430,7 +430,7 @@ private struct HabitWeekDots: View {
                                 .stroke(habit.isCompleted(on: day) ? Color.climbGreen.opacity(0.35) : Color.white.opacity(0.04), lineWidth: 1)
                         )
                     Text(day.formatted(.dateTime.weekday(.narrow)))
-                        .font(ClimbTypography.sans(9, weight: .bold))
+                        .font(ClimbTypography.sans(9, weight: .semibold))
                         .foregroundStyle(Calendar.current.isDateInToday(day) ? Color.climbMist : Color.climbMuted)
                 }
                 .frame(maxWidth: .infinity)
@@ -448,10 +448,10 @@ private struct HabitMetric: View {
     var body: some View {
         VStack(spacing: 3) {
             Text(value)
-                .font(ClimbTypography.sans(15, weight: .bold).monospacedDigit())
+                .font(ClimbTypography.sans(15, weight: .semibold).monospacedDigit())
                 .foregroundStyle(Color.climbMist)
             Text(label)
-                .font(ClimbTypography.sans(10, weight: .bold))
+                .font(ClimbTypography.sans(10, weight: .semibold))
                 .tracking(0.7)
                 .foregroundStyle(Color.climbMuted)
                 .textCase(.uppercase)
@@ -483,12 +483,12 @@ private struct HabitDetailSheet: View {
 
                     VStack(alignment: .leading, spacing: 7) {
                         Text(habit.isCompleted() ? "Completed today" : "Habit tracker")
-                            .font(ClimbTypography.sans(12, weight: .bold))
+                            .font(ClimbTypography.sans(12, weight: .semibold))
                             .tracking(1.4)
                             .foregroundStyle(habit.isCompleted() ? Color.climbGreen : Color.climbMuted)
                             .textCase(.uppercase)
                         Text(habit.title)
-                            .font(ClimbTypography.sans(31, weight: .bold))
+                            .font(ClimbTypography.sans(31, weight: .semibold))
                             .foregroundStyle(Color.climbMist)
                             .fixedSize(horizontal: false, vertical: true)
                         Text(habit.cadence)
@@ -554,7 +554,7 @@ private struct PathStep: View {
     var body: some View {
         VStack(spacing: 8) {
             Text(number)
-                .font(ClimbTypography.sans(15, weight: .bold))
+                .font(ClimbTypography.sans(15, weight: .semibold))
                 .foregroundStyle(.white)
                 .frame(width: 34, height: 34)
                 .background(.thinMaterial, in: Circle())
