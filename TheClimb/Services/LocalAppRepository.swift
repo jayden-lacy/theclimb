@@ -76,6 +76,11 @@ final class LocalAppRepository: AppRepository {
         return Array(snapshot.groups.prefix(max(1, limit)))
     }
 
+    func loadCommunityGroup(id: String) async throws -> ClimbGroup? {
+        let snapshot = try await loadSnapshot()
+        return snapshot.groups.first { $0.id == id }
+    }
+
     func createCommunityGroup(_ group: ClimbGroup) async throws -> ClimbGroup {
         var snapshot = try await loadSnapshot()
         snapshot.groups.removeAll { $0.id == group.id }

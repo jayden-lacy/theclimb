@@ -14,13 +14,13 @@ extension Color {
         )
     }
 
-    static let climbBackgroundDeep = Color(hex: 0x020302)
-    static let climbBackground = Color(hex: 0x050705)
-    static let climbBackgroundLifted = Color(hex: 0x090C09)
-    static let climbSurface = Color(hex: 0x0D110D)
-    static let climbSurfaceRaised = Color(hex: 0x131812)
-    static let climbSurfaceGlass = Color(hex: 0x10150F, alpha: 0.86)
-    static let climbDivider = Color(hex: 0x242B24)
+    static let climbBackgroundDeep = Color(hex: 0x010201)
+    static let climbBackground = Color(hex: 0x040604)
+    static let climbBackgroundLifted = Color(hex: 0x080C08)
+    static let climbSurface = Color(hex: 0x0B100B)
+    static let climbSurfaceRaised = Color(hex: 0x111711)
+    static let climbSurfaceGlass = Color(hex: 0x0E140E, alpha: 0.88)
+    static let climbDivider = Color(hex: 0x222B22)
     static let climbTextSecondary = Color(hex: 0xB7B1A7)
     static let climbMuted = Color(hex: 0x777269)
     static let climbGreen = Color(hex: 0x38D978)
@@ -32,7 +32,8 @@ extension Color {
     static let climbSage = Color(hex: 0x8CDBA2)
     static let climbWarm = Color(hex: 0xE8DDCA)
     static let climbAction = Color(hex: 0x38D978)
-    static let climbHairline = Color.white.opacity(0.075)
+    static let climbHairline = Color.white.opacity(0.070)
+    static let climbSurfaceLine = Color(hex: 0x253125)
 }
 
 enum ClimbTypography {
@@ -89,6 +90,14 @@ enum HapticFeedback {
         generator.impactOccurred()
         #endif
     }
+
+    static func success() {
+        #if os(iOS)
+        let generator = UINotificationFeedbackGenerator()
+        generator.prepare()
+        generator.notificationOccurred(.success)
+        #endif
+    }
 }
 
 enum HapticImpactStyle {
@@ -130,6 +139,9 @@ struct ScreenContainer<Content: View>: View {
                 Color.clear.frame(height: bottomSafeAreaSpacing)
             }
             .background(ClimbScreenBackground())
+            .overlay(alignment: .bottom) {
+                ScreenBottomFade(height: min(bottomSafeAreaSpacing, 112))
+            }
             .navigationTitle(title)
             .navigationBarTitleDisplayMode(titleDisplayMode)
             .toolbar(hidesNavigationBar ? .hidden : .visible, for: .navigationBar)
@@ -139,25 +151,56 @@ struct ScreenContainer<Content: View>: View {
     }
 }
 
+private struct ScreenBottomFade: View {
+    let height: CGFloat
+
+    var body: some View {
+        LinearGradient(
+            colors: [
+                Color.clear,
+                Color.clear,
+                Color.climbBackgroundDeep.opacity(0.86),
+                Color.climbBackgroundDeep
+            ],
+            startPoint: .top,
+            endPoint: .bottom
+        )
+        .frame(height: height)
+        .frame(maxWidth: .infinity)
+        .ignoresSafeArea(edges: .bottom)
+        .allowsHitTesting(false)
+        .accessibilityHidden(true)
+    }
+}
+
 struct ClimbScreenBackground: View {
     var body: some View {
         ZStack {
             Color.climbBackgroundDeep
+            LinearGradient(
+                colors: [
+                    Color(hex: 0x071109),
+                    Color.climbBackgroundDeep,
+                    Color.black.opacity(0.96)
+                ],
+                startPoint: .topLeading,
+                endPoint: .bottomTrailing
+            )
             RadialGradient(
                 colors: [
-                    Color.climbAction.opacity(0.095),
-                    Color.climbBackgroundLifted.opacity(0.28),
+                    Color.climbAction.opacity(0.055),
+                    Color.climbBackgroundLifted.opacity(0.16),
                     Color.clear
                 ],
-                center: .topTrailing,
-                startRadius: 20,
-                endRadius: 520
+                center: .top,
+                startRadius: 72,
+                endRadius: 620
             )
             LinearGradient(
                 colors: [
-                    Color.white.opacity(0.020),
+                    Color.white.opacity(0.018),
                     Color.clear,
-                    Color.black.opacity(0.30)
+                    Color.black.opacity(0.36)
                 ],
                 startPoint: .top,
                 endPoint: .bottom
@@ -200,7 +243,7 @@ struct ClimbCard<Content: View>: View {
             RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
                 .stroke(Color.white.opacity(isProminent ? 0.115 : 0.075), lineWidth: 0.8)
         }
-        .shadow(color: .black.opacity(isProminent ? 0.30 : 0.18), radius: isProminent ? 18 : 10, x: 0, y: isProminent ? 14 : 7)
+        .shadow(color: .black.opacity(isProminent ? 0.26 : 0.14), radius: isProminent ? 16 : 9, x: 0, y: isProminent ? 12 : 6)
         .climbEntrance()
     }
 }
@@ -217,7 +260,7 @@ private struct AmbientCanvasBackground: View {
                 context.stroke(line, with: .color(hairline), lineWidth: 0.5)
             }
         }
-        .opacity(0.70)
+        .opacity(0.50)
         .allowsHitTesting(false)
     }
 }
@@ -243,6 +286,134 @@ struct SectionTitle: View {
     }
 }
 
+struct ClimbPageHeader<Trailing: View>: View {
+    let eyebrow: String
+    let title: String
+    let subtitle: String
+    var accent: Color = .climbGreen
+    @ViewBuilder var trailing: Trailing
+
+    init(
+        eyebrow: String,
+        title: String,
+        subtitle: String,
+        accent: Color = .climbGreen,
+        @ViewBuilder trailing: () -> Trailing
+    ) {
+        self.eyebrow = eyebrow
+        self.title = title
+        self.subtitle = subtitle
+        self.accent = accent
+        self.trailing = trailing()
+    }
+
+    var body: some View {
+        HStack(alignment: .top, spacing: 16) {
+            VStack(alignment: .leading, spacing: 9) {
+                HStack(spacing: 8) {
+                    Text(eyebrow)
+                    Capsule()
+                        .fill(accent.opacity(0.82))
+                        .frame(width: 16, height: 3)
+                }
+                .font(ClimbTypography.sans(11, weight: .semibold))
+                .tracking(1.25)
+                .foregroundStyle(Color.climbTextSecondary)
+                .textCase(.uppercase)
+
+                Text(title)
+                    .font(ClimbTypography.sans(34, weight: .semibold))
+                    .tracking(-0.55)
+                    .foregroundStyle(Color.climbMist)
+                    .lineSpacing(-1)
+                    .fixedSize(horizontal: false, vertical: true)
+
+                Text(subtitle)
+                    .font(ClimbTypography.sans(14, weight: .semibold))
+                    .foregroundStyle(Color.climbTextSecondary)
+                    .lineSpacing(3)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+
+            Spacer(minLength: 0)
+
+            trailing
+        }
+        .padding(.top, 6)
+        .climbEntrance()
+    }
+}
+
+extension ClimbPageHeader where Trailing == EmptyView {
+    init(eyebrow: String, title: String, subtitle: String, accent: Color = .climbGreen) {
+        self.init(eyebrow: eyebrow, title: title, subtitle: subtitle, accent: accent) {
+            EmptyView()
+        }
+    }
+}
+
+struct ClimbQuietPanel<Content: View>: View {
+    var padding: CGFloat = 18
+    var cornerRadius: CGFloat = 22
+    var accent: Color = .climbGreen
+    var isProminent = false
+    @ViewBuilder var content: Content
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            content
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(padding)
+        .background {
+            RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
+                .fill(Color.climbBackgroundLifted.opacity(isProminent ? 0.58 : 0.42))
+                .overlay(alignment: .topLeading) {
+                    LinearGradient(
+                        colors: [
+                            Color.white.opacity(isProminent ? 0.034 : 0.022),
+                            accent.opacity(isProminent ? 0.026 : 0.012),
+                            Color.clear
+                        ],
+                        startPoint: .topLeading,
+                        endPoint: .bottomTrailing
+                    )
+                    .clipShape(RoundedRectangle(cornerRadius: cornerRadius, style: .continuous))
+                }
+        }
+        .clipShape(RoundedRectangle(cornerRadius: cornerRadius, style: .continuous))
+        .overlay {
+            RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
+                .stroke(Color.climbHairline.opacity(isProminent ? 0.96 : 0.74), lineWidth: 0.75)
+        }
+        .climbEntrance()
+    }
+}
+
+struct ClimbInlineMetric: View {
+    let value: String
+    let label: String
+    var tint: Color = .climbGreen
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 3) {
+            Text(value)
+                .font(ClimbTypography.sans(20, weight: .semibold).monospacedDigit())
+                .foregroundStyle(Color.climbMist)
+                .lineLimit(1)
+                .minimumScaleFactor(0.72)
+            Text(label)
+                .font(ClimbTypography.sans(10, weight: .semibold))
+                .tracking(0.65)
+                .foregroundStyle(tint.opacity(0.84))
+                .textCase(.uppercase)
+                .lineLimit(1)
+                .minimumScaleFactor(0.74)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+    }
+}
+
 struct MetricTile: View {
     let title: String
     let value: String
@@ -250,11 +421,12 @@ struct MetricTile: View {
     var tint: Color = .climbGold
 
     var body: some View {
-        ClimbCard(padding: 16, cornerRadius: 18) {
+        ClimbQuietPanel(padding: 15, cornerRadius: 18, accent: tint) {
             HStack(spacing: 9) {
                 Image(systemName: symbol)
                     .font(ClimbTypography.sans(14, weight: .semibold))
                     .foregroundStyle(tint)
+                    .accessibilityHidden(true)
                 Text(title)
                     .font(ClimbTypography.sans(12, weight: .medium))
                     .foregroundStyle(Color.climbTextSecondary)
@@ -268,10 +440,15 @@ struct MetricTile: View {
                 .lineLimit(1)
                 .minimumScaleFactor(0.78)
         }
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(title)
+        .accessibilityValue(value)
     }
 }
 
 struct PrimaryActionButton: View {
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
     let title: String
     let systemImage: String
     var tint: Color = .climbAction
@@ -286,6 +463,7 @@ struct PrimaryActionButton: View {
             HStack(spacing: 9) {
                 Image(systemName: systemImage)
                     .font(.system(size: 15, weight: .semibold))
+                    .accessibilityHidden(true)
                 Text(title)
                     .lineLimit(1)
                     .minimumScaleFactor(0.82)
@@ -313,7 +491,8 @@ struct PrimaryActionButton: View {
         }
         .shadow(color: isDisabled ? .clear : tint.opacity(0.12), radius: 10, x: 0, y: 6)
         .disabled(isDisabled)
-        .animation(ClimbMotion.quick, value: isDisabled)
+        .animation(reduceMotion ? nil : ClimbMotion.quick, value: isDisabled)
+        .accessibilityLabel(title)
     }
 }
 
@@ -342,6 +521,7 @@ struct SecondaryActionButton: View {
             RoundedRectangle(cornerRadius: 15, style: .continuous)
                 .stroke(Color.white.opacity(0.075), lineWidth: 0.8)
         }
+        .accessibilityLabel(title)
     }
 }
 
@@ -349,8 +529,8 @@ struct ScriptureAttributionText: View {
     let reference: String
 
     var body: some View {
-        if reference.localizedCaseInsensitiveContains("(NLT)") {
-            Text("New Living Translation (NLT)")
+        if reference.localizedCaseInsensitiveContains("(WEB)") {
+            Text("World English Bible (WEB) · Public Domain")
                 .font(ClimbTypography.sans(10, weight: .semibold))
                 .tracking(0.9)
                 .foregroundStyle(Color.climbMuted)
@@ -413,6 +593,7 @@ struct ProgressBar: View {
     let value: Double
     var height: CGFloat = 6
     var tint: Color = .climbGreen
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var body: some View {
         GeometryReader { proxy in
@@ -421,10 +602,13 @@ struct ProgressBar: View {
                 Capsule()
                     .fill(tint)
                     .frame(width: max(0, min(1, value)) * proxy.size.width)
-                    .animation(ClimbMotion.standard, value: value)
+                    .animation(reduceMotion ? nil : ClimbMotion.standard, value: value)
             }
         }
         .frame(height: height)
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel("Progress")
+        .accessibilityValue("\(Int((max(0, min(1, value)) * 100).rounded())) percent")
     }
 }
 
@@ -457,6 +641,9 @@ struct StreakPill: View {
         .background(Color.climbSurfaceGlass.opacity(0.66), in: RoundedRectangle(cornerRadius: 18, style: .continuous))
         .overlay(RoundedRectangle(cornerRadius: 18, style: .continuous).stroke(Color.white.opacity(0.07), lineWidth: 0.7))
         .climbEntrance()
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel("Streak")
+        .accessibilityValue(daysRemaining == 0 ? "\(streak) days, goal reached" : "\(streak) days, \(daysRemaining) days left to goal")
     }
 }
 
@@ -479,6 +666,9 @@ struct OVRScoreCard: View {
                 }
             }
         }
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel("OVR Score")
+        .accessibilityValue("\(score). \(deltaText).")
     }
 
     private var deltaText: String {
@@ -493,6 +683,7 @@ struct ScoreRing: View {
     let text: String
     var size: CGFloat = 82
     var tint: Color = .climbSage
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var body: some View {
         ZStack {
@@ -501,23 +692,28 @@ struct ScoreRing: View {
                 .trim(from: 0, to: max(0, min(1, value)))
                 .stroke(tint, style: StrokeStyle(lineWidth: 7, lineCap: .round))
                 .rotationEffect(.degrees(-90))
-                .animation(ClimbMotion.standard, value: value)
+                .animation(reduceMotion ? nil : ClimbMotion.standard, value: value)
             Text(text)
                 .font(ClimbTypography.sans(size > 70 ? 29 : 21, weight: .semibold).monospacedDigit())
                 .foregroundStyle(Color.climbMist)
                 .contentTransition(.numericText())
         }
         .frame(width: size, height: size)
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel("Score")
+        .accessibilityValue("\(text), \(Int((max(0, min(1, value)) * 100).rounded())) percent")
     }
 }
 
 struct ScaleButtonStyle: ButtonStyle {
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
     func makeBody(configuration: Configuration) -> some View {
         configuration.label
-            .scaleEffect(configuration.isPressed ? 0.972 : 1)
+            .scaleEffect(!reduceMotion && configuration.isPressed ? 0.972 : 1)
             .brightness(configuration.isPressed ? -0.025 : 0)
             .opacity(configuration.isPressed ? 0.91 : 1)
-            .animation(ClimbMotion.quick, value: configuration.isPressed)
+            .animation(reduceMotion ? .easeOut(duration: 0.08) : ClimbMotion.quick, value: configuration.isPressed)
     }
 }
 
@@ -620,6 +816,100 @@ extension View {
     }
 }
 
+struct DailyContentFeedbackStrip: View {
+    let title: String
+    let selected: DailyContentFeedbackRating?
+    let onSelect: (DailyContentFeedbackRating) -> Void
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            HStack(spacing: 8) {
+                Image(systemName: "slider.horizontal.below.rectangle")
+                    .font(ClimbTypography.sans(12, weight: .semibold))
+                    .foregroundStyle(Color.climbGreen)
+                Text(title)
+                    .font(ClimbTypography.sans(12, weight: .semibold))
+                    .tracking(1.1)
+                    .foregroundStyle(Color.climbMuted)
+                    .textCase(.uppercase)
+            }
+
+            LazyVGrid(
+                columns: [
+                    GridItem(.flexible(), spacing: 8),
+                    GridItem(.flexible(), spacing: 8)
+                ],
+                alignment: .leading,
+                spacing: 8
+            ) {
+                ForEach(DailyContentFeedbackRating.allCases) { rating in
+                    Button {
+                        HapticFeedback.selection()
+                        onSelect(rating)
+                    } label: {
+                        HStack(spacing: 7) {
+                            Image(systemName: rating.systemImage)
+                                .font(ClimbTypography.sans(11, weight: .semibold))
+                            Text(rating.label)
+                                .font(ClimbTypography.sans(12, weight: .semibold))
+                                .lineLimit(1)
+                                .minimumScaleFactor(0.78)
+                        }
+                        .foregroundStyle(selected == rating ? Color.climbInk : rating.tint)
+                        .frame(maxWidth: .infinity, minHeight: 34)
+                        .padding(.horizontal, 10)
+                        .background(
+                            selected == rating ? rating.tint : Color.climbSurfaceRaised.opacity(0.72),
+                            in: Capsule()
+                        )
+                        .overlay(
+                            Capsule()
+                                .stroke(rating.tint.opacity(selected == rating ? 0.22 : 0.16), lineWidth: 0.7)
+                        )
+                    }
+                    .buttonStyle(ScaleButtonStyle())
+                    .accessibilityLabel("\(title), \(rating.label)")
+                }
+            }
+        }
+        .padding(14)
+        .background(Color.climbBackgroundLifted.opacity(0.52), in: RoundedRectangle(cornerRadius: 22, style: .continuous))
+        .overlay(
+            RoundedRectangle(cornerRadius: 22, style: .continuous)
+                .stroke(Color.white.opacity(0.055), lineWidth: 0.7)
+        )
+        .animation(ClimbMotion.standard, value: selected)
+    }
+}
+
+extension DailyContentFeedbackRating {
+    var systemImage: String {
+        switch self {
+        case .good:
+            "checkmark"
+        case .tooEasy:
+            "arrow.down.forward"
+        case .tooHard:
+            "arrow.up.forward"
+        case .notRelevant:
+            "scope"
+        }
+    }
+
+    var tint: Color {
+        switch self {
+        case .good:
+            .climbGreen
+        case .tooEasy:
+            .climbBlue
+        case .tooHard:
+            .climbGold
+        case .notRelevant:
+            .climbRed
+        }
+    }
+}
+
 enum LegalDocument: Identifiable {
     case privacyPolicy
     case termsOfService
@@ -666,7 +956,7 @@ enum LegalDocument: Identifiable {
                 ("Use of The Climb", "The Climb is a faith-based discipline and self-improvement app. Use it respectfully and only for lawful purposes."),
                 ("Community Rules", "Do not post harassment, threats, hate, sexual content, spam, or abusive language. We may remove content or restrict access when safety rules are violated."),
                 ("Health and Spiritual Guidance", "The app provides encouragement, reflection, and habit support. It is not medical, mental health, legal, or pastoral counseling."),
-                ("Scripture Attribution", "Scripture quotations marked (NLT) are taken from the Holy Bible, New Living Translation, copyright © 1996, 2004, 2015 by Tyndale House Foundation. Used by permission of Tyndale House Publishers. All rights reserved."),
+                ("Scripture Attribution", "Scripture quotations marked (WEB) are from the World English Bible, a public-domain Bible translation."),
                 ("Your Content", "You are responsible for posts and reflections you create. You can delete your own community posts from the feed."),
                 ("Account Deletion", "You can sign out or delete your account in Profile. Deleting your account is permanent."),
                 ("Contact", "Support questions can be sent to support@theclimbapp.org.")

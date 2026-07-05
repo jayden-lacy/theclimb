@@ -1,5 +1,6 @@
 const themeButtons = document.querySelectorAll("[data-theme-option]");
 const themeStorageKey = "the-climb-theme";
+const reduceMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
 
 function readThemePreference() {
   try {
@@ -13,7 +14,7 @@ function writeThemePreference(theme) {
   try {
     localStorage.setItem(themeStorageKey, theme);
   } catch {
-    // Ignore storage failures; the current page still updates.
+    // Storage can fail in private browser modes; the live page still updates.
   }
 }
 
@@ -31,8 +32,7 @@ function applyTheme(theme) {
   });
 }
 
-const initialTheme = readThemePreference();
-applyTheme(initialTheme);
+applyTheme(readThemePreference());
 
 themeButtons.forEach((button) => {
   button.addEventListener("click", () => {
@@ -41,3 +41,34 @@ themeButtons.forEach((button) => {
     applyTheme(theme);
   });
 });
+
+const currentPath = window.location.pathname.replace(/\/index\.html$/, "/");
+
+document.querySelectorAll(".nav-links a").forEach((link) => {
+  const linkPath = new URL(link.href).pathname;
+  if (linkPath === currentPath || (currentPath === "/" && linkPath === "/")) {
+    link.classList.add("is-active");
+  }
+});
+
+const revealItems = document.querySelectorAll(".reveal");
+
+if (reduceMotion || !("IntersectionObserver" in window)) {
+  revealItems.forEach((item) => item.classList.add("is-visible"));
+} else {
+  const revealObserver = new IntersectionObserver(
+    (entries) => {
+      entries.forEach((entry) => {
+        if (!entry.isIntersecting) return;
+        entry.target.classList.add("is-visible");
+        revealObserver.unobserve(entry.target);
+      });
+    },
+    {
+      threshold: 0.16,
+      rootMargin: "0px 0px -8% 0px",
+    }
+  );
+
+  revealItems.forEach((item) => revealObserver.observe(item));
+}

@@ -593,6 +593,10 @@ final class FirebaseAppRepository: AppRepository {
         }
 
         let localSnapshot = try await fallback.loadSnapshot()
+        if localSnapshot.profile?.id == userID {
+            return localSnapshot
+        }
+
         do {
             let document = try await withTimeout(seconds: 4) {
                 try await self.snapshotDocument(for: userID).getDocumentResult()
@@ -686,7 +690,7 @@ final class FirebaseAppRepository: AppRepository {
         ]
 
         try await firestore.collection("posts").document(createdPost.id).setDataResult(data, merge: false)
-        try? await fallback.createEncouragementPost(createdPost)
+        _ = try? await fallback.createEncouragementPost(createdPost)
         return createdPost
     }
 
@@ -714,7 +718,11 @@ final class FirebaseAppRepository: AppRepository {
             "reportedUserID": report.reportedUserID,
             "reportedByUserID": userID,
             "reason": report.reason,
+            "category": report.category.rawValue,
+            "severity": report.severity.rawValue,
+            "status": report.status.rawValue,
             "postBody": report.postBody,
+            "postAuthorName": report.postAuthorName,
             "createdAt": report.createdAt,
             "userID": userID,
             "updatedAt": FieldValue.serverTimestamp()
@@ -762,6 +770,26 @@ final class FirebaseAppRepository: AppRepository {
             return groups
         } catch {
             return try await fallback.loadCommunityGroups(limit: limit)
+        }
+    }
+
+    func loadCommunityGroup(id: String) async throws -> ClimbGroup? {
+        guard let userID = Auth.auth().currentUser?.uid else {
+            return try await fallback.loadCommunityGroup(id: id)
+        }
+
+        do {
+            let document = try await withTimeout(seconds: 4) {
+                try await self.firestore.collection("groups").document(id).getDocumentResult()
+            }
+            guard document.exists else {
+                return try await fallback.loadCommunityGroup(id: id)
+            }
+            return document.data().flatMap {
+                Self.communityGroup(from: $0, fallbackID: document.documentID, currentUserID: userID)
+            }
+        } catch {
+            return try await fallback.loadCommunityGroup(id: id)
         }
     }
 
@@ -1018,7 +1046,8 @@ final class FirebaseAppRepository: AppRepository {
         case .checkIn:
             update["\(prefix)CheckInCount"] = FieldValue.increment(Int64(1))
             update["\(prefix)LastCheckInAt"] = FieldValue.serverTimestamp()
-            update["lastInteraction"] = "\(displayName) checked in"
+            let trimmedMessage = message?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+            update["lastInteraction"] = trimmedMessage.isEmpty ? "\(displayName) checked in" : String(trimmedMessage.prefix(100))
         case .nudge:
             update["\(prefix)NudgeCount"] = FieldValue.increment(Int64(1))
             update["lastInteraction"] = "\(displayName) sent a nudge"
@@ -1038,13 +1067,16 @@ final class FirebaseAppRepository: AppRepository {
             return
         }
 
+        try await fallback.saveSnapshot(snapshot)
+
         do {
-            try await withTimeout(seconds: 5) {
+            try await withTimeout(seconds: 12) {
                 try await self.saveRemoteSnapshot(snapshot, userID: userID)
             }
-            try await fallback.saveSnapshot(snapshot)
         } catch {
-            throw FirebaseIntegrationError.syncFailed
+            #if DEBUG
+            print("Firebase sync deferred: \(error.localizedDescription)")
+            #endif
         }
     }
 
@@ -1090,25 +1122,48 @@ final class FirebaseAppRepository: AppRepository {
     }
 
     private func saveRemoteSnapshot(_ snapshot: AppStateSnapshot, userID: String) async throws {
-        let data = try encoder.encode(snapshot)
+        let remoteSnapshot = compactRemoteSnapshot(from: snapshot, userID: userID)
+        let data = try encoder.encode(remoteSnapshot)
         let payload = data.base64EncodedString()
 
-        if let profile = snapshot.profile {
+        if let profile = remoteSnapshot.profile {
             try await writeUserDocument(profile, userID: userID)
-        }
-
-        try await writeEncodedCollection(snapshot.missions, collection: "missions", userID: userID)
-        try await writeEncodedCollection(snapshot.devotionals, collection: "devotionals", userID: userID)
-        try await writeEncodedCollection(snapshot.journalEntries, collection: "journalEntries", userID: userID)
-        try await writeEncodedCollection(snapshot.progress, collection: "progress", userID: userID)
-        if let ownLeaderboardEntry = snapshot.leaderboard.first(where: { $0.id == userID }) {
-            try await writeEncodedCollection([ownLeaderboardEntry], collection: "leaderboards", userID: userID)
         }
 
         try await snapshotDocument(for: userID).setDataResult([
             "payload": payload,
             "updatedAt": FieldValue.serverTimestamp()
         ], merge: true)
+
+        try await writeEncodedCollection(remoteSnapshot.missions, collection: "missions", userID: userID)
+        try await writeEncodedCollection(remoteSnapshot.devotionals, collection: "devotionals", userID: userID)
+        try await writeEncodedCollection(remoteSnapshot.journalEntries, collection: "journalEntries", userID: userID)
+        try await writeEncodedCollection(remoteSnapshot.progress, collection: "progress", userID: userID)
+        if let ownLeaderboardEntry = remoteSnapshot.leaderboard.first(where: { $0.id == userID }) {
+            try await writeEncodedCollection([ownLeaderboardEntry], collection: "leaderboards", userID: userID)
+        }
+    }
+
+    private func compactRemoteSnapshot(from snapshot: AppStateSnapshot, userID: String) -> AppStateSnapshot {
+        AppStateSnapshot(
+            profile: snapshot.profile,
+            missions: Array(snapshot.missions.prefix(120)),
+            devotionals: Array(snapshot.devotionals.prefix(120)),
+            journalEntries: Array(snapshot.journalEntries.prefix(240)),
+            progress: Array(snapshot.progress.prefix(90)),
+            habits: snapshot.habits,
+            challenges: snapshot.challenges,
+            groups: [],
+            posts: [],
+            partners: [],
+            leaderboard: snapshot.leaderboard.filter { $0.id == userID },
+            blockedUserIDs: snapshot.blockedUserIDs,
+            moderationReports: [],
+            contentFeedback: snapshot.contentFeedback,
+            notificationFatigue: snapshot.notificationFatigue,
+            monthlyLetters: snapshot.monthlyLetters,
+            verseMemory: Array(snapshot.verseMemory.prefix(120))
+        )
     }
 
     private func snapshotDocument(for userID: String) -> DocumentReference {

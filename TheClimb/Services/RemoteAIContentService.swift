@@ -20,12 +20,16 @@ final class RemoteAIContentService: MissionGenerationService {
         decoder.dateDecodingStrategy = .iso8601
     }
 
-    func dailyPlan(for profile: UserProfile, history: [ReflectionEntry]) async throws -> DailyPlan {
+    func dailyPlan(
+        for profile: UserProfile,
+        history: [ReflectionEntry],
+        options: DailyPlanGenerationOptions
+    ) async throws -> DailyPlan {
         guard let proxyURL else {
-            return try await fallback.dailyPlan(for: profile, history: history)
+            return try await fallback.dailyPlan(for: profile, history: history, options: options)
         }
         guard Auth.auth().currentUser != nil else {
-            return try await fallback.dailyPlan(for: profile, history: history)
+            return try await fallback.dailyPlan(for: profile, history: history, options: options)
         }
 
         do {
@@ -42,8 +46,11 @@ final class RemoteAIContentService: MissionGenerationService {
             request.httpBody = try encoder.encode(
                 AIDailyPlanRequest(
                     profile: profile,
-                    recentHistory: Array(history.prefix(12)),
-                    generatedAt: Date()
+                    recentHistory: Array(history.prefix(8)),
+                    contentFeedback: Array(options.contentFeedback.prefix(12)),
+                    generatedAt: options.generatedAt,
+                    forceRegenerate: options.forceRegenerate,
+                    regenerationReason: options.regenerationReason
                 )
             )
 
@@ -58,9 +65,10 @@ final class RemoteAIContentService: MissionGenerationService {
                 throw AIContentError.invalidPayload
             }
 
-            return decodedResponse.dailyPlan(for: profile, recentHistory: history)
+            let plan = decodedResponse.dailyPlan(for: profile, recentHistory: history)
+            return FirstWeekRamp.apply(to: plan, profile: profile)
         } catch {
-            return try await fallback.dailyPlan(for: profile, history: history)
+            return try await fallback.dailyPlan(for: profile, history: history, options: options)
         }
     }
 
@@ -97,7 +105,10 @@ private extension User {
 private struct AIDailyPlanRequest: Encodable {
     let profile: UserProfile
     let recentHistory: [ReflectionEntry]
+    let contentFeedback: [DailyContentFeedback]
     let generatedAt: Date
+    let forceRegenerate: Bool
+    let regenerationReason: String?
 }
 
 private struct AIDailyPlanResponse: Decodable {

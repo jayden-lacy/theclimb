@@ -16,6 +16,7 @@ struct ProfileView: View {
     @State private var appBlockingEnabled = true
     @State private var reminderTime = Date()
     @State private var showSignOutAlert = false
+    @State private var showRestartOnboardingAlert = false
     @State private var showDeleteAccountAlert = false
     @State private var showDeletePasswordSheet = false
     @State private var deletionPassword = ""
@@ -23,6 +24,7 @@ struct ProfileView: View {
 #if canImport(FamilyControls) && os(iOS)
     @State private var showActivityPicker = false
     @State private var activitySelection = FamilyActivitySelection()
+    @State private var focusTemplates: [FocusTemplateSummary] = []
 #endif
 
     var body: some View {
@@ -30,6 +32,9 @@ struct ProfileView: View {
             if let profile = viewModel.profile {
                 profileHeader(profile)
                 settingsCard
+#if canImport(FamilyControls) && os(iOS)
+                focusTemplatesCard
+#endif
                 legalSupportCard
                 dataCard
             }
@@ -44,6 +49,16 @@ struct ProfileView: View {
             }
         } message: {
             Text("This clears this device's saved session and returns you to the welcome screen. You can sign back in anytime.")
+        }
+        .alert("Restart onboarding?", isPresented: $showRestartOnboardingAlert) {
+            Button("Cancel", role: .cancel) {}
+            Button("Restart Onboarding", role: .destructive) {
+                Task {
+                    await viewModel.restartOnboardingOnThisDevice()
+                }
+            }
+        } message: {
+            Text("This signs out and clears only this device's saved session so you can walk through onboarding again. Your Firebase account and synced data are not deleted.")
         }
         .alert("Delete account?", isPresented: $showDeleteAccountAlert) {
             Button("Cancel", role: .cancel) {}
@@ -89,47 +104,48 @@ struct ProfileView: View {
         )
         .onChange(of: activitySelection) { _, newSelection in
             ScreenTimeActivitySelectionStore.saveSelection(newSelection)
+            reloadFocusTemplates()
         }
 #endif
     }
 
     private func profileHeader(_ profile: UserProfile) -> some View {
-        ClimbCard(padding: 22, cornerRadius: 26, isProminent: true) {
-            HStack(spacing: 14) {
-                Circle()
-                    .fill(Color.climbGreen.opacity(0.11))
-                    .frame(width: 56, height: 56)
-                    .overlay(Circle().stroke(Color.climbGreen.opacity(0.18), lineWidth: 1))
-                    .overlay(
-                        Text(String(profile.displayName.prefix(1)))
-                            .font(ClimbTypography.sans(25, weight: .semibold))
-                            .foregroundStyle(Color.climbAction)
-                    )
-
-                VStack(alignment: .leading, spacing: 5) {
-                    Text(profile.displayName)
-                        .font(ClimbTypography.sans(22, weight: .semibold))
-                        .foregroundStyle(.white)
-                        .lineLimit(1)
-                        .minimumScaleFactor(0.78)
-                    Text("\(profile.ageGroup.rawValue) · \(profile.mainStruggle.rawValue)")
-                        .font(ClimbTypography.sans(13, weight: .semibold))
-                        .foregroundStyle(Color.climbTextSecondary)
-                        .lineLimit(1)
-                        .minimumScaleFactor(0.78)
+        VStack(alignment: .leading, spacing: 16) {
+            ClimbPageHeader(
+                eyebrow: "Profile",
+                title: profile.displayName,
+                subtitle: "\(profile.ageGroup.displayTitle) · \(profile.mainStruggle.rawValue)"
+            ) {
+                VStack(alignment: .center, spacing: 5) {
+                    Text("\(profile.ovrScore)")
+                        .font(ClimbTypography.sans(27, weight: .semibold).monospacedDigit())
+                        .foregroundStyle(Color.climbMist)
+                    Text("OVR")
+                        .font(ClimbTypography.sans(10, weight: .semibold))
+                        .tracking(1.1)
+                        .foregroundStyle(Color.climbMuted)
                 }
-
-                Spacer(minLength: 0)
-
-                StatusBadge(text: "OVR \(profile.ovrScore)", color: .climbSage)
+                .frame(width: 72, height: 64)
+                .background(Color.climbBackgroundLifted.opacity(0.48), in: RoundedRectangle(cornerRadius: 20, style: .continuous))
+                .overlay(
+                    RoundedRectangle(cornerRadius: 20, style: .continuous)
+                        .stroke(Color.climbHairline, lineWidth: 0.75)
+                )
             }
 
-            ProgressBar(value: Double(profile.ovrScore) / 100, height: 5, tint: .climbGreen)
+            ClimbQuietPanel(padding: 16, cornerRadius: 20) {
+                HStack(spacing: 12) {
+                    ClimbInlineMetric(value: "\(profile.currentStreak)", label: "streak")
+                    ClimbInlineMetric(value: "\(profile.longestStreak)", label: "best", tint: .climbGold)
+                    ClimbInlineMetric(value: "\(profile.streakGoal)", label: "goal", tint: .climbWarm)
+                }
+                ProgressBar(value: Double(profile.ovrScore) / 100, height: 4, tint: .climbGreen)
+            }
         }
     }
 
     private var settingsCard: some View {
-        ClimbCard(cornerRadius: 24) {
+        ClimbQuietPanel(cornerRadius: 22, isProminent: true) {
             SectionTitle(title: "Daily Controls", subtitle: "Keep the account simple and the plan personal.")
             TextField("Name", text: $displayName)
                 .formFieldStyle()
@@ -215,13 +231,104 @@ struct ProfileView: View {
         .padding(.vertical, 10)
     }
 
+#if canImport(FamilyControls) && os(iOS)
+    private var focusTemplatesCard: some View {
+        ClimbQuietPanel(cornerRadius: 22, isProminent: true) {
+            SectionTitle(
+                title: "Focus Templates",
+                subtitle: "Save app-blocking setups for the parts of your day that need the strongest boundaries."
+            )
+
+            HStack(spacing: 12) {
+                FocusTemplateMetric(
+                    value: "\(activitySelection.shieldableContentCount)",
+                    label: "selected"
+                )
+                FocusTemplateMetric(
+                    value: "\(focusTemplates.count)",
+                    label: "saved"
+                )
+            }
+
+            SecondaryActionButton(
+                title: activitySelection.hasShieldableContent ? "Edit Blocked Apps" : "Choose Apps to Block",
+                systemImage: "square.grid.2x2"
+            ) {
+                showActivityPicker = true
+            }
+
+            VStack(alignment: .leading, spacing: 10) {
+                Text("Save current selection")
+                    .font(ClimbTypography.sans(12, weight: .semibold))
+                    .tracking(1.4)
+                    .foregroundStyle(Color.climbMuted)
+                    .textCase(.uppercase)
+
+                HStack(spacing: 10) {
+                    ForEach(FocusTemplateDraft.defaults) { draft in
+                        FocusTemplateSaveButton(
+                            draft: draft,
+                            isDisabled: !activitySelection.hasShieldableContent
+                        ) {
+                            saveTemplate(draft)
+                        }
+                    }
+                }
+            }
+
+            if focusTemplates.isEmpty {
+                Text("Choose apps once, then save the setup as a template. Templates stay private on this device.")
+                    .font(ClimbTypography.sans(13, weight: .medium))
+                    .foregroundStyle(Color.climbTextSecondary)
+                    .lineSpacing(3)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .padding(.top, 2)
+            } else {
+                VStack(alignment: .leading, spacing: 10) {
+                    Text("Saved")
+                        .font(ClimbTypography.sans(12, weight: .semibold))
+                        .tracking(1.4)
+                        .foregroundStyle(Color.climbMuted)
+                        .textCase(.uppercase)
+
+                    ForEach(focusTemplates) { template in
+                        ProfileFocusTemplateRow(
+                            template: template,
+                            onApply: {
+                                applyTemplate(template)
+                            },
+                            onDelete: {
+                                deleteTemplate(template)
+                            }
+                        )
+                    }
+                }
+                .transition(.opacity.combined(with: .move(edge: .top)))
+            }
+        }
+        .animation(ClimbMotion.standard, value: focusTemplates)
+        .animation(ClimbMotion.standard, value: activitySelection.shieldableContentCount)
+    }
+#endif
+
     private var dataCard: some View {
-        ClimbCard(padding: 18, cornerRadius: 22) {
+        ClimbQuietPanel(padding: 18, cornerRadius: 20) {
             SectionTitle(title: "Account", subtitle: "Session and data controls")
             SecondaryActionButton(title: "Sign Out", systemImage: "rectangle.portrait.and.arrow.right") {
                 showSignOutAlert = true
             }
             .disabled(viewModel.isLoading)
+
+            SecondaryActionButton(title: "Restart Onboarding", systemImage: "arrow.counterclockwise") {
+                showRestartOnboardingAlert = true
+            }
+            .disabled(viewModel.isLoading)
+
+            Text("Testing path: clears this device and returns to the first onboarding screen without deleting your account.")
+                .font(ClimbTypography.sans(12, weight: .medium))
+                .foregroundStyle(Color.climbMuted)
+                .lineSpacing(2)
+                .fixedSize(horizontal: false, vertical: true)
 
             SecondaryActionButton(title: "Delete Account", systemImage: "person.crop.circle.badge.xmark", role: .destructive) {
                 showDeleteAccountAlert = true
@@ -231,7 +338,7 @@ struct ProfileView: View {
     }
 
     private var legalSupportCard: some View {
-        ClimbCard(cornerRadius: 24) {
+        ClimbQuietPanel(cornerRadius: 22) {
             SectionTitle(title: "Support & Legal")
 
             Button {
@@ -269,6 +376,7 @@ struct ProfileView: View {
         appBlockingEnabled = profile.appBlockingEnabled
 #if canImport(FamilyControls) && os(iOS)
         activitySelection = ScreenTimeActivitySelectionStore.loadSelection()
+        reloadFocusTemplates()
 #endif
         reminderTime = Calendar.current.date(
             bySettingHour: profile.notificationHour,
@@ -309,6 +417,31 @@ struct ProfileView: View {
 #endif
         }
     }
+
+#if canImport(FamilyControls) && os(iOS)
+    private func reloadFocusTemplates() {
+        focusTemplates = ScreenTimeActivitySelectionStore.loadTemplateSummaries()
+    }
+
+    private func saveTemplate(_ draft: FocusTemplateDraft) {
+        ScreenTimeActivitySelectionStore.saveCurrentSelectionAsTemplate(draft)
+        reloadFocusTemplates()
+        HapticFeedback.selection()
+    }
+
+    private func applyTemplate(_ template: FocusTemplateSummary) {
+        guard let selection = ScreenTimeActivitySelectionStore.applyTemplate(id: template.id) else { return }
+        activitySelection = selection
+        reloadFocusTemplates()
+        HapticFeedback.selection()
+    }
+
+    private func deleteTemplate(_ template: FocusTemplateSummary) {
+        ScreenTimeActivitySelectionStore.deleteTemplate(id: template.id)
+        reloadFocusTemplates()
+        HapticFeedback.impact(.light)
+    }
+#endif
 
     private var notificationStatusText: String {
         switch viewModel.notificationState {
@@ -402,6 +535,128 @@ private enum SupportEmail {
         return components.url
     }
 }
+
+#if canImport(FamilyControls) && os(iOS)
+private struct FocusTemplateMetric: View {
+    let value: String
+    let label: String
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 4) {
+            Text(value)
+                .font(ClimbTypography.sans(24, weight: .semibold).monospacedDigit())
+                .foregroundStyle(Color.climbMist)
+            Text(label)
+                .font(ClimbTypography.sans(11, weight: .semibold))
+                .tracking(1.1)
+                .foregroundStyle(Color.climbMuted)
+                .textCase(.uppercase)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(14)
+        .background(Color.climbBackgroundLifted.opacity(0.58), in: RoundedRectangle(cornerRadius: 18, style: .continuous))
+        .overlay(
+            RoundedRectangle(cornerRadius: 18, style: .continuous)
+                .stroke(Color.white.opacity(0.055), lineWidth: 0.7)
+        )
+    }
+}
+
+private struct FocusTemplateSaveButton: View {
+    let draft: FocusTemplateDraft
+    let isDisabled: Bool
+    let action: () -> Void
+
+    var body: some View {
+        Button {
+            action()
+        } label: {
+            VStack(spacing: 8) {
+                Image(systemName: draft.systemImage)
+                    .font(ClimbTypography.sans(15, weight: .semibold))
+                    .foregroundStyle(isDisabled ? Color.climbMuted : Color.climbGreen)
+                    .frame(width: 34, height: 34)
+                    .background(
+                        (isDisabled ? Color.climbDivider : Color.climbGreen).opacity(0.12),
+                        in: RoundedRectangle(cornerRadius: 13, style: .continuous)
+                    )
+                Text(draft.name)
+                    .font(ClimbTypography.sans(12, weight: .semibold))
+                    .foregroundStyle(isDisabled ? Color.climbMuted : Color.climbMist)
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.78)
+            }
+            .frame(maxWidth: .infinity)
+            .padding(.vertical, 12)
+            .background(Color.climbSurface.opacity(0.70), in: RoundedRectangle(cornerRadius: 17, style: .continuous))
+            .overlay(
+                RoundedRectangle(cornerRadius: 17, style: .continuous)
+                    .stroke(Color.white.opacity(isDisabled ? 0.035 : 0.065), lineWidth: 0.7)
+            )
+        }
+        .buttonStyle(ScaleButtonStyle())
+        .disabled(isDisabled)
+        .opacity(isDisabled ? 0.56 : 1)
+    }
+}
+
+private struct ProfileFocusTemplateRow: View {
+    let template: FocusTemplateSummary
+    let onApply: () -> Void
+    let onDelete: () -> Void
+
+    var body: some View {
+        HStack(spacing: 12) {
+            Image(systemName: template.systemImage)
+                .font(ClimbTypography.sans(16, weight: .semibold))
+                .foregroundStyle(Color.climbGreen)
+                .frame(width: 40, height: 40)
+                .background(Color.climbGreen.opacity(0.12), in: RoundedRectangle(cornerRadius: 15, style: .continuous))
+
+            VStack(alignment: .leading, spacing: 3) {
+                Text(template.name)
+                    .font(ClimbTypography.sans(15, weight: .semibold))
+                    .foregroundStyle(Color.climbMist)
+                Text("\(template.shieldableContentCount) distractions · \(template.subtitle)")
+                    .font(ClimbTypography.sans(12, weight: .semibold))
+                    .foregroundStyle(Color.climbTextSecondary)
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.72)
+            }
+
+            Spacer(minLength: 8)
+
+            Button {
+                onApply()
+            } label: {
+                Image(systemName: "checkmark")
+                    .font(ClimbTypography.sans(12, weight: .semibold))
+                    .foregroundStyle(Color.climbInk)
+                    .frame(width: 32, height: 32)
+                    .background(Color.climbGreen, in: Circle())
+            }
+            .buttonStyle(ScaleButtonStyle())
+
+            Button(role: .destructive) {
+                onDelete()
+            } label: {
+                Image(systemName: "trash")
+                    .font(ClimbTypography.sans(12, weight: .semibold))
+                    .foregroundStyle(Color.climbRed)
+                    .frame(width: 32, height: 32)
+                    .background(Color.climbRed.opacity(0.10), in: Circle())
+            }
+            .buttonStyle(ScaleButtonStyle())
+        }
+        .padding(12)
+        .background(Color.climbSurface.opacity(0.70), in: RoundedRectangle(cornerRadius: 18, style: .continuous))
+        .overlay(
+            RoundedRectangle(cornerRadius: 18, style: .continuous)
+                .stroke(Color.white.opacity(0.055), lineWidth: 0.7)
+        )
+    }
+}
+#endif
 
 private struct DeleteAccountPasswordSheet: View {
     @Environment(\.dismiss) private var dismiss

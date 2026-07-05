@@ -9,6 +9,9 @@ const siteUrl = "https://theclimbapp.org";
 const read = (path) => readFileSync(join(here, path), "utf8");
 
 const html = read("index.html");
+const mission = read("mission.html");
+const features = read("features.html");
+const community = read("community.html");
 const privacy = read("privacy.html");
 const terms = read("terms.html");
 const css = read("styles.css");
@@ -22,8 +25,8 @@ const notFound = `<!doctype html>
     <base href="/" />
     <title>Page Not Found | The Climb</title>
     <meta name="robots" content="noindex" />
-    <meta name="theme-color" content="#f6f6f2" media="(prefers-color-scheme: light)" />
-    <meta name="theme-color" content="#10110f" media="(prefers-color-scheme: dark)" />
+    <meta name="theme-color" content="#f7f7f5" media="(prefers-color-scheme: light)" />
+    <meta name="theme-color" content="#0d0e10" media="(prefers-color-scheme: dark)" />
     <link rel="icon" href="/assets/icons/app-icon.png" />
     <link rel="apple-touch-icon" href="/assets/icons/app-icon.png" />
     <script nonce="__CSP_NONCE__">
@@ -61,8 +64,8 @@ const downloadNotConfigured = `<!doctype html>
     <base href="/" />
     <title>Download Not Configured | The Climb</title>
     <meta name="robots" content="noindex" />
-    <meta name="theme-color" content="#f6f6f2" media="(prefers-color-scheme: light)" />
-    <meta name="theme-color" content="#10110f" media="(prefers-color-scheme: dark)" />
+    <meta name="theme-color" content="#f7f7f5" media="(prefers-color-scheme: light)" />
+    <meta name="theme-color" content="#0d0e10" media="(prefers-color-scheme: dark)" />
     <link rel="icon" href="/assets/icons/app-icon.png" />
     <link rel="apple-touch-icon" href="/assets/icons/app-icon.png" />
     <script nonce="__CSP_NONCE__">
@@ -105,19 +108,37 @@ const sitemap = `<?xml version="1.0" encoding="UTF-8"?>
 <urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
   <url>
     <loc>${siteUrl}/</loc>
-    <lastmod>2026-06-14</lastmod>
+    <lastmod>2026-07-04</lastmod>
     <changefreq>weekly</changefreq>
     <priority>1.0</priority>
   </url>
   <url>
+    <loc>${siteUrl}/mission</loc>
+    <lastmod>2026-07-04</lastmod>
+    <changefreq>monthly</changefreq>
+    <priority>0.8</priority>
+  </url>
+  <url>
+    <loc>${siteUrl}/features</loc>
+    <lastmod>2026-07-04</lastmod>
+    <changefreq>monthly</changefreq>
+    <priority>0.8</priority>
+  </url>
+  <url>
+    <loc>${siteUrl}/community</loc>
+    <lastmod>2026-07-04</lastmod>
+    <changefreq>monthly</changefreq>
+    <priority>0.7</priority>
+  </url>
+  <url>
     <loc>${siteUrl}/privacy</loc>
-    <lastmod>2026-06-14</lastmod>
+    <lastmod>2026-07-04</lastmod>
     <changefreq>monthly</changefreq>
     <priority>0.4</priority>
   </url>
   <url>
     <loc>${siteUrl}/terms</loc>
-    <lastmod>2026-06-14</lastmod>
+    <lastmod>2026-07-04</lastmod>
     <changefreq>monthly</changefreq>
     <priority>0.4</priority>
   </url>
@@ -126,22 +147,23 @@ const sitemap = `<?xml version="1.0" encoding="UTF-8"?>
 
 const ogImage = `<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="630" viewBox="0 0 1200 630" role="img" aria-labelledby="title desc">
   <title id="title">The Climb</title>
-  <desc id="desc">The Climb is preparing for iPhone launch. Stop drifting. Start climbing.</desc>
+  <desc id="desc">Daily Christian discipline for iPhone. Stop drifting. Start climbing.</desc>
   <defs>
-    <radialGradient id="g" cx="72%" cy="18%" r="70%">
-      <stop offset="0" stop-color="#d1c08c" stop-opacity="0.7"/>
-      <stop offset="0.48" stop-color="#3b5848" stop-opacity="0.25"/>
-      <stop offset="1" stop-color="#0b0b0f" stop-opacity="0"/>
-    </radialGradient>
+    <linearGradient id="g" x1="0" x2="1" y1="0" y2="1">
+      <stop offset="0" stop-color="#0d0e10"/>
+      <stop offset="1" stop-color="#24392f"/>
+    </linearGradient>
   </defs>
-  <rect width="1200" height="630" fill="#0b0b0f"/>
   <rect width="1200" height="630" fill="url(#g)"/>
-  <circle cx="866" cy="286" r="148" fill="#f4eadc" opacity="0.06"/>
-  <circle cx="866" cy="286" r="92" fill="none" stroke="#f4eadc" stroke-opacity="0.16" stroke-width="2"/>
+  <rect x="794" y="88" width="244" height="454" rx="36" fill="#f5f2ea" opacity="0.1" stroke="#f5f2ea" stroke-opacity="0.28"/>
+  <rect x="822" y="146" width="188" height="92" rx="8" fill="#f5f2ea" opacity="0.16"/>
+  <rect x="822" y="262" width="188" height="132" rx="8" fill="#b99054" opacity="0.82"/>
+  <rect x="822" y="418" width="84" height="70" rx="8" fill="#f5f2ea" opacity="0.18"/>
+  <rect x="926" y="418" width="84" height="70" rx="8" fill="#f5f2ea" opacity="0.18"/>
   <path d="M160 430 306 188l98 160 76-112 154 194H160Z" fill="#f4eadc"/>
-  <path d="M306 188 404 348 356 322 324 368 292 314 238 430H160l146-242Z" fill="#d1c08c" opacity="0.78"/>
-  <text x="160" y="126" fill="#d1c08c" font-family="Arial, sans-serif" font-size="24" font-weight="700" letter-spacing="5">THE CLIMB</text>
-  <text x="160" y="178" fill="#f4eadc" font-family="Arial, sans-serif" font-size="30" font-weight="700">IPHONE LAUNCH PENDING</text>
+  <path d="M306 188 404 348 356 322 324 368 292 314 238 430H160l146-242Z" fill="#b99054" opacity="0.88"/>
+  <text x="160" y="126" fill="#b99054" font-family="Arial, sans-serif" font-size="24" font-weight="700" letter-spacing="5">THE CLIMB</text>
+  <text x="160" y="178" fill="#f4eadc" font-family="Arial, sans-serif" font-size="30" font-weight="700">DAILY CHRISTIAN DISCIPLINE</text>
   <text x="160" y="520" fill="#f4eadc" font-family="Arial, sans-serif" font-size="72" font-weight="800">Stop drifting.</text>
   <text x="160" y="584" fill="#f4eadc" font-family="Arial, sans-serif" font-size="72" font-weight="800">Start climbing.</text>
 </svg>
@@ -220,6 +242,18 @@ const worker = `export default {
 
     if (url.pathname === "/" || url.pathname === "/index.html") {
       return textResponse(HTML, "text/html; charset=utf-8", request.method, nonce);
+    }
+
+    if (url.pathname === "/mission" || url.pathname === "/mission.html") {
+      return textResponse(MISSION, "text/html; charset=utf-8", request.method, nonce);
+    }
+
+    if (url.pathname === "/features" || url.pathname === "/features.html") {
+      return textResponse(FEATURES, "text/html; charset=utf-8", request.method, nonce);
+    }
+
+    if (url.pathname === "/community" || url.pathname === "/community.html") {
+      return textResponse(COMMUNITY, "text/html; charset=utf-8", request.method, nonce);
     }
 
     if (url.pathname === "/privacy" || url.pathname === "/privacy.html") {
@@ -339,6 +373,9 @@ function decodeBase64(base64) {
 }
 
 const HTML = ${JSON.stringify(html)};
+const MISSION = ${JSON.stringify(mission)};
+const FEATURES = ${JSON.stringify(features)};
+const COMMUNITY = ${JSON.stringify(community)};
 const PRIVACY = ${JSON.stringify(privacy)};
 const TERMS = ${JSON.stringify(terms)};
 const NOT_FOUND = ${JSON.stringify(notFound)};

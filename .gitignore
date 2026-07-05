@@ -29,6 +29,7 @@ App Store Previews/
 App Store Previews - */
 The Climb Screenshots/
 screenshots/onboarding-sim/
+outputs/
 
 # Local Firebase exports may contain user data
 firebase/backups/

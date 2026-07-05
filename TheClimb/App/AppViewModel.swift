@@ -50,9 +50,10 @@ enum OVRScoring {
         let streakPressure = profile.currentStreak >= 14 ? 2 : (profile.currentStreak >= 5 ? 1 : 0)
         let consistencyPressure = (completionRate ?? 0) >= 0.85 ? 1 : 0
         let streakGoalPressure = profile.streakGoal >= 60 ? 1 : 0
+        let agePressure = profile.ageGroup.difficultyAdjustment
         let starterAdjustment = profile.streakGoal <= 14 && profile.ovrScore < 60 ? -1 : 0
         let recoveryAdjustment = recentFailureCount > 0 && profile.currentStreak == 0 ? -1 : 0
-        return min(5, max(1, ovrLevel + streakPressure + consistencyPressure + streakGoalPressure + starterAdjustment + recoveryAdjustment))
+        return min(5, max(1, ovrLevel + streakPressure + consistencyPressure + streakGoalPressure + agePressure + starterAdjustment + recoveryAdjustment))
     }
 
     static func ovrDifficultyStep(for ovrScore: Int) -> Int {
@@ -91,14 +92,7 @@ enum OVRScoring {
     }
 
     static func minimumMissionMinutes(for difficulty: Int, ageGroup: AgeGroup) -> Int {
-        let base = switch ageGroup {
-        case .teen:
-            15
-        case .college:
-            20
-        case .youngAdult:
-            25
-        }
+        let base = ageGroup.baseMissionMinutes
         return min(90, base + max(0, difficulty - 1) * 10)
     }
 
@@ -177,6 +171,8 @@ enum OVRScoring {
 
 @MainActor
 final class AppViewModel: ObservableObject {
+    private static let reonboardingModeKey = "climb.reonboarding.mode"
+
     @Published private(set) var profile: UserProfile?
     @Published private(set) var missions: [Mission] = []
     @Published private(set) var devotionals: [Devotional] = []
@@ -190,6 +186,10 @@ final class AppViewModel: ObservableObject {
     @Published private(set) var leaderboard: [LeaderboardEntry] = []
     @Published private(set) var blockedUserIDs: [String] = []
     @Published private(set) var moderationReports: [ModerationReport] = []
+    @Published private(set) var contentFeedback: [DailyContentFeedback] = []
+    @Published private(set) var notificationFatigue = NotificationFatigueState()
+    @Published private(set) var monthlyLetters: [MonthlyReflectionLetter] = []
+    @Published private(set) var verseMemory: [MemorizedVerse] = []
     @Published private(set) var focusState: FocusModeState = .unavailable
     @Published private(set) var notificationState: NotificationPermissionState = .notDetermined
     @Published private(set) var isRefreshingLeaderboard = false
@@ -200,9 +200,12 @@ final class AppViewModel: ObservableObject {
     @Published var errorMessage: String?
     @Published var isLoading = false
     @Published private(set) var isPreparingTodayPlan = false
+    @Published private(set) var isRegeneratingTodayPlan = false
+    @Published private(set) var isReonboardingExistingAccount: Bool
 
     private let repository: AppRepository
     private let generationService: MissionGenerationService
+    private let offlineGenerationService: MissionGenerationService
     private let focusService: FocusBlockingService
     private let notificationScheduler: NotificationScheduling
     private var missionMutationsInFlight: Set<String> = []
@@ -210,11 +213,14 @@ final class AppViewModel: ObservableObject {
     init(
         repository: AppRepository = FirebaseIntegration.repository(),
         generationService: MissionGenerationService = RemoteAIContentService(),
+        offlineGenerationService: MissionGenerationService = TemplateMissionGenerationService(),
         focusService: FocusBlockingService = ScreenTimeFocusBlockingService(),
         notificationScheduler: NotificationScheduling = LocalNotificationScheduler()
     ) {
+        self.isReonboardingExistingAccount = UserDefaults.standard.bool(forKey: Self.reonboardingModeKey)
         self.repository = repository
         self.generationService = generationService
+        self.offlineGenerationService = offlineGenerationService
         self.focusService = focusService
         self.notificationScheduler = notificationScheduler
     }
@@ -225,6 +231,11 @@ final class AppViewModel: ObservableObject {
 
     var todayDevotional: Devotional? {
         devotionals.first { Calendar.current.isDateInToday($0.date) }
+    }
+
+    var canRegenerateTodayPlan: Bool {
+        guard let mission = todayMission else { return false }
+        return mission.status == .pending && !isPreparingTodayPlan && !isRegeneratingTodayPlan
     }
 
     var completionRate: Double {
@@ -249,6 +260,140 @@ final class AppViewModel: ObservableObject {
 
     var failedMissionCount: Int {
         failedMissionIDs.count
+    }
+
+    func contentFeedback(for contentID: String, kind: DailyContentKind) -> DailyContentFeedbackRating? {
+        contentFeedback.first {
+            $0.contentID == contentID && $0.contentKind == kind
+        }?.rating
+    }
+
+    func isVerseMemorized(reference: String) -> Bool {
+        let id = Self.verseMemoryID(for: reference)
+        return verseMemory.contains { $0.id == id && !$0.isArchived }
+    }
+
+    func memorizeVerse(
+        reference: String,
+        text: String,
+        sourceTitle: String,
+        struggle: Struggle?
+    ) async {
+        let trimmedReference = reference.trimmingCharacters(in: .whitespacesAndNewlines)
+        let trimmedText = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmedReference.isEmpty, !trimmedText.isEmpty else { return }
+
+        let id = Self.verseMemoryID(for: trimmedReference)
+        if let index = verseMemory.firstIndex(where: { $0.id == id }) {
+            verseMemory[index].text = trimmedText
+            verseMemory[index].sourceTitle = sourceTitle
+            verseMemory[index].struggle = struggle
+            verseMemory[index].isArchived = false
+        } else {
+            verseMemory.insert(
+                MemorizedVerse(
+                    id: id,
+                    reference: trimmedReference,
+                    text: trimmedText,
+                    sourceTitle: sourceTitle,
+                    struggle: struggle,
+                    addedAt: Date(),
+                    lastReviewedAt: nil,
+                    nextReviewAt: Date(),
+                    reviewCount: 0,
+                    correctCount: 0,
+                    isArchived: false
+                ),
+                at: 0
+            )
+        }
+
+        verseMemory = Array(activeVerseMemory.prefix(120))
+        await persistQuietly()
+        AppAnalytics.record(.verseMemorized, properties: ["reference": trimmedReference])
+    }
+
+    func reviewMemorizedVerse(_ verseID: String, remembered: Bool) async {
+        guard let index = verseMemory.firstIndex(where: { $0.id == verseID }) else { return }
+        var verse = verseMemory[index]
+        let now = Date()
+        verse.reviewCount += 1
+        if remembered {
+            verse.correctCount += 1
+        }
+        verse.correctCount = min(verse.correctCount, verse.reviewCount)
+        verse.lastReviewedAt = now
+        let intervalDays = Self.nextVerseReviewIntervalDays(reviewCount: verse.reviewCount, remembered: remembered)
+        verse.nextReviewAt = Calendar.current.date(byAdding: .day, value: intervalDays, to: now)
+            ?? now.addingTimeInterval(TimeInterval(intervalDays * 24 * 60 * 60))
+        verseMemory[index] = verse
+        verseMemory = activeVerseMemory + verseMemory.filter(\.isArchived)
+        await persistQuietly()
+        AppAnalytics.record(.verseReviewed, properties: [
+            "remembered": "\(remembered)",
+            "reference": verse.reference
+        ])
+    }
+
+    func archiveMemorizedVerse(_ verseID: String) async {
+        guard let index = verseMemory.firstIndex(where: { $0.id == verseID }) else { return }
+        verseMemory[index].isArchived = true
+        await persistQuietly()
+    }
+
+    func exportJournalMarkdown() -> String {
+        guard !journalEntries.isEmpty else {
+            return "# The Climb Journal\n\nNo reflections yet."
+        }
+
+        let formatter = DateFormatter()
+        formatter.dateStyle = .medium
+        formatter.timeStyle = .none
+
+        let body = journalEntries
+            .sorted { $0.date > $1.date }
+            .map { entry in
+                var lines = [
+                    "## \(formatter.string(from: entry.date))",
+                    "",
+                    "- Mood: \(entry.mood.rawValue)",
+                    "- Effort: \(entry.effortRating)/5"
+                ]
+                if let failureReason = entry.failureReason?.trimmingCharacters(in: .whitespacesAndNewlines),
+                   !failureReason.isEmpty {
+                    lines.append("- Failure reason: \(failureReason)")
+                }
+                lines.append(contentsOf: [
+                    "",
+                    "Hardest part:",
+                    entry.hardestPart,
+                    "",
+                    "Lesson learned:",
+                    entry.lessonLearned,
+                    "",
+                    "Improvement plan:",
+                    entry.improvementPlan
+                ])
+                return lines.joined(separator: "\n")
+            }
+            .joined(separator: "\n\n---\n\n")
+
+        return "# The Climb Journal\n\nExported \(formatter.string(from: Date()))\n\n\(body)"
+    }
+
+    private static func verseMemoryID(for reference: String) -> String {
+        let normalized = reference
+            .lowercased()
+            .replacingOccurrences(of: #"\s*\((web|nlt|kjv|modern)\)\s*$"#, with: "", options: [.regularExpression, .caseInsensitive])
+            .replacingOccurrences(of: #"[^a-z0-9]+"#, with: "-", options: .regularExpression)
+            .trimmingCharacters(in: CharacterSet(charactersIn: "-"))
+        return normalized.isEmpty ? UUID().uuidString : "verse-\(normalized)"
+    }
+
+    private static func nextVerseReviewIntervalDays(reviewCount: Int, remembered: Bool) -> Int {
+        guard remembered else { return 1 }
+        let schedule = [1, 2, 4, 7, 14, 30]
+        return schedule[min(max(reviewCount - 1, 0), schedule.count - 1)]
     }
 
     private var recentFailureCount: Int {
@@ -278,11 +423,7 @@ final class AppViewModel: ObservableObject {
     }
 
     var visiblePosts: [EncouragementPost] {
-        let blocked = Set(blockedUserIDs)
-        let reportedPostIDs = Set(moderationReports.map(\.postID))
-        return posts.filter { post in
-            !blocked.contains(post.authorID) && !reportedPostIDs.contains(post.id)
-        }
+        filteredCommunityPosts(posts)
     }
 
     var requiresPasswordForAccountDeletion: Bool {
@@ -297,14 +438,36 @@ final class AppViewModel: ObservableObject {
         return "Current streak: \(profile.currentStreak). Protect the next small promise."
     }
 
+    var currentMonthLetter: MonthlyReflectionLetter? {
+        let monthStart = Calendar.current.startOfMonth(for: Date())
+        return monthlyLetters
+            .sorted { $0.generatedAt > $1.generatedAt }
+            .first { Calendar.current.isDate($0.monthStart, inSameDayAs: monthStart) }
+    }
+
+    var activeVerseMemory: [MemorizedVerse] {
+        verseMemory
+            .filter { !$0.isArchived }
+            .sorted {
+                if $0.isDue != $1.isDue {
+                    return $0.isDue && !$1.isDue
+                }
+                return $0.nextReviewAt < $1.nextReviewAt
+            }
+    }
+
+    var dueVerseMemory: [MemorizedVerse] {
+        activeVerseMemory.filter(\.isDue)
+    }
+
     func load() async {
         isLoading = true
 
         do {
             let snapshot = try await repository.loadSnapshot()
             let needsSave = apply(snapshot)
-            try await refreshCurrentSession(forceSave: needsSave)
             isLoading = false
+            try await refreshCurrentSession(forceSave: needsSave)
             await refreshGlobalLeaderboard()
             await refreshCommunityFeed()
             await refreshCommunityGroups()
@@ -355,7 +518,7 @@ final class AppViewModel: ObservableObject {
         defer { isRefreshingPosts = false }
 
         do {
-            posts = try await repository.loadRecentEncouragementPosts(limit: 100)
+            posts = filteredCommunityPosts(try await repository.loadRecentEncouragementPosts(limit: 100))
         } catch {
             errorMessage = error.localizedDescription
         }
@@ -371,6 +534,31 @@ final class AppViewModel: ObservableObject {
             try await save()
         } catch {
             errorMessage = error.localizedDescription
+        }
+    }
+
+    @discardableResult
+    func generateMonthlyReflectionLetter(for date: Date = Date()) async -> MonthlyReflectionLetter? {
+        guard let profile else { return nil }
+        let monthStart = Calendar.current.startOfMonth(for: date)
+        let letter = Self.buildMonthlyReflectionLetter(
+            profile: profile,
+            monthStart: monthStart,
+            missions: missions,
+            journalEntries: journalEntries,
+            progress: progress
+        )
+
+        monthlyLetters.removeAll { Calendar.current.isDate($0.monthStart, inSameDayAs: monthStart) }
+        monthlyLetters.insert(letter, at: 0)
+        monthlyLetters = Array(monthlyLetters.prefix(18))
+
+        do {
+            try await save()
+            return letter
+        } catch {
+            errorMessage = error.localizedDescription
+            return nil
         }
     }
 
@@ -393,7 +581,9 @@ final class AppViewModel: ObservableObject {
 
         do {
             if let authenticatedUser {
-                if !authenticatedUser.isNewUser, try await loadSignedInSnapshotIfAvailable() {
+                if !isReonboardingExistingAccount,
+                   !authenticatedUser.isNewUser,
+                   try await loadSignedInSnapshotIfAvailable() {
                     return true
                 }
                 userID = authenticatedUser.id
@@ -412,7 +602,8 @@ final class AppViewModel: ObservableObject {
                     resolvedDisplayName = displayName.isEmpty ? createdUser.displayName : displayName
                 } catch FirebaseIntegrationError.accountAlreadyExists {
                     let signedInUser = try await FirebaseIntegration.signInExistingUser(email: email, password: password)
-                    if try await loadSignedInSnapshotIfAvailable() {
+                    if !isReonboardingExistingAccount,
+                       try await loadSignedInSnapshotIfAvailable() {
                         return true
                     }
                     userID = signedInUser.id
@@ -442,21 +633,36 @@ final class AppViewModel: ObservableObject {
         )
 
         self.profile = profile
+        missions = []
+        devotionals = []
+        journalEntries = []
+        progress = []
+        habits = []
+        challenges = []
         groups = []
         posts = []
         partners = []
-        leaderboard = Self.seedLeaderboard(profile: profile)
+        contentFeedback = []
+        notificationFatigue = NotificationFatigueState()
+        monthlyLetters = []
+        verseMemory = []
+        leaderboard = Self.initialLeaderboard(profile: profile)
         notificationState = await notificationScheduler.authorizationState()
 
         do {
-            let plan = try await generationService.dailyPlan(for: profile, history: journalEntries)
+            let options = DailyPlanGenerationOptions.standard(contentFeedback: recentContentFeedbackForGeneration)
+            let plan = try await offlineGenerationService.dailyPlan(for: profile, history: journalEntries, options: options)
             devotionals = [plan.devotional]
             missions = [plan.mission]
             habits = plan.habits
             challenges = plan.challenges
             recordProgressSnapshot()
             try await save()
+            finishReonboardingMode()
             await notificationScheduler.scheduleDailyReminder(hour: notificationHour, minute: notificationMinute)
+            Task {
+                await replaceTodayPlanFromRemoteIfStillPending(originalMissionID: plan.mission.id, options: options)
+            }
             return true
         } catch {
             restoreSnapshot(previousSnapshot)
@@ -494,6 +700,10 @@ final class AppViewModel: ObservableObject {
     }
 
     func shouldContinueNewProfileAfterSocialSignIn() async -> Bool {
+        if isReonboardingExistingAccount {
+            return true
+        }
+
         do {
             let didLoadExistingProfile = try await loadSignedInSnapshotIfAvailable()
             return !didLoadExistingProfile
@@ -501,6 +711,17 @@ final class AppViewModel: ObservableObject {
             errorMessage = error.localizedDescription
             return false
         }
+    }
+
+    private func beginReonboardingMode() {
+        isReonboardingExistingAccount = true
+        UserDefaults.standard.set(true, forKey: Self.reonboardingModeKey)
+    }
+
+    private func finishReonboardingMode() {
+        guard isReonboardingExistingAccount else { return }
+        isReonboardingExistingAccount = false
+        UserDefaults.standard.removeObject(forKey: Self.reonboardingModeKey)
     }
 
     func signInWithAppleForOnboarding() async -> FirebaseSignedInUser? {
@@ -538,6 +759,7 @@ final class AppViewModel: ObservableObject {
     }
 
     func startMission(_ mission: Mission, endsAt: Date? = nil) async {
+        _ = notificationFatigue.recordReminderEngagement()
         updateMission(mission.id) { $0.status = .active }
         let focusEndsAt = endsAt ?? Date().addingTimeInterval(TimeInterval(max(mission.durationMinutes, 1) * 60))
         ActiveFocusMissionTimerStore.save(mission: mission, endsAt: focusEndsAt)
@@ -546,6 +768,12 @@ final class AppViewModel: ObservableObject {
         await notificationScheduler.scheduleMissionTimerEnded(for: mission, at: focusEndsAt)
         await refreshNotificationSchedule()
         await persistQuietly()
+        AppAnalytics.record(.missionStarted, properties: [
+            "category": mission.category.rawValue,
+            "difficulty": "\(mission.difficulty)",
+            "blocking": "\(mission.appBlockingEnabled)",
+            "focus_state": "\(focusState)"
+        ])
     }
 
     func stopMissionFocus() async {
@@ -558,11 +786,17 @@ final class AppViewModel: ObservableObject {
 
     func requestScreenTimeAuthorization() async {
         focusState = await focusService.requestAuthorization()
+        AppAnalytics.record(.focusPermissionRequested, properties: [
+            "state": "\(focusState)"
+        ])
     }
 
     func requestNotificationAuthorization() async {
         notificationState = await notificationScheduler.requestAuthorization()
         await refreshNotificationSchedule()
+        AppAnalytics.record(.notificationPermissionRequested, properties: [
+            "state": "\(notificationState)"
+        ])
     }
 
     func refreshScreenTimeAuthorization() async {
@@ -600,6 +834,7 @@ final class AppViewModel: ObservableObject {
 
         let previousSnapshot = snapshot
         let previousStreak = profile.currentStreak
+        _ = notificationFatigue.recordReminderEngagement()
         missions[missionIndex].status = .completed
         advanceChallenges(for: mission)
 
@@ -646,6 +881,11 @@ final class AppViewModel: ObservableObject {
         focusState = .unavailable
         await notificationScheduler.cancelMissionTimerEnded()
         await notificationScheduler.cancelIncompleteMissionReminder()
+        AppAnalytics.record(.missionCompleted, properties: [
+            "difficulty": "\(mission.difficulty)",
+            "effort": "\(effortRating)",
+            "ovr": "\(profile.ovrScore)"
+        ])
         return true
     }
 
@@ -660,6 +900,7 @@ final class AppViewModel: ObservableObject {
         let previousSnapshot = snapshot
         let trimmedReason = reason.trimmingCharacters(in: .whitespacesAndNewlines)
         let shouldApplyPenalty = missions[missionIndex].status != .failed
+        _ = notificationFatigue.recordReminderEngagement()
         missions[missionIndex].status = .failed
 
         if shouldApplyPenalty {
@@ -712,6 +953,10 @@ final class AppViewModel: ObservableObject {
         await notificationScheduler.cancelMissionTimerEnded()
         await notificationScheduler.cancelIncompleteMissionReminder()
         await notificationScheduler.scheduleRecoveryPrompt()
+        AppAnalytics.record(.missionFailed, properties: [
+            "difficulty": "\(missions[missionIndex].difficulty)",
+            "penalty_applied": "\(shouldApplyPenalty)"
+        ])
         return true
     }
 
@@ -733,6 +978,7 @@ final class AppViewModel: ObservableObject {
         }
 
         let previousSnapshot = snapshot
+        _ = notificationFatigue.recordReminderEngagement()
         missions[missionIndex].status = .recovered
         profile.ovrScore = min(100, profile.ovrScore + OVRScoring.recoveryDelta(currentOVR: profile.ovrScore))
         profile.recoveryStreak += 1
@@ -753,6 +999,10 @@ final class AppViewModel: ObservableObject {
         }
 
         await notificationScheduler.cancelIncompleteMissionReminder()
+        AppAnalytics.record(.missionRecovered, properties: [
+            "ovr": "\(profile.ovrScore)",
+            "recovery_streak": "\(profile.recoveryStreak)"
+        ])
         return true
     }
 
@@ -760,8 +1010,9 @@ final class AppViewModel: ObservableObject {
     func addEncouragementPost(_ body: String) async -> CommunityPostResult {
         let trimmedBody = body.trimmingCharacters(in: .whitespacesAndNewlines)
         guard let profile, !trimmedBody.isEmpty else { return .rejected("Write something before posting.") }
-        guard CommunitySafetyFilter.isAllowed(trimmedBody) else {
-            return .rejected("Edit the language and try again.")
+        let assessment = CommunitySafetyFilter.assess(trimmedBody)
+        guard assessment.isAllowed else {
+            return .rejected(assessment.userMessage)
         }
 
         let post = EncouragementPost(
@@ -780,6 +1031,7 @@ final class AppViewModel: ObservableObject {
                 posts[index] = createdPost
             }
             await refreshCommunityFeed()
+            AppAnalytics.record(.communityPostCreated)
             return .posted
         } catch {
             posts.removeAll { $0.id == post.id }
@@ -838,13 +1090,23 @@ final class AppViewModel: ObservableObject {
             reportedUserID: post.authorID,
             reportedByUserID: profile.id,
             reason: reason,
-            postBody: post.body,
+            category: CommunitySafetyFilter.bestReason(for: reason + " " + post.body),
+            severity: CommunitySafetyFilter.severity(for: reason + " " + post.body),
+            status: .hiddenLocally,
+            postBody: String(post.body.prefix(500)),
+            postAuthorName: post.author,
             createdAt: Date()
         )
 
         do {
             try await repository.reportEncouragementPost(report)
             moderationReports.insert(report, at: 0)
+            posts.removeAll { $0.id == post.id }
+            await persistQuietly()
+            AppAnalytics.record(.communityPostReported, properties: [
+                "category": report.category.rawValue,
+                "severity": report.severity.rawValue
+            ])
             return true
         } catch {
             errorMessage = error.localizedDescription
@@ -858,7 +1120,17 @@ final class AppViewModel: ObservableObject {
         }
 
         blockedUserIDs.append(userID)
+        posts.removeAll { $0.authorID == userID }
+        groups = groups.map { group in
+            var updated = group
+            updated.memberIDs.removeAll { $0 == userID }
+            updated.adminIDs.removeAll { $0 == userID }
+            updated.memberNames.removeValue(forKey: userID)
+            updated.members = updated.memberIDs.count
+            return updated
+        }
         await persistQuietly()
+        AppAnalytics.record(.communityUserBlocked)
         return true
     }
 
@@ -868,6 +1140,17 @@ final class AppViewModel: ObservableObject {
 
     @discardableResult
     func joinGroup(_ groupID: String) async -> Bool {
+        if !groups.contains(where: { $0.id == groupID }) {
+            do {
+                if let invitedGroup = try await repository.loadCommunityGroup(id: groupID) {
+                    groups.insert(invitedGroup, at: 0)
+                }
+            } catch {
+                errorMessage = error.localizedDescription
+                return false
+            }
+        }
+
         guard let index = groups.firstIndex(where: { $0.id == groupID }) else { return false }
         guard !groups[index].isJoined else { return true }
         let previousGroup = groups[index]
@@ -883,6 +1166,7 @@ final class AppViewModel: ObservableObject {
             try await repository.joinCommunityGroup(groupID, displayName: profile?.displayName ?? "Climber")
             try await save()
             await refreshCommunityGroups()
+            AppAnalytics.record(.groupJoined)
             return true
         } catch {
             if let restoreIndex = groups.firstIndex(where: { $0.id == groupID }) {
@@ -914,6 +1198,7 @@ final class AppViewModel: ObservableObject {
             try await repository.leaveCommunityGroup(groupID)
             try await save()
             await refreshCommunityGroups()
+            AppAnalytics.record(.groupLeft)
             return true
         } catch {
             if let restoreIndex = groups.firstIndex(where: { $0.id == groupID }) {
@@ -975,9 +1260,9 @@ final class AppViewModel: ObservableObject {
         guard !trimmedName.isEmpty,
               !trimmedSubtitle.isEmpty,
               !trimmedChallenge.isEmpty,
-              CommunitySafetyFilter.isAllowed(trimmedName),
-              CommunitySafetyFilter.isAllowed(trimmedSubtitle),
-              CommunitySafetyFilter.isAllowed(trimmedChallenge) else {
+              CommunitySafetyFilter.assess(trimmedName).isAllowed,
+              CommunitySafetyFilter.assess(trimmedSubtitle).isAllowed,
+              CommunitySafetyFilter.assess(trimmedChallenge).isAllowed else {
             return false
         }
 
@@ -1001,6 +1286,7 @@ final class AppViewModel: ObservableObject {
             groups.insert(createdGroup, at: 0)
             try await save()
             await refreshCommunityGroups()
+            AppAnalytics.record(.groupCreated)
             return true
         } catch {
             errorMessage = error.localizedDescription
@@ -1019,9 +1305,9 @@ final class AppViewModel: ObservableObject {
               !trimmedName.isEmpty,
               !trimmedSubtitle.isEmpty,
               !trimmedChallenge.isEmpty,
-              CommunitySafetyFilter.isAllowed(trimmedName),
-              CommunitySafetyFilter.isAllowed(trimmedSubtitle),
-              CommunitySafetyFilter.isAllowed(trimmedChallenge) else {
+              CommunitySafetyFilter.assess(trimmedName).isAllowed,
+              CommunitySafetyFilter.assess(trimmedSubtitle).isAllowed,
+              CommunitySafetyFilter.assess(trimmedChallenge).isAllowed else {
             return false
         }
 
@@ -1139,6 +1425,7 @@ final class AppViewModel: ObservableObject {
             let code = try await repository.createAccountabilityPartnerInvite(for: profile)
             latestPartnerInviteCode = code
             await refreshAccountabilityPartners()
+            AppAnalytics.record(.partnerInviteCreated)
             return code
         } catch {
             errorMessage = error.localizedDescription
@@ -1155,6 +1442,7 @@ final class AppViewModel: ObservableObject {
         do {
             try await repository.acceptAccountabilityPartnerInvite(code: normalizedCode, profile: profile)
             await refreshAccountabilityPartners()
+            AppAnalytics.record(.partnerInviteAccepted)
             return true
         } catch {
             errorMessage = error.localizedDescription
@@ -1162,19 +1450,21 @@ final class AppViewModel: ObservableObject {
         }
     }
 
-    func checkIn(with partnerID: String) async {
+    func checkIn(with partnerID: String, message: String? = nil) async {
         guard let index = partners.firstIndex(where: { $0.id == partnerID }),
               !partners[index].isPending else { return }
+        let trimmedMessage = message?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
         partners[index].lastCheckIn = "Just now"
         partners[index].checkInCount += 1
-        partners[index].lastInteraction = "Checked in just now"
+        partners[index].lastInteraction = trimmedMessage.isEmpty ? "Checked in just now" : String(trimmedMessage.prefix(100))
         partners[index].lastCheckInDate = Date()
         partners[index].weeklyCompletions = min(partners[index].weeklyCompletions + 1, 7)
         let partner = partners[index]
         do {
-            try await repository.updateAccountabilityPartnerActivity(partner, action: .checkIn, message: nil)
+            try await repository.updateAccountabilityPartnerActivity(partner, action: .checkIn, message: trimmedMessage)
             try await save()
             await refreshAccountabilityPartners()
+            AppAnalytics.record(.partnerCheckIn)
         } catch {
             errorMessage = error.localizedDescription
             await persistQuietly()
@@ -1191,6 +1481,7 @@ final class AppViewModel: ObservableObject {
             try await repository.updateAccountabilityPartnerActivity(partner, action: .nudge, message: nil)
             try await save()
             await refreshAccountabilityPartners()
+            AppAnalytics.record(.partnerNudge)
         } catch {
             errorMessage = error.localizedDescription
             await persistQuietly()
@@ -1209,6 +1500,7 @@ final class AppViewModel: ObservableObject {
             try await repository.updateAccountabilityPartnerActivity(partner, action: .encouragement, message: trimmedMessage)
             try await save()
             await refreshAccountabilityPartners()
+            AppAnalytics.record(.partnerEncouragement)
         } catch {
             errorMessage = error.localizedDescription
             await persistQuietly()
@@ -1219,6 +1511,9 @@ final class AppViewModel: ObservableObject {
         guard let index = habits.firstIndex(where: { $0.id == habit.id }) else { return }
         habits[index].isEnabled.toggle()
         await persistQuietly()
+        AppAnalytics.record(.habitUpdated, properties: [
+            "action": habits[index].isEnabled ? "enabled" : "disabled"
+        ])
     }
 
     func setHabitEnabled(_ habitID: String, isEnabled: Bool) async {
@@ -1226,6 +1521,9 @@ final class AppViewModel: ObservableObject {
         guard habits[index].isEnabled != isEnabled else { return }
         habits[index].isEnabled = isEnabled
         await persistQuietly()
+        AppAnalytics.record(.habitUpdated, properties: [
+            "action": isEnabled ? "enabled" : "disabled"
+        ])
     }
 
     func toggleHabitCompletion(_ habitID: String) async {
@@ -1233,6 +1531,9 @@ final class AppViewModel: ObservableObject {
         guard habits[index].isEnabled else { return }
         habits[index].toggleCompletion()
         await persistQuietly()
+        AppAnalytics.record(.habitUpdated, properties: [
+            "action": habits[index].isCompleted() ? "completed" : "uncompleted"
+        ])
     }
 
     @discardableResult
@@ -1276,6 +1577,10 @@ final class AppViewModel: ObservableObject {
         do {
             try await save()
             await refreshNotificationSchedule()
+            AppAnalytics.record(.profileUpdated, properties: [
+                "blocking": "\(profile.appBlockingEnabled)",
+                "streak_goal": "\(profile.streakGoal)"
+            ])
             return true
         } catch {
             restoreSnapshot(previousSnapshot)
@@ -1290,6 +1595,7 @@ final class AppViewModel: ObservableObject {
         defer { isLoading = false }
 
         do {
+            finishReonboardingMode()
             await focusService.stopFocus()
             await MissionLiveActivityService.end()
             await notificationScheduler.cancelMissionTimerEnded()
@@ -1297,7 +1603,28 @@ final class AppViewModel: ObservableObject {
             try await repository.clearLocalSnapshot()
             apply(.empty)
             WidgetCenter.shared.reloadAllTimelines()
+            AppAnalytics.record(.signOut)
         } catch {
+            errorMessage = error.localizedDescription
+        }
+    }
+
+    func restartOnboardingOnThisDevice() async {
+        isLoading = true
+        defer { isLoading = false }
+
+        do {
+            beginReonboardingMode()
+            await focusService.stopFocus()
+            await MissionLiveActivityService.end()
+            await notificationScheduler.cancelMissionTimerEnded()
+            try FirebaseIntegration.signOut()
+            try await repository.clearLocalSnapshot()
+            apply(.empty)
+            WidgetCenter.shared.reloadAllTimelines()
+            AppAnalytics.record(.onboardingRestarted)
+        } catch {
+            finishReonboardingMode()
             errorMessage = error.localizedDescription
         }
     }
@@ -1307,6 +1634,7 @@ final class AppViewModel: ObservableObject {
         defer { isLoading = false }
 
         do {
+            finishReonboardingMode()
             await focusService.stopFocus()
             await MissionLiveActivityService.end()
             await notificationScheduler.cancelMissionTimerEnded()
@@ -1323,6 +1651,7 @@ final class AppViewModel: ObservableObject {
             try await repository.clearLocalSnapshot()
             apply(.empty)
             WidgetCenter.shared.reloadAllTimelines()
+            AppAnalytics.record(.accountDeleted)
         } catch {
             errorMessage = error.localizedDescription
         }
@@ -1335,7 +1664,89 @@ final class AppViewModel: ObservableObject {
         isPreparingTodayPlan = true
         defer { isPreparingTodayPlan = false }
 
-        let plan = try await generationService.dailyPlan(for: profile, history: journalEntries)
+        let options = DailyPlanGenerationOptions.standard(contentFeedback: recentContentFeedbackForGeneration)
+        let shouldUseInstantPack = todayMission == nil || todayDevotional == nil
+
+        if shouldUseInstantPack {
+            let plan = try await offlineGenerationService.dailyPlan(for: profile, history: journalEntries, options: options)
+            installTodayPlan(plan)
+            try await save()
+            Task {
+                await replaceTodayPlanFromRemoteIfStillPending(originalMissionID: plan.mission.id, options: options)
+            }
+            return
+        }
+
+        let plan = try await generationService.dailyPlan(for: profile, history: journalEntries, options: options)
+        installTodayPlan(plan)
+        try await save()
+    }
+
+    func regenerateTodayPlan(reason: String) async {
+        guard let profile else { return }
+        guard canRegenerateTodayPlan else {
+            errorMessage = "Today's plan can only be changed before the mission starts."
+            return
+        }
+
+        isRegeneratingTodayPlan = true
+        defer { isRegeneratingTodayPlan = false }
+
+        do {
+            let plan = try await generationService.dailyPlan(
+                for: profile,
+                history: journalEntries,
+                options: .regeneration(reason: reason, contentFeedback: recentContentFeedbackForGeneration)
+            )
+            installTodayPlan(plan)
+            try await save()
+            WidgetCenter.shared.reloadAllTimelines()
+            AppAnalytics.record(.dailyPlanRegenerated, properties: ["reason": reason])
+        } catch {
+            errorMessage = error.localizedDescription
+        }
+    }
+
+    func submitContentFeedback(
+        kind: DailyContentKind,
+        contentID: String,
+        title: String,
+        rating: DailyContentFeedbackRating
+    ) {
+        let trimmedTitle = title.trimmingCharacters(in: .whitespacesAndNewlines)
+        let feedback = DailyContentFeedback(
+            id: "\(kind.rawValue)-\(contentID)",
+            contentID: contentID,
+            contentKind: kind,
+            rating: rating,
+            titleSnapshot: String(trimmedTitle.prefix(120)),
+            createdAt: Date()
+        )
+
+        contentFeedback.removeAll {
+            $0.contentID == contentID && $0.contentKind == kind
+        }
+        contentFeedback.insert(feedback, at: 0)
+        contentFeedback = Array(contentFeedback.prefix(60))
+
+        AppAnalytics.record(
+            .dailyContentFeedback,
+            properties: [
+                "kind": kind.rawValue,
+                "rating": rating.rawValue
+            ]
+        )
+
+        Task {
+            await persistQuietly()
+        }
+    }
+
+    private var recentContentFeedbackForGeneration: [DailyContentFeedback] {
+        Array(contentFeedback.sorted { $0.createdAt > $1.createdAt }.prefix(12))
+    }
+
+    private func installTodayPlan(_ plan: DailyPlan) {
         devotionals.removeAll { Calendar.current.isDateInToday($0.date) }
         missions.removeAll { Calendar.current.isDateInToday($0.date) }
         devotionals.insert(plan.devotional, at: 0)
@@ -1347,7 +1758,29 @@ final class AppViewModel: ObservableObject {
             challenges = plan.challenges
         }
         reconcilePendingMissionDifficulty()
-        try await save()
+    }
+
+    private func replaceTodayPlanFromRemoteIfStillPending(
+        originalMissionID: String,
+        options: DailyPlanGenerationOptions
+    ) async {
+        guard let profile else { return }
+
+        do {
+            let plan = try await generationService.dailyPlan(for: profile, history: journalEntries, options: options)
+            guard let currentMission = todayMission,
+                  currentMission.id == originalMissionID,
+                  currentMission.status == .pending else {
+                return
+            }
+
+            installTodayPlan(plan)
+            try await save()
+        } catch {
+            #if DEBUG
+            print("AI daily plan background refresh skipped: \(error.localizedDescription)")
+            #endif
+        }
     }
 
     private var shouldGenerateTodayPlan: Bool {
@@ -1356,12 +1789,14 @@ final class AppViewModel: ObservableObject {
         }
 
         let canRefreshExistingPlan = FirebaseIntegration.currentUserID != nil && mission.status == .pending
-        return canRefreshExistingPlan && Self.needsNLTRefresh(devotional)
+        return canRefreshExistingPlan && Self.needsVerseRefresh(devotional)
     }
 
     private func refreshCurrentSession(forceSave: Bool = false) async throws {
+        let didApplyWidgetSnapshotChanges = try await reconcileWidgetSnapshotChanges()
         focusState = await focusService.refreshAuthorizationStatus()
         notificationState = await notificationScheduler.authorizationState()
+        let didUpdateNotificationFatigue = updateNotificationFatigueForCurrentDay()
         let didAutoFailExpiredMissions = applyExpiredMissionFailures()
         if didAutoFailExpiredMissions {
             await focusService.stopFocus()
@@ -1378,11 +1813,27 @@ final class AppViewModel: ObservableObject {
         if reconcileStreaksWithMissionHistory() ||
             reconcilePendingMissionDifficulty() ||
             reconcileAdaptiveChallenges() ||
+            didUpdateNotificationFatigue ||
             didAutoFailExpiredMissions ||
+            didApplyWidgetSnapshotChanges ||
             forceSave {
             try await save()
         }
         await refreshNotificationSchedule()
+    }
+
+    private func reconcileWidgetSnapshotChanges() async throws -> Bool {
+        guard let profileID = profile?.id else { return false }
+        let localSnapshot = try await repository.loadSnapshot()
+        guard localSnapshot.profile?.id == profileID else { return false }
+
+        var didChange = false
+        if localSnapshot.habits != habits {
+            habits = localSnapshot.habits
+            didChange = true
+        }
+
+        return didChange
     }
 
     private func restoreActiveMissionTimerIfNeeded() async {
@@ -1424,15 +1875,50 @@ final class AppViewModel: ObservableObject {
         }
     }
 
+    private func updateNotificationFatigueForCurrentDay(now: Date = Date()) -> Bool {
+        guard let profile,
+              let mission = todayMission else { return false }
+
+        switch mission.status {
+        case .active, .completed, .failed, .recovered:
+            return notificationFatigue.recordReminderEngagement(on: now)
+        case .pending:
+            let calendar = Calendar.current
+            guard let reminderDate = calendar.date(
+                bySettingHour: profile.notificationHour,
+                minute: profile.notificationMinute,
+                second: 0,
+                of: now
+            ) else {
+                return false
+            }
+
+            let ignoredWindow = reminderDate.addingTimeInterval(90 * 60)
+            guard now > ignoredWindow else { return false }
+            return notificationFatigue.recordIgnoredDailyReminder(on: now)
+        }
+    }
+
     private func refreshNotificationSchedule() async {
         guard let profile else { return }
-        await notificationScheduler.scheduleDailyReminder(
-            hour: profile.notificationHour,
-            minute: profile.notificationMinute
-        )
+        guard notificationState == .authorized else {
+            await notificationScheduler.cancelDailyReminder()
+            await notificationScheduler.cancelIncompleteMissionReminder()
+            return
+        }
+
+        if notificationFatigue.shouldSendDailyReminder() {
+            await notificationScheduler.scheduleDailyReminder(
+                hour: profile.notificationHour,
+                minute: profile.notificationMinute
+            )
+        } else {
+            await notificationScheduler.cancelDailyReminder()
+        }
 
         guard let mission = todayMission,
               mission.status == .pending || mission.status == .active,
+              notificationFatigue.shouldSendSecondaryNudges(),
               let reminderDate = incompleteReminderDate(for: profile) else {
             await notificationScheduler.cancelIncompleteMissionReminder()
             return
@@ -1680,7 +2166,11 @@ final class AppViewModel: ObservableObject {
             partners: partners,
             leaderboard: leaderboard,
             blockedUserIDs: blockedUserIDs,
-            moderationReports: moderationReports
+            moderationReports: moderationReports,
+            contentFeedback: contentFeedback,
+            notificationFatigue: notificationFatigue,
+            monthlyLetters: monthlyLetters,
+            verseMemory: verseMemory
         )
     }
 
@@ -1698,13 +2188,18 @@ final class AppViewModel: ObservableObject {
         leaderboard = snapshot.leaderboard
         blockedUserIDs = snapshot.blockedUserIDs
         moderationReports = snapshot.moderationReports
+        contentFeedback = snapshot.contentFeedback
+        notificationFatigue = snapshot.notificationFatigue
+        monthlyLetters = snapshot.monthlyLetters
+        verseMemory = snapshot.verseMemory
     }
 
     @discardableResult
     private func apply(_ snapshot: AppStateSnapshot) -> Bool {
         profile = snapshot.profile
         missions = snapshot.missions
-        devotionals = snapshot.devotionals.map(Self.enrichDevotionalIfNeeded)
+        let enrichedDevotionals = snapshot.devotionals.map(Self.enrichDevotionalIfNeeded)
+        devotionals = enrichedDevotionals
         journalEntries = snapshot.journalEntries
         progress = snapshot.progress
         habits = snapshot.habits
@@ -1715,7 +2210,11 @@ final class AppViewModel: ObservableObject {
         leaderboard = snapshot.leaderboard
         blockedUserIDs = snapshot.blockedUserIDs
         moderationReports = snapshot.moderationReports
-        var didMutate = false
+        contentFeedback = snapshot.contentFeedback
+        notificationFatigue = snapshot.notificationFatigue
+        monthlyLetters = snapshot.monthlyLetters
+        verseMemory = snapshot.verseMemory
+        var didMutate = enrichedDevotionals != snapshot.devotionals
         if let profile {
             didMutate = removeLaunchDemoData(currentUserID: profile.id) || didMutate
             didMutate = reconcileStreaksWithMissionHistory() || didMutate
@@ -1745,6 +2244,16 @@ final class AppViewModel: ObservableObject {
         }
 
         leaderboard = Array(rankedEntries.sortedForGlobalRank.prefix(100))
+    }
+
+    private func filteredCommunityPosts(_ incomingPosts: [EncouragementPost]) -> [EncouragementPost] {
+        let blocked = Set(blockedUserIDs)
+        let reportedPostIDs = Set(moderationReports.map(\.postID))
+        return incomingPosts.filter { post in
+            !blocked.contains(post.authorID) &&
+                !reportedPostIDs.contains(post.id) &&
+                CommunitySafetyFilter.assess(post.body).isAllowed
+        }
     }
 
     @discardableResult
@@ -1839,7 +2348,7 @@ final class AppViewModel: ObservableObject {
                 (partner.name == "Sam" && partner.lastInteraction == "Shared encouragement yesterday")
         }
         leaderboard.removeAll { entry in
-            entry.id != currentUserID && Self.demoLeaderboardNames.contains(entry.name)
+            entry.id != currentUserID && Self.legacyDemoLeaderboardNames.contains(entry.name)
         }
         return posts.count != startingPostCount ||
             partners.count != startingPartnerCount ||
@@ -1849,7 +2358,8 @@ final class AppViewModel: ObservableObject {
 
     private static func enrichDevotionalIfNeeded(_ devotional: Devotional) -> Devotional {
         var updated = devotional
-        if (updated.verseText?.isEmpty ?? true) && !updated.bibleVerse.localizedCaseInsensitiveContains("(NLT)") {
+        if needsVerseRefresh(updated) {
+            updated.bibleVerse = webVerseReference(for: updated.bibleVerse, struggle: updated.struggle)
             updated.verseText = verseText(reference: updated.bibleVerse, struggle: updated.struggle)
         }
         if updated.explanation.count < 320 {
@@ -1858,34 +2368,54 @@ final class AppViewModel: ObservableObject {
         return updated
     }
 
-    private static func needsNLTRefresh(_ devotional: Devotional) -> Bool {
-        !devotional.bibleVerse.localizedCaseInsensitiveContains("(NLT)")
+    private static func needsVerseRefresh(_ devotional: Devotional) -> Bool {
+        (devotional.verseText?.isEmpty ?? true) || usesLegacyTranslationSuffix(devotional.bibleVerse)
+    }
+
+    private static func usesLegacyTranslationSuffix(_ reference: String) -> Bool {
+        reference.range(of: #"\((NLT|KJV|Modern)\)\s*$"#, options: [.regularExpression, .caseInsensitive]) != nil
+    }
+
+    private static func webVerseReference(for reference: String, struggle: Struggle) -> String {
+        let normalized = normalizedVerseReference(reference)
+        guard publicDomainVerseText[normalized] != nil else {
+            return "\(defaultVerseReference(for: struggle)) (WEB)"
+        }
+        return "\(normalized) (WEB)"
     }
 
     private static func verseText(reference: String, struggle: Struggle) -> String {
-        switch normalizedVerseReference(reference) {
-        case "Colossians 3:23":
-            return "\"And whatsoever ye do, do it heartily, as to the Lord, and not unto men.\""
-        case "Luke 16:10":
-            return "\"He that is faithful in that which is least is faithful also in much: and he that is unjust in the least is unjust also in much.\""
-        case "Galatians 6:9":
-            return "\"And let us not be weary in well doing: for in due season we shall reap, if we faint not.\""
-        case "Psalm 51:10":
-            return "\"Create in me a clean heart, O God; and renew a right spirit within me.\""
-        case "1 Thessalonians 5:17":
-            return "\"Pray without ceasing.\""
-        case "Psalm 119:105":
-            return "\"Thy word is a lamp unto my feet, and a light unto my path.\""
-        case "Romans 12:2":
-            return "\"And be not conformed to this world: but be ye transformed by the renewing of your mind.\""
-        default:
-            return verseText(reference: defaultVerseReference(for: struggle), struggle: struggle)
-        }
+        publicDomainVerseText[normalizedVerseReference(reference)] ??
+            verseText(reference: defaultVerseReference(for: struggle), struggle: struggle)
     }
+
+    private static let publicDomainVerseText: [String: String] = [
+        "Colossians 3:23": "And whatever you do, work heartily, as for the Lord, and not for men,",
+        "Proverbs 4:25": "Let your eyes look straight ahead. Fix your gaze directly before you.",
+        "Matthew 6:22": "The lamp of the body is the eye. If therefore your eye is sound, your whole body will be full of light.",
+        "Luke 16:10": "He who is faithful in a very little is faithful also in much. He who is dishonest in a very little is also dishonest in much.",
+        "Proverbs 13:4": "The soul of the sluggard desires, and has nothing, but the desire of the diligent shall be fully satisfied.",
+        "1 Corinthians 9:27": "but I beat my body and bring it into submission, lest by any means, after I have preached to others, I myself should be rejected.",
+        "Galatians 6:9": "Let us not be weary in doing good, for we will reap in due season, if we don't give up.",
+        "1 Corinthians 15:58": "Therefore, my beloved brothers, be steadfast, immovable, always abounding in the Lord's work, because you know that your labor is not in vain in the Lord.",
+        "Hebrews 12:1": "Therefore let us also, seeing we are surrounded by so great a cloud of witnesses, lay aside every weight and the sin which so easily entangles us, and let us run with perseverance the race that is set before us,",
+        "Psalm 51:10": "Create in me a clean heart, O God. Renew a right spirit within me.",
+        "1 Corinthians 10:13": "No temptation has taken you except what is common to man. God is faithful, who will not allow you to be tempted above what you are able, but will with the temptation also make the way of escape, that you may be able to endure it.",
+        "2 Timothy 2:22": "Flee from youthful lusts; but pursue righteousness, faith, love, and peace with those who call on the Lord out of a pure heart.",
+        "1 Thessalonians 5:17": "Pray without ceasing.",
+        "Philippians 4:6": "In nothing be anxious, but in everything, by prayer and petition with thanksgiving, let your requests be made known to God.",
+        "Jeremiah 33:3": "'Call to me, and I will answer you, and will show you great and difficult things, which you don't know.'",
+        "Psalm 119:105": "Your word is a lamp to my feet, and a light for my path.",
+        "Joshua 1:8": "This book of the law shall not depart out of your mouth, but you shall meditate on it day and night, that you may observe to do according to all that is written in it; for then you shall make your way prosperous, and then you shall have good success.",
+        "Psalm 119:11": "I have hidden your word in my heart, that I might not sin against you.",
+        "Romans 12:2": "Don't be conformed to this world, but be transformed by the renewing of your mind, so that you may prove what is the good, well-pleasing, and perfect will of God.",
+        "Proverbs 29:25": "The fear of man proves to be a snare, but whoever puts his trust in Yahweh is kept safe.",
+        "Galatians 1:10": "For am I now seeking the favor of men, or of God? Or am I striving to please men? For if I were still pleasing men, I wouldn't be a servant of Christ."
+    ]
 
     private static func normalizedVerseReference(_ reference: String) -> String {
         reference
-            .replacingOccurrences(of: #" \((NLT|KJV)\)"#, with: "", options: [.regularExpression, .caseInsensitive])
+            .replacingOccurrences(of: #"\s*\((WEB|NLT|KJV|Modern)\)\s*$"#, with: "", options: [.regularExpression, .caseInsensitive])
             .trimmingCharacters(in: .whitespacesAndNewlines)
     }
 
@@ -2042,11 +2572,83 @@ final class AppViewModel: ObservableObject {
         }
     }
 
-    private static func seedLeaderboard(profile: UserProfile) -> [LeaderboardEntry] {
+    private static func initialLeaderboard(profile: UserProfile) -> [LeaderboardEntry] {
         [LeaderboardEntry(id: profile.id, name: profile.displayName, ovrScore: profile.ovrScore, streak: profile.currentStreak)]
     }
 
-    private static let demoLeaderboardNames = Set(["Naomi", "Elijah", "Maya", "Micah", "Ari", "Jordan", "Sam"])
+    private static func buildMonthlyReflectionLetter(
+        profile: UserProfile,
+        monthStart: Date,
+        missions: [Mission],
+        journalEntries: [ReflectionEntry],
+        progress: [ProgressSnapshot]
+    ) -> MonthlyReflectionLetter {
+        let calendar = Calendar.current
+        let monthMissions = missions.filter { calendar.isDate($0.date, equalTo: monthStart, toGranularity: .month) }
+        let monthEntries = journalEntries.filter { calendar.isDate($0.date, equalTo: monthStart, toGranularity: .month) }
+        let monthProgress = progress
+            .filter { calendar.isDate($0.date, equalTo: monthStart, toGranularity: .month) }
+            .sorted { $0.date < $1.date }
+
+        let completed = monthMissions.filter { $0.status == .completed || $0.status == .recovered }.count
+        let failed = monthMissions.filter { $0.status == .failed }.count
+        let ovrDelta = {
+            guard let first = monthProgress.first, let last = monthProgress.last else { return 0 }
+            return last.ovrScore - first.ovrScore
+        }()
+        let averageEffort = monthEntries.isEmpty ? 0 : Double(monthEntries.map(\.effortRating).reduce(0, +)) / Double(monthEntries.count)
+        let monthName = Self.monthFormatter.string(from: monthStart)
+        let struggleName = profile.mainStruggle.shortLabel.lowercased()
+        let returnLine = failed == 0
+            ? "There were no recorded misses this month, which means the next challenge is humility: keep the standard without getting casual."
+            : "The missed days are not wasted if they become instruction. They show where your rhythm needs protection before pressure arrives."
+        let effortLine = averageEffort > 0
+            ? "Your average reflected effort was \(String(format: "%.1f", averageEffort))/5, which gives the story texture: not perfection, but honest pressure applied repeatedly."
+            : "You have not logged much reflection effort yet, so the next step is simple: make the reflection as non-negotiable as the mission."
+        let deltaLine: String
+        if ovrDelta > 0 {
+            deltaLine = "Your OVR rose by \(ovrDelta), but the deeper win is that your behavior created measurable evidence."
+        } else if ovrDelta < 0 {
+            deltaLine = "Your OVR dropped by \(abs(ovrDelta)), but that is feedback, not identity. The recovery path starts with one clean return."
+        } else {
+            deltaLine = "Your OVR held steady. That can be a plateau, or it can be a foundation if you choose the next harder faithful step."
+        }
+
+        return MonthlyReflectionLetter(
+            id: "monthly-\(profile.id)-\(Self.monthIDFormatter.string(from: monthStart))",
+            monthStart: monthStart,
+            title: "\(monthName) Reflection",
+            opening: "\(profile.displayName), this month showed where discipline is becoming more than intention.",
+            body: [
+                "You completed \(completed) mission\(completed == 1 ? "" : "s") and recorded \(failed) miss\(failed == 1 ? "" : "es") while training your \(struggleName) path.",
+                effortLine,
+                deltaLine,
+                returnLine
+            ].joined(separator: " "),
+            scriptureReference: defaultVerseReference(for: profile.mainStruggle) + " (WEB)",
+            closingPrompt: "Before the next month begins, write one boundary you will protect and one small obedience you will repeat."
+                + " Keep the promise small enough to do and serious enough to matter.",
+            generatedAt: Date(),
+            completedMissions: completed,
+            failedMissions: failed,
+            ovrDelta: ovrDelta,
+            averageEffort: averageEffort
+        )
+    }
+
+    private static let monthFormatter: DateFormatter = {
+        let formatter = DateFormatter()
+        formatter.dateFormat = "MMMM yyyy"
+        return formatter
+    }()
+
+    private static let monthIDFormatter: DateFormatter = {
+        let formatter = DateFormatter()
+        formatter.dateFormat = "yyyy-MM"
+        return formatter
+    }()
+
+    private static let legacyDemoLeaderboardNames = Set(["Naomi", "Elijah", "Maya", "Micah", "Ari", "Jordan", "Sam"])
 
     private static func isLegacySeedGroup(_ group: ClimbGroup, currentUserID: String) -> Bool {
         guard group.id.hasPrefix("group-\(currentUserID)-") else { return false }
@@ -2057,22 +2659,95 @@ final class AppViewModel: ObservableObject {
     }
 }
 
+private extension Calendar {
+    func startOfMonth(for date: Date) -> Date {
+        let components = dateComponents([.year, .month], from: date)
+        return self.date(from: components) ?? startOfDay(for: date)
+    }
+}
+
 private enum CommunitySafetyFilter {
-    private static let blockedTerms = [
-        "fuck",
-        "shit",
-        "bitch",
-        "asshole",
-        "kys",
-        "kill yourself",
-        "go die",
-        "nigger",
-        "faggot",
-        "retard"
+    struct Assessment: Equatable {
+        let isAllowed: Bool
+        let reason: ModerationReason
+        let severity: ModerationSeverity
+        let userMessage: String
+    }
+
+    private struct Rule {
+        let tokens: [String]
+        let reason: ModerationReason
+        let severity: ModerationSeverity
+        let userMessage: String
+    }
+
+    private static let rules: [Rule] = [
+        Rule(
+            tokens: ["kys", "kill yourself", "go die", "end yourself", "unalive yourself"],
+            reason: .selfHarm,
+            severity: .urgent,
+            userMessage: "This looks unsafe. Edit it so it supports life and immediate help."
+        ),
+        Rule(
+            tokens: ["nigger", "faggot", "chink", "spic", "tranny"],
+            reason: .hate,
+            severity: .high,
+            userMessage: "Remove hateful or dehumanizing language before posting."
+        ),
+        Rule(
+            tokens: ["fuck", "shit", "bitch", "asshole", "whore", "slut", "retard"],
+            reason: .harassment,
+            severity: .medium,
+            userMessage: "Edit the language and try again."
+        ),
+        Rule(
+            tokens: ["onlyfans", "send nudes", "porn", "sex tape"],
+            reason: .sexualContent,
+            severity: .high,
+            userMessage: "Sexual content is not allowed in community posts."
+        ),
+        Rule(
+            tokens: ["http://", "https://", "cashapp", "venmo", "telegram", "crypto"],
+            reason: .spam,
+            severity: .medium,
+            userMessage: "Links, payments, and promotional content are not allowed here."
+        )
     ]
 
-    static func isAllowed(_ text: String) -> Bool {
-        let normalized = text
+    static func assess(_ text: String) -> Assessment {
+        let normalized = normalize(text)
+        guard let rule = rules.first(where: { rule in
+            rule.tokens.contains { token in
+                normalized.contains(token)
+            }
+        }) else {
+            return Assessment(isAllowed: true, reason: .other, severity: .low, userMessage: "")
+        }
+
+        return Assessment(
+            isAllowed: false,
+            reason: rule.reason,
+            severity: rule.severity,
+            userMessage: rule.userMessage
+        )
+    }
+
+    static func bestReason(for text: String) -> ModerationReason {
+        let normalized = normalize(text)
+        return rules.first { rule in
+            rule.tokens.contains { normalized.contains($0) }
+        }?.reason ?? .other
+    }
+
+    static func severity(for text: String) -> ModerationSeverity {
+        let normalized = normalize(text)
+        return rules.first { rule in
+            rule.tokens.contains { normalized.contains($0) }
+        }?.severity ?? .medium
+    }
+
+    private static func normalize(_ text: String) -> String {
+        text
             .lowercased()
             .replacingOccurrences(of: "1", with: "i")
             .replacingOccurrences(of: "!", with: "i")
@@ -2081,7 +2756,5 @@ private enum CommunitySafetyFilter {
             .replacingOccurrences(of: "@", with: "a")
             .replacingOccurrences(of: "0", with: "o")
             .replacingOccurrences(of: "$", with: "s")
-
-        return !blockedTerms.contains { normalized.contains($0) }
     }
 }

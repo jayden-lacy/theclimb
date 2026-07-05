@@ -1,0 +1,150 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <base href="/" />
+    <title>Features | The Climb</title>
+    <meta
+      name="description"
+      content="Explore The Climb features: Daily Word, missions, focus windows, progress, reflection, and accountability."
+    />
+    <meta name="robots" content="index,follow" />
+    <meta name="theme-color" content="#f7f7f5" media="(prefers-color-scheme: light)" />
+    <meta name="theme-color" content="#0d0e10" media="(prefers-color-scheme: dark)" />
+    <link rel="canonical" href="https://theclimbapp.org/features" />
+    <link rel="icon" href="/assets/icons/app-icon.png" />
+    <link rel="apple-touch-icon" href="/assets/icons/app-icon.png" />
+    <script nonce="__CSP_NONCE__">
+      (() => {
+        try {
+          const theme = localStorage.getItem("the-climb-theme") || "system";
+          if (theme === "light" || theme === "dark") {
+            document.documentElement.dataset.theme = theme;
+          }
+        } catch {
+          /* Keep system theme if storage is unavailable. */
+        }
+      })();
+    </script>
+    <link rel="stylesheet" href="/styles.css" />
+  </head>
+  <body>
+    <header class="site-header" aria-label="Primary navigation">
+      <a class="brand" href="/" aria-label="The Climb home">
+        <img src="/assets/icons/app-icon.png" alt="" class="brand-icon" />
+        <span>The Climb</span>
+      </a>
+      <nav class="nav-links" aria-label="Site">
+        <a href="/">Home</a>
+        <a href="/mission">Mission</a>
+        <a href="/features" aria-current="page">Features</a>
+        <a href="/community">Community</a>
+      </nav>
+      <div class="header-actions">
+        <div class="theme-control" role="group" aria-label="Theme">
+          <button type="button" data-theme-option="system" aria-label="Use system theme" title="System"><span aria-hidden="true">◐</span></button>
+          <button type="button" data-theme-option="light" aria-label="Use light theme" title="Light"><span aria-hidden="true">☀</span></button>
+          <button type="button" data-theme-option="dark" aria-label="Use dark theme" title="Dark"><span aria-hidden="true">☾</span></button>
+        </div>
+        <a class="nav-action" href="/download">Download</a>
+      </div>
+    </header>
+
+    <main>
+      <section class="page-hero">
+        <div class="page-kicker reveal">
+          <span>Features</span>
+          <span>Version 1.0</span>
+        </div>
+        <h1 class="reveal delay-1">A discipline system, not another content feed.</h1>
+        <p class="hero-lede reveal delay-2">
+          Every feature is built around one question: what helps you take the next
+          faithful step today?
+        </p>
+      </section>
+
+      <section class="section feature-matrix">
+        <article class="feature-tile large reveal">
+          <span>Daily Word</span>
+          <h2>Start with scripture that leads somewhere.</h2>
+          <p>Read, reflect, then move directly into a mission sized for your day.</p>
+        </article>
+        <article class="feature-tile reveal delay-1">
+          <span>Missions</span>
+          <h3>One act of obedience</h3>
+          <p>A concrete discipline target instead of a vague goal.</p>
+        </article>
+        <article class="feature-tile reveal delay-2">
+          <span>Focus</span>
+          <h3>Protected windows</h3>
+          <p>Set aside time when distraction usually wins.</p>
+        </article>
+        <article class="feature-tile reveal delay-3">
+          <span>Progress</span>
+          <h3>Climb Score</h3>
+          <p>See consistency, streaks, completion, and recovery.</p>
+        </article>
+        <article class="feature-tile reveal delay-1">
+          <span>Journal</span>
+          <h3>Honest reflection</h3>
+          <p>Capture what happened without making excuses.</p>
+        </article>
+        <article class="feature-tile reveal delay-2">
+          <span>Accountability</span>
+          <h3>Partners and groups</h3>
+          <p>Bring your climb into the light with other men.</p>
+        </article>
+      </section>
+
+      <section class="section product-deep-dive">
+        <div class="phone-shell feature-phone reveal">
+          <div class="phone-top">
+            <span>Progress</span>
+            <strong>84</strong>
+          </div>
+          <div class="metric-list">
+            <div><span>Streak</span><strong>12 days</strong></div>
+            <div><span>Missions</span><strong>31 done</strong></div>
+            <div><span>Focus</span><strong>18 hours</strong></div>
+          </div>
+          <div class="progress-line tall"><span></span></div>
+        </div>
+        <div class="section-copy reveal delay-1">
+          <p class="eyebrow">Progress</p>
+          <h2>Make consistency visible without worshiping the streak.</h2>
+          <p>
+            The Climb shows progress so you can notice patterns, celebrate obedience,
+            and recover quickly when you miss. The goal is faithfulness, not a perfect chart.
+          </p>
+        </div>
+      </section>
+
+      <section class="download-band reveal">
+        <div>
+          <p class="eyebrow">Next</p>
+          <h2>See accountability.</h2>
+          <p>The community layer helps private inconsistency become harder to hide.</p>
+        </div>
+        <a class="button button-primary" href="/community">View community</a>
+      </section>
+    </main>
+
+    <footer class="site-footer">
+      <a class="brand" href="/" aria-label="The Climb home">
+        <img src="/assets/icons/app-icon.png" alt="" class="brand-icon" />
+        <span>The Climb</span>
+      </a>
+      <nav aria-label="Footer">
+        <a href="/mission">Mission</a>
+        <a href="/features">Features</a>
+        <a href="/community">Community</a>
+        <a href="/privacy">Privacy</a>
+        <a href="/terms">Terms</a>
+      </nav>
+      <p>Daily Christian discipline for devotion, focus, reflection, and accountability.</p>
+    </footer>
+
+    <script src="/script.js"></script>
+  </body>
+</html>

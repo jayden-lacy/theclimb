@@ -9,6 +9,7 @@ protocol AppRepository {
     func reportEncouragementPost(_ report: ModerationReport) async throws
     func deleteEncouragementPost(postID: String, authorID: String) async throws
     func loadCommunityGroups(limit: Int) async throws -> [ClimbGroup]
+    func loadCommunityGroup(id: String) async throws -> ClimbGroup?
     func createCommunityGroup(_ group: ClimbGroup) async throws -> ClimbGroup
     func joinCommunityGroup(_ groupID: String, displayName: String) async throws
     func leaveCommunityGroup(_ groupID: String) async throws

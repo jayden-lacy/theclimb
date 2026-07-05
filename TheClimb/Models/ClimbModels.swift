@@ -1,11 +1,91 @@
 import Foundation
 
 enum AgeGroup: String, CaseIterable, Codable, Identifiable {
+    case earlyTeen = "13 - 15"
+    case lateTeen = "16 - 18"
     case teen = "Teen"
     case college = "College"
     case youngAdult = "Young Adult"
 
     var id: String { rawValue }
+
+    var displayTitle: String {
+        switch self {
+        case .earlyTeen:
+            "13 - 15"
+        case .lateTeen:
+            "16 - 18"
+        case .teen:
+            "Teen"
+        case .college:
+            "19 - 24"
+        case .youngAdult:
+            "25+"
+        }
+    }
+
+    var maturityTitle: String {
+        switch self {
+        case .earlyTeen:
+            "foundation"
+        case .lateTeen, .teen:
+            "identity and responsibility"
+        case .college:
+            "independence and ownership"
+        case .youngAdult:
+            "vocation and leadership"
+        }
+    }
+
+    var difficultyAdjustment: Int {
+        switch self {
+        case .earlyTeen:
+            -1
+        case .teen, .lateTeen, .college:
+            0
+        case .youngAdult:
+            1
+        }
+    }
+
+    var baseMissionMinutes: Int {
+        switch self {
+        case .earlyTeen:
+            15
+        case .teen, .lateTeen:
+            20
+        case .college:
+            25
+        case .youngAdult:
+            30
+        }
+    }
+
+    var lessonMaturityLine: String {
+        switch self {
+        case .earlyTeen:
+            "In this stage, growth usually starts with one clear choice made honestly before God, not with carrying pressure meant for someone older."
+        case .lateTeen, .teen:
+            "This season is forming identity, so the small choices around attention, pressure, temptation, and responsibility are shaping the kind of person you are becoming."
+        case .college:
+            "Independence reveals what you actually value, so faith has to become private discipline when nobody is managing your schedule for you."
+        case .youngAdult:
+            "Mature faith becomes stewardship: the way you handle work, money, relationships, leadership, and hidden integrity starts affecting more than only you."
+        }
+    }
+
+    var missionMaturityLine: String {
+        switch self {
+        case .earlyTeen:
+            "Keep the success condition simple enough to finish, then reflect honestly instead of trying to prove everything at once."
+        case .lateTeen, .teen:
+            "Make the boundary visible and finish one specific action that trains character under pressure."
+        case .college:
+            "Own the block before it starts: plan it, remove the distraction, finish the measurable work, and report the result honestly."
+        case .youngAdult:
+            "Treat this as stewardship: protect the full window, remove the known escape route, and follow through like someone else may be strengthened by your consistency."
+        }
+    }
 }
 
 enum Struggle: String, CaseIterable, Codable, Identifiable {
@@ -337,7 +417,9 @@ struct GrowthPathPersonalization: Equatable {
 
     private static func paceLine(ageGroup: AgeGroup, streakGoal: Int) -> String {
         switch ageGroup {
-        case .teen:
+        case .earlyTeen:
+            "The first missions stay concrete, short, and clear enough to win around school, practice, or family routines."
+        case .teen, .lateTeen:
             "The first missions stay concrete and short enough to win after school or practice."
         case .college:
             "The plan expects busier days, so missions use clear blocks that fit around class and work."
@@ -370,6 +452,44 @@ struct Devotional: Identifiable, Codable, Equatable {
     var struggle: Struggle
 }
 
+enum DailyContentKind: String, Codable, CaseIterable, Identifiable {
+    case mission
+    case devotional
+
+    var id: String { rawValue }
+}
+
+enum DailyContentFeedbackRating: String, Codable, CaseIterable, Identifiable {
+    case good
+    case tooEasy
+    case tooHard
+    case notRelevant
+
+    var id: String { rawValue }
+
+    var label: String {
+        switch self {
+        case .good:
+            "Good"
+        case .tooEasy:
+            "Too easy"
+        case .tooHard:
+            "Too hard"
+        case .notRelevant:
+            "Not relevant"
+        }
+    }
+}
+
+struct DailyContentFeedback: Identifiable, Codable, Equatable {
+    var id: String
+    var contentID: String
+    var contentKind: DailyContentKind
+    var rating: DailyContentFeedbackRating
+    var titleSnapshot: String
+    var createdAt: Date
+}
+
 struct Mission: Identifiable, Codable, Equatable {
     var id: String
     var date: Date
@@ -398,6 +518,38 @@ struct ReflectionEntry: Identifiable, Codable, Equatable {
     var failureReason: String?
 }
 
+struct MemorizedVerse: Identifiable, Codable, Equatable {
+    var id: String
+    var reference: String
+    var text: String
+    var sourceTitle: String
+    var struggle: Struggle?
+    var addedAt: Date
+    var lastReviewedAt: Date?
+    var nextReviewAt: Date
+    var reviewCount: Int
+    var correctCount: Int
+    var isArchived: Bool
+
+    var mastery: Double {
+        guard reviewCount > 0 else { return 0 }
+        let accuracy = Double(correctCount) / Double(max(reviewCount, 1))
+        let repetition = min(Double(reviewCount) / 5.0, 1)
+        return min(max((accuracy * 0.70) + (repetition * 0.30), 0), 1)
+    }
+
+    var isDue: Bool {
+        !isArchived && nextReviewAt <= Date()
+    }
+
+    var nextReviewLabel: String {
+        if isDue { return "Due now" }
+        if Calendar.current.isDateInTomorrow(nextReviewAt) { return "Tomorrow" }
+        if Calendar.current.isDate(nextReviewAt, inSameDayAs: Date()) { return "Today" }
+        return nextReviewAt.formatted(date: .abbreviated, time: .omitted)
+    }
+}
+
 struct ProgressSnapshot: Identifiable, Codable, Equatable {
     var id: String
     var date: Date
@@ -406,6 +558,77 @@ struct ProgressSnapshot: Identifiable, Codable, Equatable {
     var completionRate: Double
     var completedMissions: Int
     var failedMissions: Int
+}
+
+struct NotificationFatigueState: Codable, Equatable {
+    var ignoredDailyReminderDates: [Date]
+    var engagedReminderDates: [Date]
+    var dailyReminderPausedUntil: Date?
+
+    init(
+        ignoredDailyReminderDates: [Date] = [],
+        engagedReminderDates: [Date] = [],
+        dailyReminderPausedUntil: Date? = nil
+    ) {
+        self.ignoredDailyReminderDates = Self.normalizedDays(ignoredDailyReminderDates)
+        self.engagedReminderDates = Self.normalizedDays(engagedReminderDates)
+        self.dailyReminderPausedUntil = dailyReminderPausedUntil
+    }
+
+    mutating func recordIgnoredDailyReminder(on date: Date = Date(), calendar: Calendar = .current) -> Bool {
+        let day = calendar.startOfDay(for: date)
+        guard !ignoredDailyReminderDates.contains(where: { calendar.isDate($0, inSameDayAs: day) }) else {
+            return false
+        }
+
+        ignoredDailyReminderDates.append(day)
+        ignoredDailyReminderDates = Self.recentDays(ignoredDailyReminderDates, endingAt: date, calendar: calendar)
+
+        if ignoredCount(inLastDays: 7, endingAt: date, calendar: calendar) >= 4 {
+            dailyReminderPausedUntil = calendar.date(byAdding: .day, value: 2, to: day)
+        }
+        return true
+    }
+
+    mutating func recordReminderEngagement(on date: Date = Date(), calendar: Calendar = .current) -> Bool {
+        let day = calendar.startOfDay(for: date)
+        var didChange = false
+        if !engagedReminderDates.contains(where: { calendar.isDate($0, inSameDayAs: day) }) {
+            engagedReminderDates.append(day)
+            engagedReminderDates = Self.recentDays(engagedReminderDates, endingAt: date, calendar: calendar)
+            didChange = true
+        }
+
+        if dailyReminderPausedUntil != nil {
+            dailyReminderPausedUntil = nil
+            didChange = true
+        }
+
+        return didChange
+    }
+
+    func shouldSendDailyReminder(now: Date = Date()) -> Bool {
+        guard let dailyReminderPausedUntil else { return true }
+        return dailyReminderPausedUntil <= now
+    }
+
+    func shouldSendSecondaryNudges(now: Date = Date(), calendar: Calendar = .current) -> Bool {
+        ignoredCount(inLastDays: 7, endingAt: now, calendar: calendar) < 3
+    }
+
+    func ignoredCount(inLastDays days: Int, endingAt date: Date = Date(), calendar: Calendar = .current) -> Int {
+        let cutoff = calendar.date(byAdding: .day, value: -max(days - 1, 0), to: calendar.startOfDay(for: date)) ?? date
+        return ignoredDailyReminderDates.filter { $0 >= cutoff }.count
+    }
+
+    private static func normalizedDays(_ dates: [Date], calendar: Calendar = .current) -> [Date] {
+        Array(Set(dates.map { calendar.startOfDay(for: $0) })).sorted()
+    }
+
+    private static func recentDays(_ dates: [Date], endingAt date: Date, calendar: Calendar) -> [Date] {
+        let cutoff = calendar.date(byAdding: .day, value: -20, to: calendar.startOfDay(for: date)) ?? date
+        return normalizedDays(dates, calendar: calendar).filter { $0 >= cutoff }
+    }
 }
 
 struct GrowthHabit: Identifiable, Codable, Equatable {
@@ -821,14 +1044,117 @@ struct EncouragementPost: Identifiable, Codable, Equatable {
     }
 }
 
+enum ModerationReason: String, Codable, CaseIterable, Identifiable {
+    case harassment
+    case hate
+    case sexualContent
+    case spam
+    case selfHarm
+    case unsafe
+    case other
+
+    var id: String { rawValue }
+
+    var label: String {
+        switch self {
+        case .harassment:
+            "Harassment"
+        case .hate:
+            "Hate or slurs"
+        case .sexualContent:
+            "Sexual content"
+        case .spam:
+            "Spam"
+        case .selfHarm:
+            "Self-harm"
+        case .unsafe:
+            "Unsafe content"
+        case .other:
+            "Other"
+        }
+    }
+}
+
+enum ModerationSeverity: String, Codable {
+    case low
+    case medium
+    case high
+    case urgent
+}
+
+enum ModerationStatus: String, Codable {
+    case submitted
+    case hiddenLocally
+    case reviewed
+}
+
 struct ModerationReport: Identifiable, Codable, Equatable {
     var id: String
     var postID: String
     var reportedUserID: String
     var reportedByUserID: String
     var reason: String
+    var category: ModerationReason
+    var severity: ModerationSeverity
+    var status: ModerationStatus
     var postBody: String
+    var postAuthorName: String
     var createdAt: Date
+
+    init(
+        id: String,
+        postID: String,
+        reportedUserID: String,
+        reportedByUserID: String,
+        reason: String,
+        category: ModerationReason = .other,
+        severity: ModerationSeverity = .medium,
+        status: ModerationStatus = .submitted,
+        postBody: String,
+        postAuthorName: String = "",
+        createdAt: Date
+    ) {
+        self.id = id
+        self.postID = postID
+        self.reportedUserID = reportedUserID
+        self.reportedByUserID = reportedByUserID
+        self.reason = reason
+        self.category = category
+        self.severity = severity
+        self.status = status
+        self.postBody = postBody
+        self.postAuthorName = postAuthorName
+        self.createdAt = createdAt
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case id
+        case postID
+        case reportedUserID
+        case reportedByUserID
+        case reason
+        case category
+        case severity
+        case status
+        case postBody
+        case postAuthorName
+        case createdAt
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        id = try container.decode(String.self, forKey: .id)
+        postID = try container.decode(String.self, forKey: .postID)
+        reportedUserID = try container.decode(String.self, forKey: .reportedUserID)
+        reportedByUserID = try container.decode(String.self, forKey: .reportedByUserID)
+        reason = try container.decode(String.self, forKey: .reason)
+        category = try container.decodeIfPresent(ModerationReason.self, forKey: .category) ?? .other
+        severity = try container.decodeIfPresent(ModerationSeverity.self, forKey: .severity) ?? .medium
+        status = try container.decodeIfPresent(ModerationStatus.self, forKey: .status) ?? .submitted
+        postBody = try container.decode(String.self, forKey: .postBody)
+        postAuthorName = try container.decodeIfPresent(String.self, forKey: .postAuthorName) ?? ""
+        createdAt = try container.decode(Date.self, forKey: .createdAt)
+    }
 }
 
 struct LeaderboardEntry: Identifiable, Codable, Equatable {
@@ -852,6 +1178,49 @@ extension Array where Element == LeaderboardEntry {
     }
 }
 
+struct MonthlyReflectionLetter: Identifiable, Codable, Equatable {
+    var id: String
+    var monthStart: Date
+    var title: String
+    var opening: String
+    var body: String
+    var scriptureReference: String
+    var closingPrompt: String
+    var generatedAt: Date
+    var completedMissions: Int
+    var failedMissions: Int
+    var ovrDelta: Int
+    var averageEffort: Double
+
+    init(
+        id: String,
+        monthStart: Date,
+        title: String,
+        opening: String,
+        body: String,
+        scriptureReference: String,
+        closingPrompt: String,
+        generatedAt: Date,
+        completedMissions: Int,
+        failedMissions: Int,
+        ovrDelta: Int,
+        averageEffort: Double
+    ) {
+        self.id = id
+        self.monthStart = monthStart
+        self.title = title
+        self.opening = opening
+        self.body = body
+        self.scriptureReference = scriptureReference
+        self.closingPrompt = closingPrompt
+        self.generatedAt = generatedAt
+        self.completedMissions = completedMissions
+        self.failedMissions = failedMissions
+        self.ovrDelta = ovrDelta
+        self.averageEffort = averageEffort
+    }
+}
+
 struct AppStateSnapshot: Codable, Equatable {
     var profile: UserProfile?
     var missions: [Mission]
@@ -866,6 +1235,10 @@ struct AppStateSnapshot: Codable, Equatable {
     var leaderboard: [LeaderboardEntry]
     var blockedUserIDs: [String]
     var moderationReports: [ModerationReport]
+    var contentFeedback: [DailyContentFeedback]
+    var notificationFatigue: NotificationFatigueState
+    var monthlyLetters: [MonthlyReflectionLetter]
+    var verseMemory: [MemorizedVerse]
 
     init(
         profile: UserProfile?,
@@ -880,7 +1253,11 @@ struct AppStateSnapshot: Codable, Equatable {
         partners: [AccountabilityPartner],
         leaderboard: [LeaderboardEntry],
         blockedUserIDs: [String] = [],
-        moderationReports: [ModerationReport] = []
+        moderationReports: [ModerationReport] = [],
+        contentFeedback: [DailyContentFeedback] = [],
+        notificationFatigue: NotificationFatigueState = NotificationFatigueState(),
+        monthlyLetters: [MonthlyReflectionLetter] = [],
+        verseMemory: [MemorizedVerse] = []
     ) {
         self.profile = profile
         self.missions = missions
@@ -895,6 +1272,10 @@ struct AppStateSnapshot: Codable, Equatable {
         self.leaderboard = leaderboard
         self.blockedUserIDs = blockedUserIDs
         self.moderationReports = moderationReports
+        self.contentFeedback = contentFeedback
+        self.notificationFatigue = notificationFatigue
+        self.monthlyLetters = monthlyLetters
+        self.verseMemory = verseMemory
     }
 
     private enum CodingKeys: String, CodingKey {
@@ -911,6 +1292,10 @@ struct AppStateSnapshot: Codable, Equatable {
         case leaderboard
         case blockedUserIDs
         case moderationReports
+        case contentFeedback
+        case notificationFatigue
+        case monthlyLetters
+        case verseMemory
     }
 
     init(from decoder: Decoder) throws {
@@ -928,6 +1313,10 @@ struct AppStateSnapshot: Codable, Equatable {
         leaderboard = try container.decode([LeaderboardEntry].self, forKey: .leaderboard)
         blockedUserIDs = try container.decodeIfPresent([String].self, forKey: .blockedUserIDs) ?? []
         moderationReports = try container.decodeIfPresent([ModerationReport].self, forKey: .moderationReports) ?? []
+        contentFeedback = try container.decodeIfPresent([DailyContentFeedback].self, forKey: .contentFeedback) ?? []
+        notificationFatigue = try container.decodeIfPresent(NotificationFatigueState.self, forKey: .notificationFatigue) ?? NotificationFatigueState()
+        monthlyLetters = try container.decodeIfPresent([MonthlyReflectionLetter].self, forKey: .monthlyLetters) ?? []
+        verseMemory = try container.decodeIfPresent([MemorizedVerse].self, forKey: .verseMemory) ?? []
     }
 
     static let empty = AppStateSnapshot(
@@ -943,7 +1332,11 @@ struct AppStateSnapshot: Codable, Equatable {
         partners: [],
         leaderboard: [],
         blockedUserIDs: [],
-        moderationReports: []
+        moderationReports: [],
+        contentFeedback: [],
+        notificationFatigue: NotificationFatigueState(),
+        monthlyLetters: [],
+        verseMemory: []
     )
 }
 

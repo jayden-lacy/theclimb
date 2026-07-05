@@ -128,6 +128,7 @@ struct OnboardingView: View {
             Spacer(minLength: 18)
 
             VStack(spacing: 14) {
+                OnboardingValueStrip()
                 ctaButton
                 welcomeLoginPrompt
             }
@@ -137,15 +138,17 @@ struct OnboardingView: View {
 
     private var welcomeLoginPrompt: some View {
         HStack(spacing: 4) {
-            Text("Already have an account?")
+            Text(viewModel.isReonboardingExistingAccount ? "Restarting setup for your existing account." : "Already have an account?")
                 .foregroundStyle(Color.climbTextSecondary)
-            Button("Log in") {
-                HapticFeedback.selection()
-                accountMode = .login
-                setStep(.account)
+            if !viewModel.isReonboardingExistingAccount {
+                Button("Log in") {
+                    HapticFeedback.selection()
+                    accountMode = .login
+                    setStep(.account)
+                }
+                .buttonStyle(.plain)
+                .foregroundStyle(Color.climbSage)
             }
-            .buttonStyle(.plain)
-            .foregroundStyle(Color.climbSage)
         }
         .font(ClimbTypography.sans(13, weight: .medium))
         .frame(maxWidth: .infinity)
@@ -154,7 +157,7 @@ struct OnboardingView: View {
     private var accountStep: some View {
         VStack(alignment: .leading, spacing: 20) {
             StepHeading(title: accountTitle, subtitle: accountSubtitle)
-            ClimbCard(padding: 20, cornerRadius: 24) {
+            ClimbQuietPanel(padding: 20, cornerRadius: 22) {
                 if accountMode == .create {
                     TextField("Name", text: $displayName)
                         .textContentType(.name)
@@ -213,14 +216,16 @@ struct OnboardingView: View {
                 .frame(maxWidth: .infinity)
                 .padding(.top, 4)
 
-            Button(accountMode == .create ? "Already have an account? Log in" : "Need an account? Create one") {
-                HapticFeedback.selection()
-                toggleAccountMode()
+            if !viewModel.isReonboardingExistingAccount {
+                Button(accountMode == .create ? "Already have an account? Log in" : "Need an account? Create one") {
+                    HapticFeedback.selection()
+                    toggleAccountMode()
+                }
+                .buttonStyle(.plain)
+                .font(ClimbTypography.sans(13, weight: .semibold))
+                .foregroundStyle(Color.climbSage)
+                .frame(maxWidth: .infinity)
             }
-            .buttonStyle(.plain)
-            .font(ClimbTypography.sans(13, weight: .semibold))
-            .foregroundStyle(Color.climbSage)
-            .frame(maxWidth: .infinity)
         }
     }
 
@@ -305,7 +310,7 @@ struct OnboardingView: View {
         VStack(alignment: .leading, spacing: 18) {
             StepHeading(title: "When should we remind you?", subtitle: "We’ll send your daily mission at this time.")
 
-            ClimbCard(padding: 20, cornerRadius: 22) {
+            ClimbQuietPanel(padding: 20, cornerRadius: 22) {
                 DatePicker("", selection: $reminderTime, displayedComponents: .hourAndMinute)
                     .datePickerStyle(.wheel)
                     .labelsHidden()
@@ -328,7 +333,7 @@ struct OnboardingView: View {
     private var reviewStep: some View {
         VStack(alignment: .leading, spacing: 18) {
             StepHeading(title: "Almost there!", subtitle: "Here’s what you’ve set up.")
-            ClimbCard(padding: 20, cornerRadius: 22) {
+            ClimbQuietPanel(padding: 20, cornerRadius: 22) {
                 SetupSummaryRow(systemImage: "person.2", title: "Age Group", value: ageChoice.title)
                 SetupSummaryRow(systemImage: "heart", title: "Goals", value: selectedGoalsSummary)
                 SetupSummaryRow(systemImage: "shield", title: "Main Struggle", value: struggle.rawValue)
@@ -390,7 +395,7 @@ struct OnboardingView: View {
             }
             .frame(maxWidth: .infinity)
 
-            ClimbCard(padding: 20, cornerRadius: 22) {
+            ClimbQuietPanel(padding: 20, cornerRadius: 22) {
                 Text("Day 1 is ready.")
                     .font(ClimbTypography.sans(16, weight: .semibold))
                     .foregroundStyle(.white)
@@ -428,6 +433,9 @@ struct OnboardingView: View {
 
     private var ctaTitle: String {
         if isSubmitting {
+            if viewModel.isReonboardingExistingAccount {
+                return "Updating Path"
+            }
             return accountMode == .login ? "Logging In" : "Creating Home"
         }
         switch step {
@@ -435,8 +443,10 @@ struct OnboardingView: View {
             return "Get Started"
         case .account where accountMode == .login:
             return "Log In"
+        case .account where viewModel.isReonboardingExistingAccount:
+            return "Confirm Account"
         case .review:
-            return "Build My Path"
+            return viewModel.isReonboardingExistingAccount ? "Update My Path" : "Build My Path"
         case .ready:
             return "Go to Home"
         default:
@@ -532,15 +542,24 @@ struct OnboardingView: View {
         if password.count < 6 {
             return "Password must be at least 6 characters."
         }
+        if viewModel.isReonboardingExistingAccount {
+            return "Ready to confirm this account and update your path."
+        }
         return accountMode == .login ? "Ready to log in." : "Account details are ready."
     }
 
     private var accountTitle: String {
-        accountMode == .login ? "Log In" : "Create Account"
+        if viewModel.isReonboardingExistingAccount {
+            return "Confirm Account"
+        }
+        return accountMode == .login ? "Log In" : "Create Account"
     }
 
     private var accountSubtitle: String {
-        accountMode == .login ? "Welcome back. Enter your account details." : "Let’s get you started."
+        if viewModel.isReonboardingExistingAccount {
+            return "Use your existing account. Your new onboarding answers will rebuild your path."
+        }
+        return accountMode == .login ? "Welcome back. Enter your account details." : "Let’s get you started."
     }
 
     private var notificationButtonTitle: String {
@@ -832,8 +851,8 @@ private struct AgeChoice: Identifiable, Equatable {
     let systemImage: String
     let ageGroup: AgeGroup
 
-    static let teen13 = AgeChoice(id: "13-15", title: "13 - 15", subtitle: "Start with simple wins", systemImage: "person", ageGroup: .teen)
-    static let teen16 = AgeChoice(id: "16-18", title: "16 - 18", subtitle: "Build discipline now", systemImage: "person.fill", ageGroup: .teen)
+    static let teen13 = AgeChoice(id: "13-15", title: "13 - 15", subtitle: "Start with simple wins", systemImage: "person", ageGroup: .earlyTeen)
+    static let teen16 = AgeChoice(id: "16-18", title: "16 - 18", subtitle: "Build discipline now", systemImage: "person.fill", ageGroup: .lateTeen)
     static let young19 = AgeChoice(id: "19-24", title: "19 - 24", subtitle: "Own your daily system", systemImage: "graduationcap", ageGroup: .college)
     static let adult25 = AgeChoice(id: "25+", title: "25+", subtitle: "Sustain a mature rhythm", systemImage: "briefcase", ageGroup: .youngAdult)
 
@@ -1021,8 +1040,9 @@ private struct OnboardingValueStrip: View {
         HStack(spacing: 10) {
             WelcomeValueTile(systemImage: "target", title: "Mission")
             WelcomeValueTile(systemImage: "book.closed", title: "Word")
-            WelcomeValueTile(systemImage: "shield.checkered", title: "Partner")
+            WelcomeValueTile(systemImage: "person.2", title: "Partner")
         }
+        .padding(.horizontal, 4)
     }
 }
 
@@ -1034,8 +1054,8 @@ private struct BrandWelcomeLockup: View {
                     .fill(
                         RadialGradient(
                             colors: [
-                                Color.climbAction.opacity(0.18),
-                                Color.climbAction.opacity(0.045),
+                                Color.climbAction.opacity(0.11),
+                                Color.climbAction.opacity(0.030),
                                 Color.clear
                             ],
                             center: .center,
@@ -1044,7 +1064,7 @@ private struct BrandWelcomeLockup: View {
                         )
                     )
                     .frame(width: 276, height: 276)
-                    .blur(radius: 10)
+                    .blur(radius: 14)
 
                 Image("BrandLogo")
                     .resizable()
@@ -1053,7 +1073,7 @@ private struct BrandWelcomeLockup: View {
                     .scaledToFit()
                     .frame(width: 198, height: 198)
                     .clipShape(RoundedRectangle(cornerRadius: 48, style: .continuous))
-                    .shadow(color: Color.climbAction.opacity(0.16), radius: 30, x: 0, y: 16)
+                    .shadow(color: Color.climbAction.opacity(0.12), radius: 26, x: 0, y: 14)
                     .shadow(color: .black.opacity(0.42), radius: 34, x: 0, y: 24)
             }
 
@@ -1071,7 +1091,7 @@ private struct BrandWelcomeLockup: View {
                     .lineSpacing(4)
                     .fixedSize(horizontal: false, vertical: true)
 
-                Text("Start with today.")
+                Text("Start with one honest step.")
                     .font(ClimbTypography.serif(24))
                     .foregroundStyle(Color.climbWarm.opacity(0.92))
                     .padding(.top, 4)
@@ -1182,25 +1202,23 @@ private struct WelcomeValueTile: View {
     let title: String
 
     var body: some View {
-        VStack(spacing: 8) {
+        HStack(spacing: 8) {
             Image(systemName: systemImage)
-                .font(ClimbTypography.sans(14, weight: .semibold))
+                .font(ClimbTypography.sans(12, weight: .semibold))
                 .foregroundStyle(Color.climbSage)
-                .frame(width: 32, height: 32)
-                .background(Color.climbSage.opacity(0.105), in: Circle())
 
             Text(title)
-                .font(ClimbTypography.sans(13, weight: .semibold))
+                .font(ClimbTypography.sans(12, weight: .semibold))
                 .foregroundStyle(Color.climbMist)
                 .lineLimit(1)
                 .minimumScaleFactor(0.76)
         }
         .frame(maxWidth: .infinity)
-        .padding(.vertical, 14)
-        .background(Color.climbSurfaceRaised.opacity(0.66), in: RoundedRectangle(cornerRadius: 20, style: .continuous))
+        .padding(.vertical, 11)
+        .background(Color.climbBackgroundLifted.opacity(0.42), in: Capsule())
         .overlay(
-            RoundedRectangle(cornerRadius: 20, style: .continuous)
-                .stroke(Color.white.opacity(0.065), lineWidth: 0.7)
+            Capsule()
+                .stroke(Color.climbHairline.opacity(0.72), lineWidth: 0.7)
         )
     }
 }

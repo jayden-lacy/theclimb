@@ -1,4 +1,8 @@
+import Combine
 import SwiftUI
+#if os(iOS)
+import UIKit
+#endif
 #if canImport(FamilyControls) && os(iOS)
 import FamilyControls
 #endif
@@ -8,6 +12,7 @@ struct MissionSessionView: View {
     let mission: Mission
 
     @Environment(\.dismiss) private var dismiss
+    @Environment(\.openURL) private var openURL
     @Environment(\.scenePhase) private var scenePhase
     @State private var phase: MissionPhase
     @State private var remainingSeconds: Int
@@ -19,10 +24,15 @@ struct MissionSessionView: View {
     @State private var mood: MoodRating = .steady
     @State private var failureReason = ""
     @State private var isSubmittingResult = false
+    @State private var completedStreak: Int?
+    @State private var completedOVR: Int?
+    @State private var completedNewBest = false
 #if canImport(FamilyControls) && os(iOS)
     @State private var showActivityPicker = false
     @State private var activitySelection = FamilyActivitySelection()
     @State private var shouldStartAfterActivityPicker = false
+    @State private var focusTemplates: [FocusTemplateSummary] = []
+    @State private var activeTemplateID: String?
 #endif
 
     private let timer = Timer.publish(every: 1, on: .main, in: .common).autoconnect()
@@ -100,9 +110,15 @@ struct MissionSessionView: View {
         )
         .onAppear {
             activitySelection = ScreenTimeActivitySelectionStore.loadSelection()
+            focusTemplates = ScreenTimeActivitySelectionStore.loadTemplateSummaries()
+            activeTemplateID = nil
+            Task {
+                await viewModel.refreshScreenTimeAuthorization()
+            }
         }
         .onChange(of: activitySelection) { _, newSelection in
             ScreenTimeActivitySelectionStore.saveSelection(newSelection)
+            focusTemplates = ScreenTimeActivitySelectionStore.loadTemplateSummaries()
         }
         .onChange(of: showActivityPicker) { _, isPresented in
             guard !isPresented, shouldStartAfterActivityPicker else { return }
@@ -114,12 +130,13 @@ struct MissionSessionView: View {
     }
 
     private var header: some View {
-        ClimbCard(padding: 22, cornerRadius: 24) {
+        ClimbQuietPanel(padding: 22, cornerRadius: 22, isProminent: true) {
             VStack(alignment: .leading, spacing: 10) {
-                Text("MISSION")
+                Text("Mission")
                     .font(ClimbTypography.sans(12, weight: .semibold))
-                    .tracking(1.4)
-                    .foregroundStyle(Color.climbMuted)
+                    .tracking(1.1)
+                    .foregroundStyle(Color.climbTextSecondary)
+                    .textCase(.uppercase)
                 Text(mission.title)
                     .font(ClimbTypography.sans(28, weight: .semibold))
                     .foregroundStyle(.white)
@@ -150,12 +167,56 @@ struct MissionSessionView: View {
     }
 
     private var readyContent: some View {
-        ClimbCard(padding: 22, cornerRadius: 24, isProminent: true) {
+        ClimbQuietPanel(padding: 22, cornerRadius: 22, isProminent: true) {
             SectionTitle(title: "Before You Start", subtitle: "Make the room quiet before the timer begins.")
             Text("Set your phone down, breathe once, and give this mission your full attention.")
                 .font(ClimbTypography.sans(15, weight: .medium))
                 .foregroundStyle(Color.climbTextSecondary)
                 .lineSpacing(3)
+#if canImport(FamilyControls) && os(iOS)
+            if mission.appBlockingEnabled {
+                FocusPreflightPanel(
+                    authorizationState: viewModel.focusState,
+                    selectedItemCount: activitySelection.shieldableContentCount,
+                    templates: focusTemplates,
+                    activeTemplateID: activeTemplateID,
+                    onRequestPermission: {
+                        if viewModel.focusState == .denied,
+                           let settingsURL = URL(string: UIApplication.openSettingsURLString) {
+                            openURL(settingsURL)
+                        } else {
+                            Task {
+                                await viewModel.requestScreenTimeAuthorization()
+                            }
+                        }
+                    },
+                    onChooseApps: {
+                        showActivityPicker = true
+                    },
+                    onApplyTemplate: { template in
+                        if let selection = ScreenTimeActivitySelectionStore.applyTemplate(id: template.id) {
+                            activeTemplateID = template.id
+                            activitySelection = selection
+                            HapticFeedback.selection()
+                        }
+                    }
+                )
+            } else {
+                FocusPreflightDisabledPanel()
+            }
+#endif
+            DailyContentFeedbackStrip(
+                title: "Mission fit",
+                selected: viewModel.contentFeedback(for: mission.id, kind: .mission)
+            ) { rating in
+                viewModel.submitContentFeedback(
+                    kind: .mission,
+                    contentID: mission.id,
+                    title: mission.title,
+                    rating: rating
+                )
+            }
+
             PrimaryActionButton(title: beginFocusButtonTitle, systemImage: "play.fill") {
                 beginFocusFlow()
             }
@@ -236,7 +297,7 @@ struct MissionSessionView: View {
     }
 
     private var reflectionContent: some View {
-        ClimbCard(padding: 22, cornerRadius: 24, isProminent: true) {
+        ClimbQuietPanel(padding: 22, cornerRadius: 22, accent: .climbWarm, isProminent: true) {
             Text("What did this mission reveal?")
                 .font(ClimbTypography.serif(27))
                 .foregroundStyle(.white)
@@ -267,7 +328,8 @@ struct MissionSessionView: View {
             ) {
                 guard !isSubmittingResult else { return }
                 isSubmittingResult = true
-                Task {
+                let previousBest = viewModel.profile?.longestStreak ?? 0
+                Task { @MainActor in
                     let didComplete = await viewModel.completeMission(
                         missionID: mission.id,
                         hardestPart: hardestPart,
@@ -277,6 +339,11 @@ struct MissionSessionView: View {
                         mood: mood
                     )
                     if didComplete {
+                        let newStreak = viewModel.profile?.currentStreak ?? 0
+                        completedStreak = newStreak
+                        completedOVR = viewModel.profile?.ovrScore
+                        completedNewBest = newStreak > previousBest
+                        HapticFeedback.success()
                         phase = .complete
                     }
                     isSubmittingResult = false
@@ -286,7 +353,7 @@ struct MissionSessionView: View {
     }
 
     private var failureContent: some View {
-        ClimbCard(cornerRadius: 22) {
+        ClimbQuietPanel(cornerRadius: 22, accent: .climbRed) {
             SectionTitle(
                 title: "Log the Miss",
                 subtitle: "Be honest, then take the recovery step. One missed mission should not become a missed day."
@@ -314,7 +381,7 @@ struct MissionSessionView: View {
     }
 
     private var fallbackContent: some View {
-        ClimbCard(cornerRadius: 22) {
+        ClimbQuietPanel(cornerRadius: 22, accent: .climbGold) {
             SectionTitle(title: mission.fallbackTitle)
             Text(mission.fallbackSummary)
                 .font(ClimbTypography.sans(15))
@@ -338,20 +405,44 @@ struct MissionSessionView: View {
     }
 
     private var completeContent: some View {
-        ClimbCard(cornerRadius: 24, isProminent: true) {
-            Image(systemName: "checkmark.seal.fill")
-                .font(.largeTitle)
-                .foregroundStyle(Color.climbSage)
+        let streak = completedStreak ?? viewModel.profile?.currentStreak ?? 0
+        let ovr = completedOVR ?? viewModel.profile?.ovrScore ?? 0
+
+        return ClimbQuietPanel(cornerRadius: 24, isProminent: true) {
+            StreakCelebrationView(streak: streak, isNewBest: completedNewBest)
+
             Text("Mission Complete")
-                .font(ClimbTypography.sans(24, weight: .semibold))
+                .font(ClimbTypography.sans(27, weight: .semibold))
                 .foregroundStyle(.white)
-            Text("Your OVR, streak, journal, and progress history have been updated.")
-                .font(ClimbTypography.sans(15))
+
+            Text(completionMessage(streak: streak))
+                .font(ClimbTypography.sans(15, weight: .medium))
                 .foregroundStyle(Color.climbTextSecondary)
+                .multilineTextAlignment(.center)
+                .lineSpacing(3)
+
+            HStack(spacing: 10) {
+                CelebrationMetric(title: "Streak", value: "\(streak)", color: .climbGold)
+                CelebrationMetric(title: "OVR", value: "\(ovr)", color: .climbSage)
+                CelebrationMetric(title: "Journal", value: "Saved", color: .climbBlue)
+            }
+            .padding(.top, 4)
+
             PrimaryActionButton(title: "Close", systemImage: "xmark") {
                 dismiss()
             }
+            .padding(.top, 4)
         }
+    }
+
+    private func completionMessage(streak: Int) -> String {
+        if completedNewBest {
+            return "New best streak. Today counted because you finished the mission and reflected before moving on."
+        }
+        if streak <= 1 {
+            return "Day 1 is locked in. Come back tomorrow and protect the next small promise."
+        }
+        return "\(streak) days in a row. Your streak grew because the mission and reflection are both complete."
     }
 
     private var reflectionIsValid: Bool {
@@ -387,16 +478,26 @@ struct MissionSessionView: View {
     private func beginFocusFlow() {
 #if canImport(FamilyControls) && os(iOS)
         activitySelection = ScreenTimeActivitySelectionStore.loadSelection()
-        if mission.appBlockingEnabled, !activitySelection.hasShieldableContent {
-            shouldStartAfterActivityPicker = true
+        if mission.appBlockingEnabled, viewModel.focusState != .authorized, viewModel.focusState != .active {
             Task {
-                if viewModel.focusState != .authorized, viewModel.focusState != .active {
-                    await viewModel.requestScreenTimeAuthorization()
-                }
+                await viewModel.requestScreenTimeAuthorization()
                 await MainActor.run {
-                    showActivityPicker = true
+                    if viewModel.focusState == .authorized || viewModel.focusState == .active {
+                        if activitySelection.hasShieldableContent {
+                            startFocusTimer()
+                        } else {
+                            shouldStartAfterActivityPicker = true
+                            showActivityPicker = true
+                        }
+                    }
                 }
             }
+            return
+        }
+
+        if mission.appBlockingEnabled, !activitySelection.hasShieldableContent {
+            shouldStartAfterActivityPicker = true
+            showActivityPicker = true
             return
         }
 #endif
@@ -511,6 +612,419 @@ private enum MissionPhase: Hashable {
     case failurePrompt
     case fallback
     case complete
+}
+
+#if canImport(FamilyControls) && os(iOS)
+private struct FocusPreflightPanel: View {
+    let authorizationState: FocusModeState
+    let selectedItemCount: Int
+    let templates: [FocusTemplateSummary]
+    let activeTemplateID: String?
+    let onRequestPermission: () -> Void
+    let onChooseApps: () -> Void
+    let onApplyTemplate: (FocusTemplateSummary) -> Void
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            HStack(alignment: .firstTextBaseline) {
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("Blocking preflight")
+                        .font(ClimbTypography.sans(18, weight: .semibold))
+                        .foregroundStyle(Color.climbMist)
+                    Text(preflightSubtitle)
+                        .font(ClimbTypography.sans(13, weight: .medium))
+                        .foregroundStyle(Color.climbTextSecondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+                Spacer(minLength: 10)
+                StatusBadge(text: readyForBlocking ? "Ready" : "Setup", color: readyForBlocking ? .climbGreen : .climbGold)
+            }
+
+            VStack(spacing: 10) {
+                FocusPreflightRow(
+                    systemImage: authorizationIcon,
+                    title: "Screen Time access",
+                    detail: authorizationDetail,
+                    color: authorizationColor,
+                    actionTitle: authorizationActionTitle,
+                    action: onRequestPermission
+                )
+
+                FocusPreflightRow(
+                    systemImage: selectedItemCount > 0 ? "app.badge.checkmark" : "square.grid.2x2",
+                    title: "Apps selected",
+                    detail: selectedItemCount > 0 ? "\(selectedItemCount) distractions selected" : "Choose apps, categories, or websites",
+                    color: selectedItemCount > 0 ? .climbGreen : .climbGold,
+                    actionTitle: selectedItemCount > 0 ? "Edit" : "Choose",
+                    action: onChooseApps
+                )
+            }
+
+            if !templates.isEmpty {
+                VStack(alignment: .leading, spacing: 10) {
+                    Text("Saved templates")
+                        .font(ClimbTypography.sans(12, weight: .semibold))
+                        .tracking(1.4)
+                        .foregroundStyle(Color.climbMuted)
+                        .textCase(.uppercase)
+
+                    ScrollView(.horizontal, showsIndicators: false) {
+                        HStack(spacing: 10) {
+                            ForEach(templates) { template in
+                                FocusTemplateChip(
+                                    template: template,
+                                    isActive: template.id == activeTemplateID
+                                ) {
+                                    onApplyTemplate(template)
+                                }
+                            }
+                        }
+                    }
+                }
+                .transition(.opacity.combined(with: .move(edge: .top)))
+            }
+        }
+        .padding(15)
+        .background(Color.climbBackgroundLifted.opacity(0.62), in: RoundedRectangle(cornerRadius: 22, style: .continuous))
+        .overlay(
+            RoundedRectangle(cornerRadius: 22, style: .continuous)
+                .stroke(Color.white.opacity(0.065), lineWidth: 0.7)
+        )
+        .animation(ClimbMotion.standard, value: selectedItemCount)
+        .animation(ClimbMotion.standard, value: activeTemplateID)
+        .animation(ClimbMotion.standard, value: authorizationState)
+    }
+
+    private var readyForBlocking: Bool {
+        (authorizationState == .authorized || authorizationState == .active) && selectedItemCount > 0
+    }
+
+    private var preflightSubtitle: String {
+        readyForBlocking ? "Your shield is prepared before the timer begins." : "Handle setup once so the mission starts cleanly."
+    }
+
+    private var authorizationIcon: String {
+        switch authorizationState {
+        case .active, .authorized:
+            "checkmark.shield.fill"
+        case .denied:
+            "exclamationmark.shield.fill"
+        case .permissionRequired:
+            "shield.lefthalf.filled"
+        case .selectionRequired:
+            "square.grid.2x2"
+        case .simulated:
+            "moon.fill"
+        case .unavailable:
+            "hourglass"
+        }
+    }
+
+    private var authorizationDetail: String {
+        switch authorizationState {
+        case .active:
+            "Blocking is active"
+        case .authorized:
+            "Permission approved"
+        case .denied:
+            "Open Settings to allow access"
+        case .permissionRequired:
+            "Permission needed before blocking"
+        case .selectionRequired:
+            "Access ready, selection needed"
+        case .simulated:
+            "Timer will run without blocking"
+        case .unavailable:
+            "Checking availability"
+        }
+    }
+
+    private var authorizationColor: Color {
+        switch authorizationState {
+        case .active, .authorized:
+            .climbGreen
+        case .denied:
+            .climbRed
+        case .permissionRequired, .selectionRequired, .simulated, .unavailable:
+            .climbGold
+        }
+    }
+
+    private var authorizationActionTitle: String? {
+        switch authorizationState {
+        case .permissionRequired, .denied, .unavailable:
+            authorizationState == .denied ? "Settings" : "Allow"
+        case .active, .authorized, .selectionRequired, .simulated:
+            nil
+        }
+    }
+}
+
+private struct FocusPreflightDisabledPanel: View {
+    var body: some View {
+        FocusPreflightRow(
+            systemImage: "target",
+            title: "Manual focus",
+            detail: "App blocking is off for this mission",
+            color: .climbGold,
+            actionTitle: nil,
+            action: {}
+        )
+        .padding(15)
+        .background(Color.climbBackgroundLifted.opacity(0.62), in: RoundedRectangle(cornerRadius: 22, style: .continuous))
+        .overlay(
+            RoundedRectangle(cornerRadius: 22, style: .continuous)
+                .stroke(Color.white.opacity(0.065), lineWidth: 0.7)
+        )
+    }
+}
+
+private struct FocusPreflightRow: View {
+    let systemImage: String
+    let title: String
+    let detail: String
+    let color: Color
+    let actionTitle: String?
+    let action: () -> Void
+
+    var body: some View {
+        HStack(spacing: 12) {
+            Image(systemName: systemImage)
+                .font(ClimbTypography.sans(16, weight: .semibold))
+                .foregroundStyle(color)
+                .frame(width: 38, height: 38)
+                .background(color.opacity(0.12), in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+
+            VStack(alignment: .leading, spacing: 3) {
+                Text(title)
+                    .font(ClimbTypography.sans(14, weight: .semibold))
+                    .foregroundStyle(Color.climbMist)
+                Text(detail)
+                    .font(ClimbTypography.sans(12, weight: .semibold))
+                    .foregroundStyle(Color.climbTextSecondary)
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.78)
+            }
+
+            Spacer(minLength: 8)
+
+            if let actionTitle {
+                Button(actionTitle) {
+                    HapticFeedback.impact(.light)
+                    action()
+                }
+                .buttonStyle(.plain)
+                .font(ClimbTypography.sans(12, weight: .semibold))
+                .foregroundStyle(Color.climbInk)
+                .padding(.horizontal, 12)
+                .padding(.vertical, 8)
+                .background(color, in: Capsule())
+            }
+        }
+        .padding(12)
+        .background(Color.climbSurface.opacity(0.72), in: RoundedRectangle(cornerRadius: 18, style: .continuous))
+        .overlay(
+            RoundedRectangle(cornerRadius: 18, style: .continuous)
+                .stroke(Color.white.opacity(0.055), lineWidth: 0.7)
+        )
+    }
+}
+
+private struct FocusTemplateChip: View {
+    let template: FocusTemplateSummary
+    let isActive: Bool
+    let action: () -> Void
+
+    var body: some View {
+        Button {
+            action()
+        } label: {
+            HStack(spacing: 10) {
+                Image(systemName: template.systemImage)
+                    .font(ClimbTypography.sans(14, weight: .semibold))
+                    .foregroundStyle(isActive ? Color.climbInk : Color.climbGreen)
+                    .frame(width: 30, height: 30)
+                    .background(
+                        isActive ? Color.white.opacity(0.28) : Color.climbGreen.opacity(0.12),
+                        in: RoundedRectangle(cornerRadius: 11, style: .continuous)
+                    )
+
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(template.name)
+                        .font(ClimbTypography.sans(13, weight: .semibold))
+                        .foregroundStyle(isActive ? Color.climbInk : Color.climbMist)
+                    Text("\(template.shieldableContentCount) blocked")
+                        .font(ClimbTypography.sans(11, weight: .semibold))
+                        .foregroundStyle(isActive ? Color.climbInk.opacity(0.65) : Color.climbTextSecondary)
+                }
+            }
+            .padding(.horizontal, 11)
+            .padding(.vertical, 10)
+            .background(
+                isActive ? Color.climbGreen : Color.climbSurface.opacity(0.76),
+                in: RoundedRectangle(cornerRadius: 17, style: .continuous)
+            )
+            .overlay(
+                RoundedRectangle(cornerRadius: 17, style: .continuous)
+                    .stroke(isActive ? Color.white.opacity(0.20) : Color.white.opacity(0.065), lineWidth: 0.7)
+            )
+        }
+        .buttonStyle(ScaleButtonStyle())
+    }
+}
+#endif
+
+private struct StreakCelebrationView: View {
+    let streak: Int
+    let isNewBest: Bool
+
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @State private var ringProgress = 0.08
+    @State private var contentScale = 0.92
+    @State private var glowIsVisible = false
+    @State private var sparksVisible = false
+    @State private var sparksExpanded = false
+
+    var body: some View {
+        ZStack {
+            CelebrationSparks(isVisible: sparksVisible, isExpanded: sparksExpanded)
+
+            Circle()
+                .fill(Color.climbSurfaceRaised.opacity(0.92))
+                .frame(width: 186, height: 186)
+                .overlay(Circle().stroke(Color.white.opacity(0.08), lineWidth: 1))
+                .shadow(color: Color.climbGreen.opacity(glowIsVisible ? 0.30 : 0.12), radius: glowIsVisible ? 30 : 14, x: 0, y: 0)
+                .shadow(color: .black.opacity(0.42), radius: 24, x: 0, y: 16)
+
+            Circle()
+                .stroke(Color.white.opacity(0.075), lineWidth: 11)
+                .frame(width: 150, height: 150)
+
+            Circle()
+                .trim(from: 0, to: min(max(ringProgress, 0), 1))
+                .stroke(
+                    LinearGradient(
+                        colors: [Color.climbGreen, Color.climbSage, Color.climbGold.opacity(0.86)],
+                        startPoint: .topLeading,
+                        endPoint: .bottomTrailing
+                    ),
+                    style: StrokeStyle(lineWidth: 11, lineCap: .round)
+                )
+                .frame(width: 150, height: 150)
+                .rotationEffect(.degrees(-90))
+                .shadow(color: Color.climbGreen.opacity(0.34), radius: 18, x: 0, y: 0)
+
+            VStack(spacing: 5) {
+                Image(systemName: isNewBest ? "flame.fill" : "checkmark.seal.fill")
+                    .font(ClimbTypography.sans(24, weight: .semibold))
+                    .foregroundStyle(isNewBest ? Color.climbGold : Color.climbGreen)
+                    .symbolEffect(.bounce, value: ringProgress)
+
+                Text("\(streak)")
+                    .font(ClimbTypography.sans(58, weight: .bold).monospacedDigit())
+                    .foregroundStyle(.white)
+                    .contentTransition(.numericText())
+
+                Text(streak == 1 ? "day streak" : "day streak")
+                    .font(ClimbTypography.sans(12, weight: .semibold))
+                    .tracking(1.4)
+                    .foregroundStyle(Color.climbMuted)
+                    .textCase(.uppercase)
+            }
+            .scaleEffect(contentScale)
+        }
+        .frame(maxWidth: .infinity)
+        .frame(height: 214)
+        .onAppear(perform: animateIn)
+    }
+
+    private func animateIn() {
+        guard !reduceMotion else {
+            ringProgress = 1
+            contentScale = 1
+            glowIsVisible = true
+            return
+        }
+
+        withAnimation(ClimbMotion.slow) {
+            ringProgress = 1
+            contentScale = 1
+            glowIsVisible = true
+        }
+
+        withAnimation(.easeOut(duration: 0.12).delay(0.08)) {
+            sparksVisible = true
+        }
+
+        withAnimation(.easeOut(duration: 0.82).delay(0.10)) {
+            sparksExpanded = true
+        }
+
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.84) {
+            withAnimation(.easeOut(duration: 0.22)) {
+                sparksVisible = false
+            }
+        }
+    }
+}
+
+private struct CelebrationSparks: View {
+    let isVisible: Bool
+    let isExpanded: Bool
+
+    private let count = 18
+
+    var body: some View {
+        ZStack {
+            ForEach(0..<count, id: \.self) { index in
+                Capsule()
+                    .fill(index.isMultiple(of: 3) ? Color.climbGold : Color.climbGreen)
+                    .frame(width: 4, height: 12)
+                    .rotationEffect(.degrees(Double(index) * 21))
+                    .offset(sparkOffset(for: index))
+                    .opacity(isVisible ? (isExpanded ? 0 : 0.88) : 0)
+            }
+        }
+        .frame(width: 220, height: 220)
+        .allowsHitTesting(false)
+    }
+
+    private func sparkOffset(for index: Int) -> CGSize {
+        let angle = (Double(index) / Double(count)) * Double.pi * 2
+        let radius = isExpanded ? CGFloat(96 + (index % 4) * 8) : CGFloat(58)
+        return CGSize(width: CGFloat(cos(angle)) * radius, height: CGFloat(sin(angle)) * radius)
+    }
+}
+
+private struct CelebrationMetric: View {
+    let title: String
+    let value: String
+    let color: Color
+
+    var body: some View {
+        VStack(spacing: 5) {
+            Text(value)
+                .font(ClimbTypography.sans(15, weight: .semibold))
+                .foregroundStyle(.white)
+                .lineLimit(1)
+                .minimumScaleFactor(0.74)
+            Text(title)
+                .font(ClimbTypography.sans(11, weight: .semibold))
+                .tracking(0.7)
+                .foregroundStyle(Color.climbMuted)
+                .textCase(.uppercase)
+                .lineLimit(1)
+                .minimumScaleFactor(0.74)
+        }
+        .frame(maxWidth: .infinity)
+        .padding(.vertical, 12)
+        .padding(.horizontal, 8)
+        .background(color.opacity(0.10), in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+        .overlay(
+            RoundedRectangle(cornerRadius: 16, style: .continuous)
+                .stroke(color.opacity(0.22), lineWidth: 0.8)
+        )
+    }
 }
 
 private struct FocusTimerRing: View {

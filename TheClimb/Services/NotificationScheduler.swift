@@ -14,6 +14,7 @@ protocol NotificationScheduling {
     func scheduleDailyReminder(hour: Int, minute: Int) async
     func scheduleIncompleteMissionReminder(at date: Date) async
     func scheduleMissionTimerEnded(for mission: Mission, at date: Date) async
+    func cancelDailyReminder() async
     func cancelMissionTimerEnded() async
     func cancelIncompleteMissionReminder() async
     func scheduleRecoveryPrompt() async
@@ -100,6 +101,10 @@ final class LocalNotificationScheduler: NotificationScheduling {
         let request = UNNotificationRequest(identifier: Identifier.missionTimerEnded, content: content, trigger: trigger)
         center.removePendingNotificationRequests(withIdentifiers: [Identifier.missionTimerEnded])
         try? await center.add(request)
+    }
+
+    func cancelDailyReminder() async {
+        UNUserNotificationCenter.current().removePendingNotificationRequests(withIdentifiers: [Identifier.dailyMissionReminder])
     }
 
     func cancelMissionTimerEnded() async {

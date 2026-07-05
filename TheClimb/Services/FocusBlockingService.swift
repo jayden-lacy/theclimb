@@ -298,6 +298,7 @@ enum ActiveFocusMissionTimerStore {
 #if canImport(ActivityKit) && os(iOS)
 struct ClimbMissionAttributes: ActivityAttributes {
     struct ContentState: Codable, Hashable {
+        var startedAt: Date
         var endsAt: Date
         var focusLabel: String
     }
@@ -328,6 +329,7 @@ enum MissionLiveActivityService {
         )
         let content = ActivityContent(
             state: ClimbMissionAttributes.ContentState(
+                startedAt: endsAt.addingTimeInterval(TimeInterval(-max(mission.durationMinutes, 1) * 60)),
                 endsAt: endsAt,
                 focusLabel: focusLabel(for: mission, focusState: focusState)
             ),
@@ -368,6 +370,7 @@ enum MissionLiveActivityService {
         for activity in Activity<ClimbMissionAttributes>.activities where missionID == nil || activity.attributes.missionID == missionID {
             let content = ActivityContent(
                 state: ClimbMissionAttributes.ContentState(
+                    startedAt: Date(),
                     endsAt: Date(),
                     focusLabel: "Complete"
                 ),
@@ -388,6 +391,7 @@ enum MissionLiveActivityService {
 enum ScreenTimeActivitySelectionStore {
     private static let appGroupID = "group.com.jaydenlacy.theclimb"
     private static let storageKey = "the-climb.screen-time-selection.v1"
+    private static let templatesKey = "the-climb.screen-time-templates.v1"
 
     private static var defaults: UserDefaults {
         UserDefaults(suiteName: appGroupID) ?? .standard
@@ -407,6 +411,56 @@ enum ScreenTimeActivitySelectionStore {
         guard let data = try? JSONEncoder().encode(selection) else { return }
         defaults.set(data, forKey: storageKey)
     }
+
+    static func loadTemplateSummaries() -> [FocusTemplateSummary] {
+        guard let data = defaults.data(forKey: templatesKey) else { return [] }
+        return (try? JSONDecoder().decode([FocusTemplateSummary].self, from: data)) ?? []
+    }
+
+    @available(iOS 16.0, *)
+    static func saveCurrentSelectionAsTemplate(_ draft: FocusTemplateDraft) {
+        let selection = loadSelection()
+        guard selection.hasShieldableContent,
+              let selectionData = try? JSONEncoder().encode(selection) else { return }
+        var templates = loadTemplateSummaries()
+        let now = Date()
+        let template = FocusTemplateSummary(
+            id: draft.id,
+            name: draft.name,
+            subtitle: draft.subtitle,
+            systemImage: draft.systemImage,
+            selectionData: selectionData,
+            shieldableContentCount: selection.shieldableContentCount,
+            createdAt: templates.first(where: { $0.id == draft.id })?.createdAt ?? now,
+            updatedAt: now
+        )
+
+        templates.removeAll { $0.id == draft.id }
+        templates.insert(template, at: 0)
+        saveTemplateSummaries(templates)
+    }
+
+    @available(iOS 16.0, *)
+    @discardableResult
+    static func applyTemplate(id: String) -> FamilyActivitySelection? {
+        guard let template = loadTemplateSummaries().first(where: { $0.id == id }),
+              let selection = try? JSONDecoder().decode(FamilyActivitySelection.self, from: template.selectionData),
+              selection.hasShieldableContent else {
+            return nil
+        }
+        saveSelection(selection)
+        return selection
+    }
+
+    static func deleteTemplate(id: String) {
+        saveTemplateSummaries(loadTemplateSummaries().filter { $0.id != id })
+    }
+
+    private static func saveTemplateSummaries(_ templates: [FocusTemplateSummary]) {
+        guard let data = try? JSONEncoder().encode(Array(templates.prefix(8))) else { return }
+        defaults.set(data, forKey: templatesKey)
+        defaults.synchronize()
+    }
 }
 
 @available(iOS 16.0, *)
@@ -418,5 +472,44 @@ extension FamilyActivitySelection {
     var shieldableContentCount: Int {
         applicationTokens.count + categoryTokens.count + webDomainTokens.count
     }
+}
+
+struct FocusTemplateDraft: Identifiable, Equatable {
+    let id: String
+    let name: String
+    let subtitle: String
+    let systemImage: String
+
+    static let defaults: [FocusTemplateDraft] = [
+        FocusTemplateDraft(
+            id: "morning",
+            name: "Morning",
+            subtitle: "Protect scripture and first work",
+            systemImage: "sunrise.fill"
+        ),
+        FocusTemplateDraft(
+            id: "study",
+            name: "Study",
+            subtitle: "Block social apps for deep work",
+            systemImage: "book.closed.fill"
+        ),
+        FocusTemplateDraft(
+            id: "night",
+            name: "Night",
+            subtitle: "Keep the last hour quiet",
+            systemImage: "moon.stars.fill"
+        )
+    ]
+}
+
+struct FocusTemplateSummary: Identifiable, Codable, Equatable {
+    let id: String
+    var name: String
+    var subtitle: String
+    var systemImage: String
+    var selectionData: Data
+    var shieldableContentCount: Int
+    var createdAt: Date
+    var updatedAt: Date
 }
 #endif

@@ -18,12 +18,29 @@ private struct PartnerInviteShare: Identifiable, Equatable {
     }
 }
 
+private enum GroupInviteShare {
+    static func link(for groupID: String) -> String {
+        "https://theclimbapp.org/group?id=\(groupID)"
+    }
+
+    static func message(for group: ClimbGroup) -> String {
+        "Join my group \(group.name) on The Climb.\n\nOpen: \(link(for: group.id))"
+    }
+}
+
+private struct PartnerCheckInDraft: Identifiable, Equatable {
+    let partner: AccountabilityPartner
+
+    var id: String { partner.id }
+}
+
 struct CommunityView: View {
     @ObservedObject var viewModel: AppViewModel
     @State private var newPost = ""
     @State private var isPosting = false
     @State private var feedbackMessage: String?
     @State private var selectedPartner: AccountabilityPartner?
+    @State private var checkInDraft: PartnerCheckInDraft?
     @State private var checkedInPartnerID: String?
     @State private var inviteCode: String?
     @State private var partnerInviteShare: PartnerInviteShare?
@@ -58,6 +75,17 @@ struct CommunityView: View {
             PartnerInviteShareSheet(invite: invite, onFeedback: showFeedback)
                 .presentationDetents([.medium])
         }
+        .sheet(item: $checkInDraft) { draft in
+            PartnerCheckInSheet(
+                viewModel: viewModel,
+                partner: draft.partner,
+                onSubmitted: {
+                    checkedInPartnerID = draft.partner.id
+                    showFeedback("Checked in with \(draft.partner.name)")
+                }
+            )
+            .presentationDetents([.medium, .large])
+        }
         .task {
             await viewModel.refreshGlobalLeaderboard()
             await viewModel.refreshCommunityFeed()
@@ -66,22 +94,11 @@ struct CommunityView: View {
     }
 
     private var communityHeader: some View {
-        VStack(alignment: .leading, spacing: 6) {
-            Text("Accountability")
-                .font(ClimbTypography.sans(13, weight: .semibold))
-                .foregroundStyle(Color.climbGreen.opacity(0.86))
-                .tracking(1.3)
-                .textCase(.uppercase)
-            Text("Close circle.")
-                .font(ClimbTypography.sans(32, weight: .semibold))
-                .foregroundStyle(Color.climbMist)
-                .fixedSize(horizontal: false, vertical: true)
-            Text(primaryPartner.map { "\($0.name) is your pressure point today. Keep it personal, honest, and small." } ?? "Invite someone to climb with you.")
-                .font(ClimbTypography.sans(14, weight: .medium))
-                .foregroundStyle(Color.climbTextSecondary)
-                .lineSpacing(3)
-        }
-        .padding(.bottom, 2)
+        ClimbPageHeader(
+            eyebrow: "Accountability",
+            title: "Close circle",
+            subtitle: primaryPartner.map { "\($0.name) is your pressure point today. Keep it personal, honest, and small." } ?? "Invite someone to climb with you."
+        )
     }
 
     @ViewBuilder
@@ -89,7 +106,7 @@ struct CommunityView: View {
         if let partner = primaryPartner {
             primaryPartnerCard(partner)
         } else {
-            ClimbCard(padding: 22, cornerRadius: 26, isProminent: true) {
+            ClimbQuietPanel(padding: 22, cornerRadius: 24, isProminent: true) {
                 SectionTitle(
                     title: currentPartnerInviteCode == nil ? "No partner yet" : "Invite ready",
                     subtitle: currentPartnerInviteCode == nil ? "Create an invite or accept one from a friend." : "Share the code with one person you trust."
@@ -112,7 +129,7 @@ struct CommunityView: View {
         let hasCheckedIn = checkedInPartnerID == partner.id || partner.lastCheckIn == "Just now" || partner.lastCheckIn == "Today"
         let isPending = partner.isPending
 
-        return ClimbCard(padding: 24, cornerRadius: 26, isProminent: true) {
+        return ClimbQuietPanel(padding: 24, cornerRadius: 24, isProminent: true) {
             HStack(alignment: .top, spacing: 14) {
                 Circle()
                     .fill(Color.climbSage.opacity(0.11))
@@ -160,19 +177,13 @@ struct CommunityView: View {
                 systemImage: hasCheckedIn ? "checkmark.circle.fill" : "checkmark.message.fill",
                 isDisabled: hasCheckedIn || isPending
             ) {
-                Task {
-                    await viewModel.checkIn(with: partner.id)
-                    await MainActor.run {
-                        checkedInPartnerID = partner.id
-                        showFeedback("Checked in with \(partner.name)")
-                    }
-                }
+                checkInDraft = PartnerCheckInDraft(partner: partner)
             }
         }
     }
 
     private var inviteFriendStrip: some View {
-        ClimbCard(padding: 15, cornerRadius: 22) {
+        ClimbQuietPanel(padding: 15, cornerRadius: 20) {
             HStack(spacing: 12) {
                 Image(systemName: "square.and.arrow.up")
                     .font(ClimbTypography.sans(16, weight: .semibold))
@@ -258,7 +269,7 @@ struct CommunityView: View {
     }
 
     private var secondaryCommunityLinks: some View {
-        ClimbCard(padding: 18, cornerRadius: 22) {
+        ClimbQuietPanel(padding: 18, cornerRadius: 20) {
             SectionTitle(title: "More community", subtitle: "Secondary tools when you need them")
 
             VStack(spacing: 0) {
@@ -398,10 +409,7 @@ struct CommunityView: View {
 
             HStack(spacing: 10) {
                 Button {
-                    Task {
-                        await viewModel.checkIn(with: partner.id)
-                        showFeedback("Checked in with \(partner.name)")
-                    }
+                    checkInDraft = PartnerCheckInDraft(partner: partner)
                 } label: {
                     Label("Check in", systemImage: "checkmark.message.fill")
                         .font(ClimbTypography.sans(14, weight: .semibold))
@@ -455,10 +463,7 @@ struct CommunityView: View {
                 Spacer(minLength: 0)
                 
                 Button {
-                    Task {
-                        await viewModel.checkIn(with: partner.id)
-                        showFeedback("Checked in with \(partner.name)")
-                    }
+                    checkInDraft = PartnerCheckInDraft(partner: partner)
                 } label: {
                     Image(systemName: "checkmark.message.fill")
                         .font(ClimbTypography.sans(13, weight: .semibold))
@@ -1675,6 +1680,25 @@ private struct GroupDetailView: View {
                             }
                         }
 
+                        if group.isJoined {
+                            ShareLink(
+                                item: GroupInviteShare.message(for: group),
+                                subject: Text("Join my group on The Climb")
+                            ) {
+                                Label("Share Group Invite", systemImage: "square.and.arrow.up")
+                                    .font(ClimbTypography.sans(15, weight: .semibold))
+                                    .foregroundStyle(Color.climbMist)
+                                    .frame(maxWidth: .infinity)
+                                    .padding(.vertical, 14)
+                                    .background(Color.climbSurfaceRaised, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+                                    .overlay(
+                                        RoundedRectangle(cornerRadius: 16, style: .continuous)
+                                            .stroke(Color.white.opacity(0.07), lineWidth: 0.8)
+                                    )
+                            }
+                            .buttonStyle(ScaleButtonStyle())
+                        }
+
                         if group.isJoined, !group.isOwner(currentUserID) {
                             SecondaryActionButton(title: "Leave Group", systemImage: "xmark.circle", role: .destructive) {
                                 Task {
@@ -2162,6 +2186,174 @@ private struct CommunityFeedView: View {
     }
 }
 
+private struct PartnerCheckInPrompt: Identifiable, Equatable {
+    let id: String
+    let question: String
+    let placeholder: String
+    let systemImage: String
+
+    static let options: [PartnerCheckInPrompt] = [
+        PartnerCheckInPrompt(
+            id: "resisted",
+            question: "What did you resist today?",
+            placeholder: "I resisted scrolling when I felt bored...",
+            systemImage: "shield.lefthalf.filled"
+        ),
+        PartnerCheckInPrompt(
+            id: "prayer",
+            question: "What do you need prayer for?",
+            placeholder: "Pray that I stay honest with...",
+            systemImage: "hands.sparkles.fill"
+        ),
+        PartnerCheckInPrompt(
+            id: "hardest",
+            question: "Where did the day push back?",
+            placeholder: "The hardest moment was...",
+            systemImage: "mountain.2.fill"
+        ),
+        PartnerCheckInPrompt(
+            id: "next-step",
+            question: "What is your next faithful step?",
+            placeholder: "Tomorrow I need to protect...",
+            systemImage: "arrow.up.right"
+        )
+    ]
+}
+
+private struct PartnerCheckInSheet: View {
+    @ObservedObject var viewModel: AppViewModel
+    let partner: AccountabilityPartner
+    let onSubmitted: () -> Void
+
+    @Environment(\.dismiss) private var dismiss
+    @State private var selectedPrompt = PartnerCheckInPrompt.options[0]
+    @State private var answer = ""
+    @State private var isSubmitting = false
+
+    var body: some View {
+        NavigationStack {
+            ScrollView {
+                VStack(alignment: .leading, spacing: 18) {
+                    ClimbCard(padding: 22, cornerRadius: 28, isProminent: true) {
+                        HStack(spacing: 13) {
+                            Circle()
+                                .fill(Color.climbGreen.opacity(0.14))
+                                .frame(width: 50, height: 50)
+                                .overlay(
+                                    Text(String(partner.name.prefix(1)))
+                                        .font(ClimbTypography.sans(18, weight: .semibold))
+                                        .foregroundStyle(Color.climbGreen)
+                                )
+                            VStack(alignment: .leading, spacing: 4) {
+                                Text("Check in with \(partner.name)")
+                                    .font(ClimbTypography.sans(23, weight: .semibold))
+                                    .foregroundStyle(Color.climbMist)
+                                    .fixedSize(horizontal: false, vertical: true)
+                                Text("Make it honest enough to be useful.")
+                                    .font(ClimbTypography.sans(13, weight: .medium))
+                                    .foregroundStyle(Color.climbTextSecondary)
+                            }
+                        }
+                    }
+
+                    ClimbCard(padding: 18, cornerRadius: 24) {
+                        SectionTitle(title: "Prompt")
+                        LazyVGrid(
+                            columns: [
+                                GridItem(.flexible(), spacing: 9),
+                                GridItem(.flexible(), spacing: 9)
+                            ],
+                            spacing: 9
+                        ) {
+                            ForEach(PartnerCheckInPrompt.options) { prompt in
+                                Button {
+                                    HapticFeedback.selection()
+                                    withAnimation(ClimbMotion.standard) {
+                                        selectedPrompt = prompt
+                                    }
+                                } label: {
+                                    VStack(alignment: .leading, spacing: 9) {
+                                        Image(systemName: prompt.systemImage)
+                                            .font(ClimbTypography.sans(14, weight: .semibold))
+                                        Text(prompt.question)
+                                            .font(ClimbTypography.sans(12, weight: .semibold))
+                                            .lineLimit(2)
+                                            .minimumScaleFactor(0.78)
+                                    }
+                                    .foregroundStyle(selectedPrompt == prompt ? Color.climbInk : Color.climbMist)
+                                    .frame(maxWidth: .infinity, minHeight: 86, alignment: .leading)
+                                    .padding(12)
+                                    .background(
+                                        selectedPrompt == prompt ? Color.climbGreen : Color.climbSurfaceRaised.opacity(0.78),
+                                        in: RoundedRectangle(cornerRadius: 18, style: .continuous)
+                                    )
+                                    .overlay(
+                                        RoundedRectangle(cornerRadius: 18, style: .continuous)
+                                            .stroke(Color.white.opacity(selectedPrompt == prompt ? 0.18 : 0.06), lineWidth: 0.7)
+                                    )
+                                }
+                                .buttonStyle(ScaleButtonStyle())
+                            }
+                        }
+                    }
+
+                    ClimbCard(padding: 18, cornerRadius: 24) {
+                        Text(selectedPrompt.question)
+                            .font(ClimbTypography.serif(25))
+                            .foregroundStyle(Color.climbMist)
+                            .fixedSize(horizontal: false, vertical: true)
+
+                        TextField(selectedPrompt.placeholder, text: $answer, axis: .vertical)
+                            .lineLimit(3...6)
+                            .formFieldStyle()
+
+                        PrimaryActionButton(
+                            title: isSubmitting ? "Sending" : "Send Check-In",
+                            systemImage: isSubmitting ? "clock" : "paperplane.fill",
+                            isDisabled: trimmedAnswer.isEmpty || isSubmitting
+                        ) {
+                            submit()
+                        }
+                    }
+                }
+                .padding(20)
+                .padding(.bottom, 24)
+            }
+            .background(ClimbScreenBackground())
+            .scrollIndicators(.hidden)
+            .navigationTitle("Check-In")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("Cancel") {
+                        dismiss()
+                    }
+                }
+            }
+        }
+    }
+
+    private var trimmedAnswer: String {
+        answer.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    private func submit() {
+        let response = trimmedAnswer
+        guard !response.isEmpty, !isSubmitting else { return }
+        isSubmitting = true
+        let message = "\(selectedPrompt.question) \(response)"
+
+        Task {
+            await viewModel.checkIn(with: partner.id, message: message)
+            await MainActor.run {
+                isSubmitting = false
+                onSubmitted()
+                dismiss()
+            }
+        }
+    }
+}
+
 private struct PartnerDetailSheet: View {
     @ObservedObject var viewModel: AppViewModel
     let partnerID: String
@@ -2169,6 +2361,7 @@ private struct PartnerDetailSheet: View {
     @Environment(\.dismiss) private var dismiss
     @State private var encouragementNote = "I am praying for your next right step today. Keep going."
     @State private var partnerInviteShare: PartnerInviteShare?
+    @State private var checkInDraft: PartnerCheckInDraft?
 
     private var partner: AccountabilityPartner? {
         viewModel.partners.first { $0.id == partnerID }
@@ -2218,12 +2411,7 @@ private struct PartnerDetailSheet: View {
                                 }
                             } else {
                                 PrimaryActionButton(title: "Check In", systemImage: "checkmark.message.fill") {
-                                    Task {
-                                        await viewModel.checkIn(with: partner.id)
-                                        await MainActor.run {
-                                            onFeedback("Checked in with \(partner.name)")
-                                        }
-                                    }
+                                    checkInDraft = PartnerCheckInDraft(partner: partner)
                                 }
                                 SecondaryActionButton(title: "Send Nudge", systemImage: "bell.fill") {
                                     Task {
@@ -2281,6 +2469,16 @@ private struct PartnerDetailSheet: View {
             .sheet(item: $partnerInviteShare) { invite in
                 PartnerInviteShareSheet(invite: invite, onFeedback: onFeedback)
                     .presentationDetents([.medium])
+            }
+            .sheet(item: $checkInDraft) { draft in
+                PartnerCheckInSheet(
+                    viewModel: viewModel,
+                    partner: draft.partner,
+                    onSubmitted: {
+                        onFeedback("Checked in with \(draft.partner.name)")
+                    }
+                )
+                .presentationDetents([.medium, .large])
             }
         }
     }

@@ -4,6 +4,7 @@ struct HomeView: View {
     @ObservedObject var viewModel: AppViewModel
     @State private var isMissionPresented = false
     @State private var focusedDevotional: Devotional?
+    @State private var isRegenerationDialogPresented = false
 
     var body: some View {
         ScreenContainer(title: "Today", hidesNavigationBar: true, bottomSafeAreaSpacing: 142) {
@@ -39,7 +40,16 @@ struct HomeView: View {
         .overlay {
             if let focusedDevotional {
                 DevotionalFocusOverlay(
-                    devotional: focusedDevotional
+                    devotional: focusedDevotional,
+                    selectedFeedback: viewModel.contentFeedback(for: focusedDevotional.id, kind: .devotional),
+                    onFeedback: { rating in
+                        viewModel.submitContentFeedback(
+                            kind: .devotional,
+                            contentID: focusedDevotional.id,
+                            title: focusedDevotional.title,
+                            rating: rating
+                        )
+                    }
                 ) {
                     withAnimation(ClimbMotion.focus) {
                         self.focusedDevotional = nil
@@ -49,23 +59,49 @@ struct HomeView: View {
             }
         }
         .toolbar(focusedDevotional == nil ? .visible : .hidden, for: .tabBar)
+        .confirmationDialog(
+            "Change today's plan?",
+            isPresented: $isRegenerationDialogPresented,
+            titleVisibility: .visible
+        ) {
+            Button("Too easy") {
+                regenerateTodayPlan(reason: "Too easy")
+            }
+            Button("Doesn't fit today") {
+                regenerateTodayPlan(reason: "Doesn't fit today")
+            }
+            Button("Need a different focus") {
+                regenerateTodayPlan(reason: "Need a different focus")
+            }
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            Text("The Climb will build a new mission and Daily Word before you start.")
+        }
         .animation(ClimbMotion.focus, value: focusedDevotional?.id)
+        .animation(ClimbMotion.standard, value: viewModel.isRegeneratingTodayPlan)
     }
 
     private func homeHeader(_ profile: UserProfile) -> some View {
-        VStack(alignment: .leading, spacing: 15) {
+        VStack(alignment: .leading, spacing: 18) {
             HStack(alignment: .top, spacing: 16) {
-                VStack(alignment: .leading, spacing: 8) {
-                    Text(Date.now.formatted(.dateTime.weekday(.wide).month(.abbreviated).day()))
-                        .font(ClimbTypography.sans(11, weight: .semibold))
-                        .tracking(1.7)
-                        .foregroundStyle(Color.climbGreen.opacity(0.86))
-                        .textCase(.uppercase)
+                VStack(alignment: .leading, spacing: 9) {
+                    HStack(spacing: 8) {
+                        Text(Date.now.formatted(.dateTime.weekday(.wide).month(.abbreviated).day()))
+                        Circle()
+                            .fill(Color.climbGreen.opacity(0.76))
+                            .frame(width: 4, height: 4)
+                        Text("Personal plan")
+                    }
+                    .font(ClimbTypography.sans(11, weight: .semibold))
+                    .tracking(1.2)
+                    .foregroundStyle(Color.climbTextSecondary)
+                    .textCase(.uppercase)
 
-                    Text("Hold the line.")
-                        .font(ClimbTypography.sans(32, weight: .semibold))
+                    Text("Today’s climb")
+                        .font(ClimbTypography.sans(34, weight: .semibold))
                         .foregroundStyle(Color.climbMist)
-                        .lineSpacing(0)
+                        .tracking(-0.5)
+                        .lineSpacing(-1)
                         .fixedSize(horizontal: false, vertical: true)
 
                     Text(homeContextLine(for: profile))
@@ -77,9 +113,9 @@ struct HomeView: View {
 
                 Spacer(minLength: 0)
 
-                VStack(alignment: .trailing, spacing: 5) {
+                VStack(alignment: .center, spacing: 5) {
                     Text("\(profile.ovrScore)")
-                        .font(ClimbTypography.sans(30, weight: .semibold).monospacedDigit())
+                        .font(ClimbTypography.sans(28, weight: .semibold).monospacedDigit())
                         .foregroundStyle(Color.climbMist)
                         .contentTransition(.numericText())
                     Text("OVR")
@@ -87,12 +123,11 @@ struct HomeView: View {
                         .tracking(1.2)
                         .foregroundStyle(Color.climbMuted)
                 }
-                .padding(.horizontal, 13)
-                .padding(.vertical, 11)
-                .background(Color.climbSurfaceRaised.opacity(0.74), in: RoundedRectangle(cornerRadius: 18, style: .continuous))
+                .frame(width: 72, height: 64)
+                .background(Color.climbSurfaceRaised.opacity(0.58), in: RoundedRectangle(cornerRadius: 20, style: .continuous))
                 .overlay(
-                    RoundedRectangle(cornerRadius: 18, style: .continuous)
-                        .stroke(Color.white.opacity(0.08), lineWidth: 0.8)
+                    RoundedRectangle(cornerRadius: 20, style: .continuous)
+                        .stroke(Color.climbHairline, lineWidth: 0.8)
                 )
             }
 
@@ -107,49 +142,85 @@ struct HomeView: View {
     }
 
     private func missionCard(_ mission: Mission) -> some View {
-        HomeSurface(padding: 22, cornerRadius: 30, accent: statusColor(mission.status), prominence: .hero) {
-            VStack(alignment: .leading, spacing: 17) {
-                HStack(alignment: .center, spacing: 12) {
-                    VStack(alignment: .leading, spacing: 5) {
-                        Text("TODAY'S MISSION")
-                            .font(ClimbTypography.sans(11, weight: .semibold))
-                            .tracking(1.7)
-                            .foregroundStyle(Color.climbGreen.opacity(0.86))
-                        Text(missionLabel(for: mission))
-                            .font(ClimbTypography.sans(13, weight: .semibold))
+        HomeSurface(padding: 0, cornerRadius: 27, accent: statusColor(mission.status), prominence: .hero) {
+            VStack(alignment: .leading, spacing: 0) {
+                VStack(alignment: .leading, spacing: 16) {
+                    HStack(alignment: .center, spacing: 12) {
+                        Text("Mission")
+                            .font(ClimbTypography.sans(12, weight: .semibold))
+                            .tracking(1.25)
                             .foregroundStyle(Color.climbTextSecondary)
+                            .textCase(.uppercase)
+                        Text(missionLabel(for: mission))
+                            .font(ClimbTypography.sans(12, weight: .semibold))
+                            .foregroundStyle(Color.climbMuted)
+                        Spacer(minLength: 0)
+                        HomeStatusBadge(text: mission.status.rawValue.capitalized, color: statusColor(mission.status))
                     }
-                    Spacer(minLength: 0)
-                    HomeStatusBadge(text: mission.status.rawValue.capitalized, color: statusColor(mission.status))
-                }
 
-                VStack(alignment: .leading, spacing: 10) {
                     Text(mission.title)
-                        .font(ClimbTypography.sans(29, weight: .semibold))
+                        .font(ClimbTypography.sans(30, weight: .semibold))
                         .foregroundStyle(Color.climbMist)
+                        .tracking(-0.35)
                         .lineSpacing(2)
                         .fixedSize(horizontal: false, vertical: true)
 
                     Text(missionSummaryPreview(mission.summary))
-                        .font(ClimbTypography.sans(15, weight: .semibold))
+                        .font(ClimbTypography.sans(15, weight: .medium))
                         .foregroundStyle(Color.climbTextSecondary)
                         .lineSpacing(4)
                         .lineLimit(3)
                         .fixedSize(horizontal: false, vertical: true)
-                }
 
-                FocusProtectionStrip(mission: mission)
-
-                PrimaryActionButton(
-                    title: missionButtonTitle(mission.status),
-                    systemImage: missionButtonIcon(mission.status),
-                    tint: missionButtonColor(mission.status)
-                ) {
-                    isMissionPresented = true
+                    FocusProtectionStrip(mission: mission)
                 }
+                .padding(.horizontal, 22)
+                .padding(.top, 20)
+                .padding(.bottom, 15)
+
+                VStack(spacing: 10) {
+                    PrimaryActionButton(
+                        title: viewModel.isRegeneratingTodayPlan ? "Building new plan" : missionButtonTitle(mission.status),
+                        systemImage: viewModel.isRegeneratingTodayPlan ? "sparkles" : missionButtonIcon(mission.status),
+                        tint: missionButtonColor(mission.status)
+                    ) {
+                        isMissionPresented = true
+                    }
+                    .disabled(viewModel.isRegeneratingTodayPlan)
+
+                    if mission.status == .pending {
+                        Button {
+                            HapticFeedback.selection()
+                            isRegenerationDialogPresented = true
+                        } label: {
+                            HStack(spacing: 8) {
+                                Image(systemName: "slider.horizontal.3")
+                                    .font(ClimbTypography.sans(12, weight: .semibold))
+                                Text(viewModel.isRegeneratingTodayPlan ? "Regenerating..." : "Adjust difficulty or focus")
+                                    .font(ClimbTypography.sans(13, weight: .semibold))
+                            }
+                            .foregroundStyle(Color.climbTextSecondary)
+                            .frame(maxWidth: .infinity)
+                            .padding(.vertical, 4)
+                        }
+                        .buttonStyle(ScaleButtonStyle())
+                        .disabled(!viewModel.canRegenerateTodayPlan)
+                        .opacity(viewModel.canRegenerateTodayPlan ? 1 : 0.48)
+                    }
+                }
+                .padding(.horizontal, 18)
+                .padding(.top, 14)
+                .padding(.bottom, 16)
+                .background(Color.black.opacity(0.15))
             }
         }
-        .activeShimmer(mission.status == .active, cornerRadius: 30)
+        .activeShimmer(mission.status == .active, cornerRadius: 27)
+    }
+
+    private func regenerateTodayPlan(reason: String) {
+        Task {
+            await viewModel.regenerateTodayPlan(reason: reason)
+        }
     }
 
     private var planPreparingCard: some View {
@@ -177,28 +248,36 @@ struct HomeView: View {
                 focusedDevotional = devotional
             }
         } label: {
-            HomeSurface(padding: 0, cornerRadius: 28, accent: .climbWarm, prominence: .quiet) {
-                VStack(alignment: .leading, spacing: 18) {
-                    HStack {
-                        Text("DAILY WORD")
-                            .font(ClimbTypography.sans(11, weight: .semibold))
-                            .tracking(1.6)
-                            .foregroundStyle(Color.climbWarm.opacity(0.78))
-                        Spacer()
-                        Text(devotional.bibleVerse)
-                            .font(ClimbTypography.sans(12, weight: .semibold))
-                            .foregroundStyle(Color.climbMuted)
-                    }
+            HomeSurface(padding: 0, cornerRadius: 24, accent: .climbWarm, prominence: .quiet) {
+                HStack(alignment: .top, spacing: 16) {
+                    Capsule()
+                        .fill(Color.climbWarm.opacity(0.82))
+                        .frame(width: 3)
+                        .padding(.vertical, 3)
 
-                    VStack(alignment: .leading, spacing: 10) {
+                    VStack(alignment: .leading, spacing: 15) {
+                        HStack(alignment: .firstTextBaseline) {
+                            Text("Daily Word")
+                                .font(ClimbTypography.sans(12, weight: .semibold))
+                                .tracking(1.05)
+                                .foregroundStyle(Color.climbTextSecondary)
+                                .textCase(.uppercase)
+                            Spacer(minLength: 12)
+                            Text(devotional.bibleVerse)
+                                .font(ClimbTypography.sans(12, weight: .semibold))
+                                .foregroundStyle(Color.climbMuted)
+                                .lineLimit(1)
+                                .minimumScaleFactor(0.72)
+                        }
+
                         Text(devotional.title)
-                            .font(ClimbTypography.serif(30))
+                            .font(ClimbTypography.serif(29))
                             .foregroundStyle(Color.climbMist)
                             .fixedSize(horizontal: false, vertical: true)
 
                         if let verseText = devotional.verseText, !verseText.isEmpty {
                             Text("“\(verseText)”")
-                                .font(ClimbTypography.serif(22))
+                                .font(ClimbTypography.serif(21))
                                 .foregroundStyle(Color.climbWarm.opacity(0.94))
                                 .lineLimit(4)
                                 .lineSpacing(4)
@@ -211,27 +290,27 @@ struct HomeView: View {
                                 .lineLimit(4)
                                 .lineSpacing(4)
                         }
-                    }
 
-                    HStack(alignment: .center, spacing: 10) {
-                        Text(devotional.reflectionQuestion)
-                            .font(ClimbTypography.sans(14, weight: .medium))
-                            .foregroundStyle(Color.climbTextSecondary)
-                            .lineLimit(2)
-                        Spacer(minLength: 12)
-                        Label("Read", systemImage: "arrow.up.right")
+                        HStack(alignment: .center, spacing: 10) {
+                            Text(devotional.reflectionQuestion)
+                                .font(ClimbTypography.sans(14, weight: .medium))
+                                .foregroundStyle(Color.climbTextSecondary)
+                                .lineLimit(2)
+                            Spacer(minLength: 12)
+                            HStack(spacing: 6) {
+                                Text("Read")
+                                Image(systemName: "arrow.up.right")
+                            }
                             .font(ClimbTypography.sans(13, weight: .semibold))
                             .foregroundStyle(Color.climbGreen)
-                            .padding(.horizontal, 12)
-                            .padding(.vertical, 8)
-                            .background(Color.climbGreen.opacity(0.10), in: Capsule())
+                        }
                     }
                 }
                 .padding(20)
             }
         }
         .buttonStyle(.plain)
-        .contentShape(RoundedRectangle(cornerRadius: 28, style: .continuous))
+        .contentShape(RoundedRectangle(cornerRadius: 24, style: .continuous))
         .accessibilityLabel("Read full devotional")
     }
 
@@ -251,11 +330,14 @@ struct HomeView: View {
     }
 
     private var quickActionRow: some View {
-        HStack(spacing: 12) {
+        HStack(spacing: 10) {
             NavigationLink {
-                JournalHistoryView(entries: viewModel.journalEntries)
+                JournalHistoryView(
+                    entries: viewModel.journalEntries,
+                    exportText: viewModel.exportJournalMarkdown()
+                )
             } label: {
-                QuickActionTile(title: "Journal", systemImage: "book.pages")
+                QuickActionTile(title: "Journal", detail: "Reflect", systemImage: "book.pages")
             }
             .buttonStyle(.plain)
             .simultaneousGesture(TapGesture().onEnded { HapticFeedback.selection() })
@@ -263,7 +345,7 @@ struct HomeView: View {
             NavigationLink {
                 ProgressDashboardView(viewModel: viewModel)
             } label: {
-                QuickActionTile(title: "View Progress", systemImage: "chart.line.uptrend.xyaxis")
+                QuickActionTile(title: "Progress", detail: "Review", systemImage: "chart.line.uptrend.xyaxis")
             }
             .buttonStyle(.plain)
             .simultaneousGesture(TapGesture().onEnded { HapticFeedback.selection() })
@@ -411,17 +493,17 @@ private enum HomeSurfaceProminence {
 
     var borderOpacity: Double {
         switch self {
-        case .hero: 0.115
-        case .primary: 0.085
-        case .quiet: 0.060
+        case .hero: 0.105
+        case .primary: 0.075
+        case .quiet: 0.052
         }
     }
 
     var accentOpacity: Double {
         switch self {
-        case .hero: 0.050
-        case .primary: 0.030
-        case .quiet: 0.014
+        case .hero: 0.040
+        case .primary: 0.024
+        case .quiet: 0.010
         }
     }
 
@@ -452,7 +534,11 @@ private struct HomeSurface<Content: View>: View {
                 .fill(Color.climbSurface.opacity(prominence.fillOpacity))
                 .overlay(alignment: .topLeading) {
                     LinearGradient(
-                        colors: [Color.white.opacity(0.045), accent.opacity(prominence.accentOpacity), Color.clear],
+                        colors: [
+                            Color.white.opacity(0.038),
+                            accent.opacity(prominence.accentOpacity),
+                            Color.clear
+                        ],
                         startPoint: .topLeading,
                         endPoint: .bottomTrailing
                     )
@@ -464,7 +550,7 @@ private struct HomeSurface<Content: View>: View {
             RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
                 .stroke(Color.white.opacity(prominence.borderOpacity), lineWidth: 0.75)
         }
-        .shadow(color: .black.opacity(0.22), radius: prominence.shadowRadius, x: 0, y: prominence == .hero ? 14 : 8)
+        .shadow(color: .black.opacity(0.20), radius: prominence.shadowRadius, x: 0, y: prominence == .hero ? 12 : 7)
         .climbEntrance()
     }
 }
@@ -509,35 +595,47 @@ private struct StreakOverview: View {
     }
 
     var body: some View {
-        HStack(alignment: .center, spacing: 13) {
-            HStack(alignment: .firstTextBaseline, spacing: 8) {
-                Text("\(streak)")
-                    .font(ClimbTypography.sans(24, weight: .semibold).monospacedDigit())
-                    .foregroundStyle(Color.climbMist)
-                    .contentTransition(.numericText())
-                Text(streak == 1 ? "day steady" : "days steady")
-                    .font(ClimbTypography.sans(14, weight: .semibold))
-                    .foregroundStyle(Color.climbTextSecondary)
+        VStack(alignment: .leading, spacing: 12) {
+            HStack(spacing: 14) {
+                HeaderMetric(value: "\(streak)", label: streak == 1 ? "day" : "days", tint: .climbGreen)
+                HeaderMetric(value: remaining == 0 ? "Goal" : "\(remaining)", label: remaining == 0 ? "reached" : "left", tint: .climbWarm)
+                HeaderMetric(value: delta == 0 ? "0" : deltaText, label: "OVR today", tint: delta >= 0 ? .climbGreen : .climbRed)
             }
 
-            VStack(alignment: .leading, spacing: 7) {
-                HStack {
-                    Text(remaining == 0 ? "Goal reached" : "\(remaining) to goal")
-                    Spacer(minLength: 6)
-                    Text(delta == 0 ? "Steady" : "\(deltaText) OVR")
-                }
-                .font(ClimbTypography.sans(12, weight: .semibold))
-                .foregroundStyle(delta >= 0 ? Color.climbGreen : Color.climbRed)
-
-                ProgressBar(value: progress, height: 4, tint: .climbGreen)
-            }
+            ProgressBar(value: progress, height: 3, tint: .climbGreen)
         }
-        .padding(14)
-        .background(Color.climbBackgroundLifted.opacity(0.58), in: RoundedRectangle(cornerRadius: 18, style: .continuous))
+        .padding(.horizontal, 15)
+        .padding(.vertical, 13)
+        .background(Color.climbBackgroundLifted.opacity(0.40), in: RoundedRectangle(cornerRadius: 20, style: .continuous))
         .overlay(
-            RoundedRectangle(cornerRadius: 18, style: .continuous)
-                .stroke(Color.white.opacity(0.055), lineWidth: 0.6)
+            RoundedRectangle(cornerRadius: 20, style: .continuous)
+                .stroke(Color.climbHairline.opacity(0.78), lineWidth: 0.7)
         )
+    }
+}
+
+private struct HeaderMetric: View {
+    let value: String
+    let label: String
+    let tint: Color
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 2) {
+            Text(value)
+                .font(ClimbTypography.sans(19, weight: .semibold).monospacedDigit())
+                .foregroundStyle(Color.climbMist)
+                .lineLimit(1)
+                .minimumScaleFactor(0.72)
+                .contentTransition(.numericText())
+            Text(label)
+                .font(ClimbTypography.sans(10, weight: .semibold))
+                .tracking(0.45)
+                .foregroundStyle(tint.opacity(0.85))
+                .textCase(.uppercase)
+                .lineLimit(1)
+                .minimumScaleFactor(0.75)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
     }
 }
 
@@ -565,39 +663,71 @@ private struct FocusProtectionStrip: View {
     let mission: Mission
 
     var body: some View {
-        HStack(spacing: 12) {
-            Image(systemName: mission.appBlockingEnabled ? "lock.shield.fill" : "target")
-                .font(ClimbTypography.sans(17, weight: .semibold))
-                .foregroundStyle(mission.appBlockingEnabled ? Color.climbGreen : Color.climbGold)
-                .frame(width: 42, height: 42)
-                .background(
-                    (mission.appBlockingEnabled ? Color.climbGreen : Color.climbGold).opacity(0.12),
-                    in: RoundedRectangle(cornerRadius: 16, style: .continuous)
-                )
+        VStack(alignment: .leading, spacing: 10) {
+            HStack(spacing: 10) {
+                Image(systemName: mission.appBlockingEnabled ? "lock.shield.fill" : "target")
+                    .font(ClimbTypography.sans(14, weight: .semibold))
+                    .foregroundStyle(mission.appBlockingEnabled ? Color.climbGreen : Color.climbGold)
+                    .frame(width: 30, height: 30)
+                    .background(
+                        (mission.appBlockingEnabled ? Color.climbGreen : Color.climbGold).opacity(0.11),
+                        in: Circle()
+                    )
 
-            VStack(alignment: .leading, spacing: 3) {
-                Text(mission.appBlockingEnabled ? "Blocking ready" : "Manual focus")
-                    .font(ClimbTypography.sans(15, weight: .semibold))
-                    .foregroundStyle(Color.climbMist)
-                Text("\(mission.durationMinutes) min · Level \(mission.difficulty) · \(mission.category.rawValue)")
-                    .font(ClimbTypography.sans(12, weight: .semibold))
-                    .foregroundStyle(Color.climbGreen.opacity(0.92))
-                    .lineLimit(1)
-                    .minimumScaleFactor(0.75)
-                Text(mission.appBlockingEnabled ? "Selected apps stay locked during this mission." : "Start the timer and keep the promise yourself.")
-                    .font(ClimbTypography.sans(12, weight: .semibold))
-                    .foregroundStyle(Color.climbTextSecondary)
-                    .lineLimit(1)
-                    .minimumScaleFactor(0.82)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(mission.appBlockingEnabled ? "Protected focus window" : "Manual focus window")
+                        .font(ClimbTypography.sans(14, weight: .semibold))
+                        .foregroundStyle(Color.climbMist)
+                    Text(mission.appBlockingEnabled ? "Selected apps stay locked while the timer runs." : "Start the timer and keep the promise yourself.")
+                        .font(ClimbTypography.sans(12, weight: .medium))
+                        .foregroundStyle(Color.climbTextSecondary)
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.78)
+                }
+
+                Spacer(minLength: 0)
             }
 
-            Spacer(minLength: 0)
+            HStack(spacing: 7) {
+                MissionPill(value: "\(mission.durationMinutes)m", label: "time")
+                MissionPill(value: "L\(mission.difficulty)", label: "level")
+                MissionPill(value: mission.category.rawValue, label: "path")
+            }
         }
-        .padding(14)
-        .background(Color.climbBackgroundLifted.opacity(0.66), in: RoundedRectangle(cornerRadius: 21, style: .continuous))
+        .padding(12)
+        .background(Color.climbBackgroundLifted.opacity(0.48), in: RoundedRectangle(cornerRadius: 20, style: .continuous))
         .overlay(
-            RoundedRectangle(cornerRadius: 21, style: .continuous)
-                .stroke(Color.white.opacity(0.065), lineWidth: 0.75)
+            RoundedRectangle(cornerRadius: 20, style: .continuous)
+                .stroke(Color.climbHairline.opacity(0.82), lineWidth: 0.7)
+        )
+    }
+}
+
+private struct MissionPill: View {
+    let value: String
+    let label: String
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 1) {
+            Text(value)
+                .font(ClimbTypography.sans(12, weight: .semibold).monospacedDigit())
+                .foregroundStyle(Color.climbMist)
+                .lineLimit(1)
+                .minimumScaleFactor(0.70)
+            Text(label)
+                .font(ClimbTypography.sans(9, weight: .semibold))
+                .tracking(0.55)
+                .foregroundStyle(Color.climbMuted)
+                .textCase(.uppercase)
+                .lineLimit(1)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(.horizontal, 10)
+        .padding(.vertical, 6)
+        .background(Color.black.opacity(0.13), in: RoundedRectangle(cornerRadius: 13, style: .continuous))
+        .overlay(
+            RoundedRectangle(cornerRadius: 13, style: .continuous)
+                .stroke(Color.white.opacity(0.045), lineWidth: 0.6)
         )
     }
 }
@@ -688,6 +818,8 @@ private struct MissionFact: View {
 
 private struct DevotionalFocusOverlay: View {
     let devotional: Devotional
+    let selectedFeedback: DailyContentFeedbackRating?
+    let onFeedback: (DailyContentFeedbackRating) -> Void
     let onClose: () -> Void
 
     var body: some View {
@@ -756,6 +888,12 @@ private struct DevotionalFocusOverlay: View {
                             .lineSpacing(3)
                             .fixedSize(horizontal: false, vertical: true)
                     }
+
+                    DailyContentFeedbackStrip(
+                        title: "Daily Word fit",
+                        selected: selectedFeedback,
+                        onSelect: onFeedback
+                    )
                 }
                 .padding(.horizontal, 20)
                 .padding(.top, 82)
@@ -856,31 +994,46 @@ private struct DevotionalDetailView: View {
 
 private struct QuickActionTile: View {
     let title: String
+    let detail: String
     let systemImage: String
 
     var body: some View {
-        HStack(spacing: 10) {
+        HStack(spacing: 11) {
             Image(systemName: systemImage)
-                .font(ClimbTypography.sans(17, weight: .semibold))
-            Text(title)
-                .font(ClimbTypography.sans(14, weight: .semibold))
-                .lineLimit(1)
-                .minimumScaleFactor(0.85)
+                .font(ClimbTypography.sans(15, weight: .semibold))
+                .foregroundStyle(Color.climbGreen)
+                .frame(width: 32, height: 32)
+                .background(Color.climbGreen.opacity(0.10), in: Circle())
+
+            VStack(alignment: .leading, spacing: 2) {
+                Text(title)
+                    .font(ClimbTypography.sans(14, weight: .semibold))
+                    .foregroundStyle(Color.climbMist)
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.82)
+                Text(detail)
+                    .font(ClimbTypography.sans(11, weight: .semibold))
+                    .foregroundStyle(Color.climbMuted)
+                    .lineLimit(1)
+            }
+
+            Spacer(minLength: 0)
         }
-        .foregroundStyle(.white)
-        .frame(maxWidth: .infinity)
-        .padding(.vertical, 15)
-        .background(Color.climbSurfaceRaised.opacity(0.70), in: RoundedRectangle(cornerRadius: 20, style: .continuous))
+        .frame(maxWidth: .infinity, minHeight: 58, alignment: .leading)
+        .padding(.horizontal, 12)
+        .background(Color.climbBackgroundLifted.opacity(0.42), in: RoundedRectangle(cornerRadius: 18, style: .continuous))
         .overlay(
-            RoundedRectangle(cornerRadius: 20, style: .continuous)
-                .stroke(Color.white.opacity(0.070), lineWidth: 0.7)
+            RoundedRectangle(cornerRadius: 18, style: .continuous)
+                .stroke(Color.climbHairline.opacity(0.72), lineWidth: 0.7)
         )
-        .shadow(color: .black.opacity(0.16), radius: 12, x: 0, y: 8)
     }
 }
 
 private struct JournalHistoryView: View {
     let entries: [ReflectionEntry]
+    let exportText: String
+    @State private var searchText = ""
+    @State private var filter: JournalFilter = .all
 
     var body: some View {
         ScreenContainer(title: "Journal") {
@@ -890,21 +1043,392 @@ private struct JournalHistoryView: View {
                     detail: "Mission reflections will appear here after completion.",
                     systemImage: "book.pages"
                 )
+                journalPromptLibrary
             } else {
-                ForEach(entries) { entry in
-                    ClimbCard(cornerRadius: 22) {
-                        Text(entry.date, style: .date)
-                            .font(ClimbTypography.sans(12, weight: .semibold))
-                            .foregroundStyle(Color.climbMuted)
-                        Text(entry.lessonLearned)
-                            .font(ClimbTypography.serif(24))
-                            .foregroundStyle(Color.climbWarm)
-                        Text(entry.improvementPlan)
-                            .font(ClimbTypography.sans(14))
-                            .foregroundStyle(Color.climbTextSecondary)
+                journalHeader
+                journalPromptLibrary
+                journalSearchField
+                journalFilterRow
+
+                if filteredEntries.isEmpty {
+                    EmptyState(
+                        title: "No matching reflections",
+                        detail: "Try a different word, mood, or reset the filter.",
+                        systemImage: "magnifyingglass"
+                    )
+                } else {
+                    ForEach(filteredEntries) { entry in
+                        JournalEntryCard(entry: entry)
                     }
                 }
             }
+        }
+    }
+
+    private var sortedEntries: [ReflectionEntry] {
+        entries.sorted { $0.date > $1.date }
+    }
+
+    private var filteredEntries: [ReflectionEntry] {
+        let trimmedSearch = searchText.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        return sortedEntries.filter { entry in
+            let matchesFilter = filter.matches(entry)
+            let matchesSearch = trimmedSearch.isEmpty || [
+                entry.hardestPart,
+                entry.lessonLearned,
+                entry.improvementPlan,
+                entry.failureReason ?? "",
+                entry.mood.rawValue
+            ]
+            .joined(separator: " ")
+            .lowercased()
+            .contains(trimmedSearch)
+
+            return matchesFilter && matchesSearch
+        }
+    }
+
+    private var failureCount: Int {
+        entries.filter { entry in
+            guard let reason = entry.failureReason?.trimmingCharacters(in: .whitespacesAndNewlines) else { return false }
+            return !reason.isEmpty
+        }.count
+    }
+
+    private var averageEffort: Int {
+        guard !entries.isEmpty else { return 0 }
+        let total = entries.reduce(0) { $0 + $1.effortRating }
+        return Int((Double(total) / Double(entries.count)).rounded())
+    }
+
+    private var journalHeader: some View {
+        ClimbCard(padding: 20, cornerRadius: 24, isProminent: true) {
+            Text("REFLECTION HISTORY")
+                .font(ClimbTypography.sans(11, weight: .semibold))
+                .tracking(1.6)
+                .foregroundStyle(Color.climbGreen.opacity(0.86))
+            Text("\(entries.count) saved reflections")
+                .font(ClimbTypography.serif(31))
+                .foregroundStyle(Color.climbMist)
+            Text("Search what was hard, what you learned, and what changed after each mission.")
+                .font(ClimbTypography.sans(14, weight: .semibold))
+                .foregroundStyle(Color.climbTextSecondary)
+                .lineSpacing(3)
+
+            HStack(spacing: 10) {
+                JournalMetric(value: "\(averageEffort)/5", label: "effort")
+                JournalMetric(value: "\(failureCount)", label: "failures")
+                JournalMetric(value: "\(Set(entries.map(\.mood)).count)", label: "moods")
+            }
+
+            ShareLink(item: exportText) {
+                Label("Export private journal", systemImage: "square.and.arrow.up")
+                    .font(ClimbTypography.sans(14, weight: .semibold))
+                    .foregroundStyle(Color.climbMist)
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, 13)
+                    .background(Color.climbBackgroundLifted.opacity(0.58), in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 16, style: .continuous)
+                            .stroke(Color.white.opacity(0.07), lineWidth: 0.7)
+                    )
+            }
+        }
+    }
+
+    private var journalPromptLibrary: some View {
+        ClimbCard(padding: 20, cornerRadius: 24) {
+            SectionTitle(
+                title: "Prompt Library",
+                subtitle: "Use one of these when a reflection feels vague."
+            )
+
+            VStack(spacing: 10) {
+                ForEach(JournalPrompt.allCases) { prompt in
+                    JournalPromptCard(prompt: prompt)
+                }
+            }
+        }
+    }
+
+    private var journalSearchField: some View {
+        HStack(spacing: 10) {
+            Image(systemName: "magnifyingglass")
+                .font(ClimbTypography.sans(15, weight: .semibold))
+                .foregroundStyle(Color.climbMuted)
+            TextField("Search reflections", text: $searchText)
+                .font(ClimbTypography.sans(15, weight: .semibold))
+                .foregroundStyle(Color.climbMist)
+                .textInputAutocapitalization(.never)
+                .autocorrectionDisabled()
+            if !searchText.isEmpty {
+                Button {
+                    HapticFeedback.selection()
+                    searchText = ""
+                } label: {
+                    Image(systemName: "xmark.circle.fill")
+                        .foregroundStyle(Color.climbMuted)
+                }
+                .buttonStyle(ScaleButtonStyle())
+            }
+        }
+        .padding(14)
+        .background(Color.climbSurfaceRaised.opacity(0.62), in: RoundedRectangle(cornerRadius: 19, style: .continuous))
+        .overlay(
+            RoundedRectangle(cornerRadius: 19, style: .continuous)
+                .stroke(Color.white.opacity(0.07), lineWidth: 0.7)
+        )
+    }
+
+    private var journalFilterRow: some View {
+        ScrollView(.horizontal) {
+            HStack(spacing: 8) {
+                ForEach(JournalFilter.allCases) { option in
+                    Button {
+                        HapticFeedback.selection()
+                        withAnimation(ClimbMotion.quick) {
+                            filter = option
+                        }
+                    } label: {
+                        Label(option.title, systemImage: option.symbol)
+                            .font(ClimbTypography.sans(12, weight: .semibold))
+                            .foregroundStyle(filter == option ? Color.climbInk : Color.climbTextSecondary)
+                            .padding(.horizontal, 12)
+                            .padding(.vertical, 10)
+                            .background(
+                                filter == option ? Color.climbGreen : Color.climbBackgroundLifted.opacity(0.62),
+                                in: Capsule()
+                            )
+                    }
+                    .buttonStyle(ScaleButtonStyle())
+                }
+            }
+            .padding(.horizontal, 1)
+        }
+        .scrollIndicators(.hidden)
+    }
+}
+
+private enum JournalPrompt: String, CaseIterable, Identifiable {
+    case conviction
+    case recovery
+    case gratitude
+    case obedience
+
+    var id: String { rawValue }
+
+    var title: String {
+        switch self {
+        case .conviction:
+            "Conviction"
+        case .recovery:
+            "Recovery"
+        case .gratitude:
+            "Gratitude"
+        case .obedience:
+            "Obedience"
+        }
+    }
+
+    var question: String {
+        switch self {
+        case .conviction:
+            "What truth did I avoid before the mission started?"
+        case .recovery:
+            "What is the smallest honest step after a miss?"
+        case .gratitude:
+            "Where did God give help I would usually overlook?"
+        case .obedience:
+            "What is one action I need to take before I feel ready?"
+        }
+    }
+
+    var symbol: String {
+        switch self {
+        case .conviction:
+            "flame"
+        case .recovery:
+            "arrow.triangle.2.circlepath"
+        case .gratitude:
+            "heart"
+        case .obedience:
+            "figure.walk"
+        }
+    }
+}
+
+private struct JournalPromptCard: View {
+    let prompt: JournalPrompt
+
+    var body: some View {
+        HStack(alignment: .top, spacing: 12) {
+            Image(systemName: prompt.symbol)
+                .font(ClimbTypography.sans(14, weight: .semibold))
+                .foregroundStyle(Color.climbGreen)
+                .frame(width: 34, height: 34)
+                .background(Color.climbGreen.opacity(0.11), in: Circle())
+
+            VStack(alignment: .leading, spacing: 5) {
+                Text(prompt.title)
+                    .font(ClimbTypography.sans(12, weight: .semibold))
+                    .tracking(1.1)
+                    .foregroundStyle(Color.climbMuted)
+                    .textCase(.uppercase)
+                Text(prompt.question)
+                    .font(ClimbTypography.serif(22))
+                    .foregroundStyle(Color.climbWarm)
+                    .lineSpacing(3)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+
+            Spacer(minLength: 0)
+        }
+        .padding(14)
+        .background(Color.climbBackgroundLifted.opacity(0.48), in: RoundedRectangle(cornerRadius: 18, style: .continuous))
+        .overlay(
+            RoundedRectangle(cornerRadius: 18, style: .continuous)
+                .stroke(Color.white.opacity(0.06), lineWidth: 0.7)
+        )
+    }
+}
+
+private enum JournalFilter: String, CaseIterable, Identifiable {
+    case all
+    case strong
+    case steady
+    case low
+    case failed
+
+    var id: String { rawValue }
+
+    var title: String {
+        switch self {
+        case .all: "All"
+        case .strong: "Strong"
+        case .steady: "Steady"
+        case .low: "Low"
+        case .failed: "Failures"
+        }
+    }
+
+    var symbol: String {
+        switch self {
+        case .all: "book.pages"
+        case .strong: "arrow.up.circle"
+        case .steady: "equal.circle"
+        case .low: "arrow.down.circle"
+        case .failed: "exclamationmark.triangle"
+        }
+    }
+
+    func matches(_ entry: ReflectionEntry) -> Bool {
+        switch self {
+        case .all:
+            true
+        case .strong:
+            entry.mood == .strong
+        case .steady:
+            entry.mood == .steady
+        case .low:
+            entry.mood == .low
+        case .failed:
+            !(entry.failureReason?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ?? true)
+        }
+    }
+}
+
+private struct JournalMetric: View {
+    let value: String
+    let label: String
+
+    var body: some View {
+        VStack(spacing: 3) {
+            Text(value)
+                .font(ClimbTypography.sans(16, weight: .semibold).monospacedDigit())
+                .foregroundStyle(Color.climbMist)
+            Text(label)
+                .font(ClimbTypography.sans(10, weight: .semibold))
+                .tracking(0.8)
+                .foregroundStyle(Color.climbMuted)
+                .textCase(.uppercase)
+        }
+        .frame(maxWidth: .infinity)
+        .padding(.vertical, 11)
+        .background(Color.climbBackgroundLifted.opacity(0.50), in: RoundedRectangle(cornerRadius: 15, style: .continuous))
+    }
+}
+
+private struct JournalEntryCard: View {
+    let entry: ReflectionEntry
+
+    private var hasFailure: Bool {
+        !(entry.failureReason?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ?? true)
+    }
+
+    var body: some View {
+        ClimbCard(cornerRadius: 22) {
+            HStack(alignment: .center) {
+                VStack(alignment: .leading, spacing: 4) {
+                    Text(entry.date, style: .date)
+                        .font(ClimbTypography.sans(12, weight: .semibold))
+                        .foregroundStyle(Color.climbMuted)
+                    Text(entry.mood.rawValue)
+                        .font(ClimbTypography.sans(11, weight: .semibold))
+                        .tracking(1)
+                        .foregroundStyle(moodColor)
+                        .textCase(.uppercase)
+                }
+                Spacer()
+                Text("\(entry.effortRating)/5")
+                    .font(ClimbTypography.sans(13, weight: .semibold).monospacedDigit())
+                    .foregroundStyle(Color.climbTextSecondary)
+                    .padding(.horizontal, 10)
+                    .padding(.vertical, 7)
+                    .background(Color.climbBackgroundLifted.opacity(0.62), in: Capsule())
+            }
+
+            if hasFailure, let reason = entry.failureReason {
+                JournalField(title: "Why it failed", text: reason, accent: Color.climbGold)
+            }
+
+            JournalField(title: "Lesson", text: entry.lessonLearned, accent: Color.climbWarm)
+            JournalField(title: "Next step", text: entry.improvementPlan, accent: Color.climbTextSecondary)
+
+            if !entry.hardestPart.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                JournalField(title: "Hardest part", text: entry.hardestPart, accent: Color.climbMuted)
+            }
+        }
+    }
+
+    private var moodColor: Color {
+        switch entry.mood {
+        case .low:
+            Color.climbGold
+        case .steady:
+            Color.climbSage
+        case .strong:
+            Color.climbGreen
+        }
+    }
+}
+
+private struct JournalField: View {
+    let title: String
+    let text: String
+    let accent: Color
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 5) {
+            Text(title)
+                .font(ClimbTypography.sans(10, weight: .semibold))
+                .tracking(1)
+                .foregroundStyle(Color.climbMuted)
+                .textCase(.uppercase)
+            Text(text)
+                .font(title == "Lesson" ? ClimbTypography.serif(23) : ClimbTypography.sans(14, weight: .medium))
+                .foregroundStyle(accent)
+                .lineSpacing(3)
+                .fixedSize(horizontal: false, vertical: true)
         }
     }
 }

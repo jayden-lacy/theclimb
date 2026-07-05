@@ -1,0 +1,14 @@
+{
+  "applinks": {
+    "apps": [],
+    "details": [
+      {
+        "appID": "BLH227B4U7.com.jaydenlacy.theclimb",
+        "paths": [
+          "/invite*",
+          "/group*"
+        ]
+      }
+    ]
+  }
+}

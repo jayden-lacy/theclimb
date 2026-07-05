@@ -36,10 +36,11 @@ Current 1.0 release decision: ship iPhone-only and submit iPhone screenshots onl
   - `ENFORCE_APP_CHECK=true`
   - `AI_DAILY_LIMIT_PER_USER=6` or another low launch-safe number
   - `OPENAI_MODEL=gpt-5.4-mini` unless intentionally changed
-  - Optional `OPENAI_MAX_OUTPUT_TOKENS=1800`; the function clamps this to the 800-1800 range.
+  - Optional `OPENAI_MAX_OUTPUT_TOKENS=1300`; the function clamps this to the 800-1300 range.
+  - Optional `OPENAI_TIMEOUT_MS=20000` and `OPENAI_RETRY_COUNT=1` for bounded retry behavior.
 - Deploy Firestore rules with `firebase deploy --only firestore:rules,firestore:indexes` so users can only read/write their own profile, mission, devotional, journal, and progress documents while community data uses separate authenticated rules.
-- Confirm the backend-only `aiUsage` collection exists after testing. Client access is denied by the catch-all Firestore rule; only Cloud Functions should write it.
-- Enable Firestore TTL on `aiUsage.expiresAt` so old rate-limit records are cleaned up automatically.
+- Confirm the backend-only `aiUsage` and `aiDailyPlans` collections exist after testing. Client access is denied by the catch-all Firestore rule; only Cloud Functions should write them.
+- Enable Firestore TTL on `aiUsage.expiresAt` and `aiDailyPlans.expiresAt` so old rate-limit and cached-plan records are cleaned up automatically.
 - Keep the OpenAI key and stored prompt ID backend-only. Never put them in Swift, `Info.plist`, or Remote Config.
 - Set Cloud Billing budgets and alerts for Firebase/Google Cloud, OpenAI usage limits, and log-based alerts for repeated `generateDailyPlan` failures.
 
@@ -47,9 +48,13 @@ Current 1.0 release decision: ship iPhone-only and submit iPhone screenshots onl
 
 - `generateDailyPlan` requires a Firebase Auth ID token before doing any AI work.
 - The iOS client sends `X-Firebase-AppCheck` on AI requests. The function can enforce it with `ENFORCE_APP_CHECK=true` after Firebase App Check is configured.
-- The function rate-limits AI generations per signed-in user per day through Firestore `aiUsage` records.
+- The function checks `aiDailyPlans` for a same-user same-date cached plan before rate limiting or calling OpenAI.
+- User-requested plan regeneration skips the same-day cache, remains rate-limited, and overwrites the same cache document with the replacement plan.
+- The function rate-limits uncached AI generations per signed-in user per day through Firestore `aiUsage` records.
 - The function trims profile/history payloads before sending them to OpenAI and caps model output tokens to control cost.
-- The function writes structured logs for generation attempts, App Check failures, rate-limit rejections, and AI fallback use.
+- The function uses local World English Bible (WEB) public-domain verse text instead of a runtime external Bible API dependency.
+- First-week onboarding ramp context is passed to AI and mirrored client-side so new users get guided early missions even if fallback content is used.
+- The function writes structured logs for generation attempts, cache hits, OpenAI latency/usage, App Check failures, rate-limit rejections, and AI fallback use.
 - The function returns a deterministic fallback plan if OpenAI or the stored prompt fails, so the app does not dead-end the daily flow.
 - Firestore community rules validate `/posts` ownership and schema, require `authorID == userID`, cap post body length, require initial `amenCount == 0`, and only allow author body edits or one-count amen increments.
 - `/partnerLinks` rules only allow pending invite acceptance to set accepted fields. Accepted members can increment only their own action counters and last-check-in field with `lastInteraction`; truthful interaction text and action rate limits remain client-trusted and should move to a Cloud Function if abuse appears.
@@ -63,6 +68,7 @@ Current 1.0 release decision: ship iPhone-only and submit iPhone screenshots onl
 - Run a Release archive validation and confirm no privacy manifest warnings are emitted for the app, widget, shield configuration, shield action, or DeviceActivity monitor binaries.
 - Complete onboarding with email/password and Google.
 - Confirm the Home screen creates one mission and devotional per local calendar day.
+- Before starting a pending mission, use "Try a different plan" once and confirm the replacement mission/devotional save, widgets refresh, and repeat app opens return the replacement from cache.
 - Complete, fail, and recover a mission; verify OVR, streak, journal, widget, and leaderboard update.
 - Background and foreground the app; verify missed-day streaks recalculate and persist.
 - Add a community post, join a group, check in with a partner, and tap Amen.
