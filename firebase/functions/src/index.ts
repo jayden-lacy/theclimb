@@ -3,7 +3,7 @@ import { randomUUID } from "crypto";
 import { initializeApp } from "firebase-admin/app";
 import { getAppCheck } from "firebase-admin/app-check";
 import { getAuth } from "firebase-admin/auth";
-import { FieldValue, getFirestore, Timestamp } from "firebase-admin/firestore";
+import { FieldValue, getFirestore, Timestamp, type DocumentReference, type Query } from "firebase-admin/firestore";
 import { logger } from "firebase-functions/v2";
 import { onRequest } from "firebase-functions/v2/https";
 import { defineSecret } from "firebase-functions/params";
@@ -445,6 +445,66 @@ export const generateDailyPlan = onRequest(
   }
 );
 
+export const deleteAccountData = onRequest(
+  {
+    cors: true,
+    invoker: "public",
+    region: "us-central1",
+    timeoutSeconds: 60,
+    maxInstances: 10
+  },
+  async (request, response) => {
+    const requestId = request.get("x-request-id") || randomUUID();
+    const startedAt = Date.now();
+    let uid = "unknown";
+
+    if (request.method !== "POST") {
+      response.status(405).json({ error: "Use POST." });
+      return;
+    }
+
+    try {
+      uid = await verifyFirebaseUser(
+        request.get("x-firebase-auth"),
+        request.get("authorization"),
+        "Sign in before deleting account data."
+      );
+      await verifyAppCheckToken(request.get("x-firebase-appcheck"), uid);
+
+      const requestedUserID = cleanText((request.body as { userID?: unknown } | undefined)?.userID);
+      if (requestedUserID && requestedUserID !== uid) {
+        throw new HTTPError(403, "You can only delete your own account data.");
+      }
+
+      const deleted = await deleteAccountDataForUser(uid);
+      logger.info("Account data deletion completed.", {
+        uid,
+        requestId,
+        deleted,
+        totalLatencyMs: Date.now() - startedAt
+      });
+      response.status(200).json({
+        ok: true,
+        requestId,
+        deleted
+      });
+    } catch (error) {
+      const status = error instanceof HTTPError ? error.status : 500;
+      const severity = status >= 500 ? logger.error : logger.warn;
+      severity("deleteAccountData request rejected.", {
+        uid,
+        requestId,
+        status,
+        totalLatencyMs: Date.now() - startedAt,
+        error: error instanceof Error ? error.message : String(error)
+      });
+      response.status(status).json({
+        error: error instanceof Error ? error.message : "Unable to delete account data."
+      });
+    }
+  }
+);
+
 class HTTPError extends Error {
   constructor(
     readonly status: number,
@@ -455,7 +515,12 @@ class HTTPError extends Error {
 }
 
 function appCheckIsRequired(): boolean {
-  const value = (process.env.ENFORCE_APP_CHECK ?? "").toLowerCase();
+  const rawValue = process.env.ENFORCE_APP_CHECK;
+  if (rawValue === undefined || rawValue.trim() === "") {
+    return process.env.FUNCTIONS_EMULATOR !== "true";
+  }
+
+  const value = rawValue.toLowerCase();
   return value === "true" || value === "1" || value === "yes";
 }
 
@@ -553,13 +618,17 @@ function dailyPlanResponsePayload(plan: DailyPlanResponse, meta: Record<string, 
   };
 }
 
-async function verifyFirebaseUser(firebaseAuthHeader?: string, authorizationHeader?: string): Promise<string> {
+async function verifyFirebaseUser(
+  firebaseAuthHeader?: string,
+  authorizationHeader?: string,
+  missingTokenMessage = "Sign in before generating a daily plan."
+): Promise<string> {
   const prefix = "Bearer ";
   const token = firebaseAuthHeader ?? (
     authorizationHeader?.startsWith(prefix) ? authorizationHeader.slice(prefix.length) : undefined
   );
   if (!token) {
-    throw new HTTPError(401, "Sign in before generating a daily plan.");
+    throw new HTTPError(401, missingTokenMessage);
   }
 
   try {
@@ -641,6 +710,161 @@ async function enforceRateLimit(uid: string): Promise<void> {
     count: nextCount,
     limit
   });
+}
+
+async function deleteAccountDataForUser(uid: string): Promise<Record<string, number>> {
+  const firestore = getFirestore();
+  const deleted: Record<string, number> = {};
+  const ownedCollections = [
+    "missions",
+    "devotionals",
+    "journalEntries",
+    "progress",
+    "partnerLinks",
+    "posts",
+    "reports"
+  ];
+
+  deleted.groups = await removeUserFromGroups(uid);
+
+  for (const collection of ownedCollections) {
+    deleted[collection] = await deleteQuery(
+      firestore.collection(collection).where("userID", "==", uid)
+    );
+  }
+
+  deleted.postsByAuthor = await deleteQuery(
+    firestore.collection("posts").where("authorID", "==", uid)
+  );
+  deleted.partnerLinksAcceptedBy = await deleteQuery(
+    firestore.collection("partnerLinks").where("acceptedByID", "==", uid)
+  );
+  deleted.reportsAgainstUser = await deleteQuery(
+    firestore.collection("reports").where("reportedUserID", "==", uid)
+  );
+  deleted.aiDailyPlans = await deleteQuery(
+    firestore.collection("aiDailyPlans").where("uid", "==", uid)
+  );
+  deleted.aiUsage = await deleteQuery(
+    firestore.collection("aiUsage").where("uid", "==", uid)
+  );
+  deleted.userState = await deleteQuery(
+    firestore.collection("users").doc(uid).collection("state")
+  );
+  deleted.knownUserDocuments = await deleteDocumentReferences([
+    firestore.collection("leaderboards").doc(uid),
+    firestore.collection("users").doc(uid)
+  ]);
+
+  return deleted;
+}
+
+async function removeUserFromGroups(uid: string): Promise<number> {
+  const firestore = getFirestore();
+  const snapshot = await firestore.collection("groups").where("memberIDs", "array-contains", uid).get();
+  const ownedGroupReferences: DocumentReference[] = [];
+  const updates: Array<{ reference: DocumentReference; data: Record<string, unknown> }> = [];
+
+  for (const document of snapshot.docs) {
+    const data = document.data();
+    const ownerID = cleanText(data.ownerID) || cleanText(data.userID);
+    if (ownerID === uid) {
+      ownedGroupReferences.push(document.ref);
+      continue;
+    }
+
+    const memberIDs = uniqueStrings(data.memberIDs).filter((memberID) => memberID !== uid);
+    const adminIDs = uniqueStrings(data.adminIDs).filter((adminID) => adminID !== uid && memberIDs.includes(adminID));
+    const memberNames = stringRecord(data.memberNames);
+    delete memberNames[uid];
+
+    updates.push({
+      reference: document.ref,
+      data: {
+        memberIDs,
+        adminIDs,
+        memberNames,
+        members: memberIDs.length,
+        updatedAt: FieldValue.serverTimestamp()
+      }
+    });
+  }
+
+  const updatedCount = await updateDocumentReferences(updates);
+  const deletedCount = await deleteDocumentReferences(ownedGroupReferences);
+  return updatedCount + deletedCount;
+}
+
+async function deleteQuery(query: Query): Promise<number> {
+  const snapshot = await query.get();
+  return deleteDocumentReferences(snapshot.docs.map((document) => document.ref));
+}
+
+async function deleteDocumentReferences(references: DocumentReference[]): Promise<number> {
+  let batch = getFirestore().batch();
+  let operationCount = 0;
+  let deletedCount = 0;
+
+  for (const reference of references) {
+    batch.delete(reference);
+    operationCount += 1;
+    deletedCount += 1;
+
+    if (operationCount === 450) {
+      await batch.commit();
+      batch = getFirestore().batch();
+      operationCount = 0;
+    }
+  }
+
+  if (operationCount > 0) {
+    await batch.commit();
+  }
+
+  return deletedCount;
+}
+
+async function updateDocumentReferences(updates: Array<{ reference: DocumentReference; data: Record<string, unknown> }>): Promise<number> {
+  let batch = getFirestore().batch();
+  let operationCount = 0;
+  let updatedCount = 0;
+
+  for (const update of updates) {
+    batch.update(update.reference, update.data);
+    operationCount += 1;
+    updatedCount += 1;
+
+    if (operationCount === 450) {
+      await batch.commit();
+      batch = getFirestore().batch();
+      operationCount = 0;
+    }
+  }
+
+  if (operationCount > 0) {
+    await batch.commit();
+  }
+
+  return updatedCount;
+}
+
+function uniqueStrings(value: unknown): string[] {
+  if (!Array.isArray(value)) {
+    return [];
+  }
+  return Array.from(new Set(value.map(cleanText).filter(Boolean)));
+}
+
+function stringRecord(value: unknown): Record<string, string> {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    return {};
+  }
+
+  return Object.fromEntries(
+    Object.entries(value)
+      .map(([key, entryValue]) => [cleanText(key), cleanText(entryValue)] as const)
+      .filter(([key, entryValue]) => Boolean(key && entryValue))
+  );
 }
 
 function sanitizedDailyPlanRequest(request: DailyPlanRequest): DailyPlanRequest {

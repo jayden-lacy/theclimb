@@ -1,5 +1,6 @@
 import AuthenticationServices
 import CryptoKit
+import FirebaseAppCheck
 import FirebaseAuth
 import FirebaseCore
 import FirebaseFirestore
@@ -13,6 +14,10 @@ struct FirebaseSignedInUser: Equatable {
     var displayName: String
     var email: String
     var isNewUser = false
+}
+
+private struct AccountDeletionCleanupRequest: Encodable {
+    let userID: String
 }
 
 enum FirebaseIntegration {
@@ -1085,6 +1090,7 @@ final class FirebaseAppRepository: AppRepository {
     }
 
     func deleteAccountData(userID: String) async throws {
+        try await deleteBackendAccountData(userID: userID)
         try await fallback.clearLocalSnapshot()
         try? await removeUserFromJoinedCommunityGroups(userID: userID)
 
@@ -1101,16 +1107,43 @@ final class FirebaseAppRepository: AppRepository {
         ]
 
         for collection in collections {
-            try await deleteDocuments(in: collection, userID: userID)
+            try? await deleteDocuments(in: collection, userID: userID)
         }
-        try await deletePartnerLinksAcceptedBy(userID: userID)
+        try? await deletePartnerLinksAcceptedBy(userID: userID)
 
-        try await deleteKnownUserDocuments(userID: userID)
+        try? await deleteKnownUserDocuments(userID: userID)
 
         let userDocument = firestore.collection("users").document(userID)
-        let stateSnapshot = try await userDocument.collection("state").getDocumentsResult()
-        try await deleteDocuments(stateSnapshot.documents.map { $0.reference })
-        try await userDocument.deleteResult()
+        if let stateSnapshot = try? await userDocument.collection("state").getDocumentsResult() {
+            try? await deleteDocuments(stateSnapshot.documents.map { $0.reference })
+        }
+        try? await userDocument.deleteResult()
+    }
+
+    private func deleteBackendAccountData(userID: String) async throws {
+        guard let cleanupURL = Self.accountDeletionCleanupURL,
+              let user = Auth.auth().currentUser,
+              user.uid == userID else {
+            throw FirebaseIntegrationError.invalidAccountInfo
+        }
+
+        var request = URLRequest(url: cleanupURL)
+        request.httpMethod = "POST"
+        request.timeoutInterval = 30
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.setValue(try await user.idTokenString(), forHTTPHeaderField: "X-Firebase-Auth")
+
+        if let appCheckToken = try? await AppCheck.appCheck().token(forcingRefresh: false) {
+            request.setValue(appCheckToken.token, forHTTPHeaderField: "X-Firebase-AppCheck")
+        }
+
+        request.httpBody = try JSONEncoder().encode(AccountDeletionCleanupRequest(userID: userID))
+
+        let (_, response) = try await URLSession.shared.data(for: request)
+        guard let httpResponse = response as? HTTPURLResponse,
+              200..<300 ~= httpResponse.statusCode else {
+            throw FirebaseIntegrationError.accountDeletionRequiresRecentSignIn
+        }
     }
 
     func deleteUserDocument(collection: String, documentID: String, userID: String) async throws {
@@ -1543,6 +1576,15 @@ final class FirebaseAppRepository: AppRepository {
         return String((0..<6).compactMap { _ in alphabet.randomElement() })
     }
 
+    private static var accountDeletionCleanupURL: URL? {
+        guard let rawValue = Bundle.main.object(forInfoDictionaryKey: "AIProxyURL") as? String,
+              let dailyPlanURL = URL(string: rawValue) else {
+            return nil
+        }
+
+        return dailyPlanURL.deletingLastPathComponent().appendingPathComponent("deleteAccountData")
+    }
+
     private func deleteDocuments(in collection: String, userID: String) async throws {
         let snapshot = try await firestore
             .collection(collection)
@@ -1674,6 +1716,20 @@ private extension GIDSignIn {
 }
 
 private extension User {
+    func idTokenString() async throws -> String {
+        try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<String, Error>) in
+            getIDToken { token, error in
+                if let error {
+                    continuation.resume(throwing: FirebaseIntegration.mappedAuthError(error))
+                } else if let token {
+                    continuation.resume(returning: token)
+                } else {
+                    continuation.resume(throwing: FirebaseIntegrationError.invalidAccountInfo)
+                }
+            }
+        }
+    }
+
     func deleteAccountResult() async throws {
         try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in
             delete { error in
