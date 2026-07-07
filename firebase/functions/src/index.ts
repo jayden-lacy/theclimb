@@ -5,8 +5,9 @@ import { getAppCheck } from "firebase-admin/app-check";
 import { getAuth } from "firebase-admin/auth";
 import { FieldValue, getFirestore, Timestamp, type DocumentReference, type Query } from "firebase-admin/firestore";
 import { logger } from "firebase-functions/v2";
-import { onRequest } from "firebase-functions/v2/https";
+import { onRequest, type Request } from "firebase-functions/v2/https";
 import { defineSecret } from "firebase-functions/params";
+import type { Response } from "express";
 
 const openAIKey = defineSecret("OPENAI_API_KEY");
 const defaultModel = "gpt-5.4-mini";
@@ -141,6 +142,64 @@ type RecentPlanMemory = {
 type StoredSnapshot = {
   missions?: StoredMission[];
   devotionals?: StoredDevotional[];
+};
+
+type StoredUserProfile = {
+  id?: string;
+  displayName?: string;
+  ovrScore?: number;
+  currentStreak?: number;
+};
+
+type StoredAppSnapshot = {
+  profile?: StoredUserProfile;
+};
+
+type CommunityPostResponse = {
+  post: {
+    id: string;
+    authorID: string;
+    author: string;
+    body: string;
+    createdAt: string;
+    amenCount: number;
+  };
+};
+
+type CommunityGroupResponse = {
+  group: {
+    id: string;
+    name: string;
+    subtitle: string;
+    members: number;
+    activeChallenge: string;
+    isJoined: boolean;
+    ownerID: string;
+    adminIDs: string[];
+    memberIDs: string[];
+    memberNames: Record<string, string>;
+  };
+};
+
+type CommunityGroupState = {
+  id: string;
+  name: string;
+  subtitle: string;
+  activeChallenge: string;
+  ownerID: string;
+  creatorID: string;
+  adminIDs: string[];
+  memberIDs: string[];
+  memberNames: Record<string, string>;
+};
+
+type LeaderboardResponse = {
+  entry: {
+    id: string;
+    name: string;
+    ovrScore: number;
+    streak: number;
+  };
 };
 
 type FallbackDevotionalOption = {
@@ -505,12 +564,693 @@ export const deleteAccountData = onRequest(
   }
 );
 
+const secureHttpOptions = {
+  cors: true,
+  invoker: "public" as const,
+  region: "us-central1",
+  timeoutSeconds: 30,
+  maxInstances: 10
+};
+
+export const syncLeaderboard = onRequest(
+  secureHttpOptions,
+  async (request, response) => {
+    await handleAuthenticatedPost(
+      request,
+      response,
+      "syncLeaderboard",
+      "Sign in before syncing leaderboard data.",
+      async ({ uid }) => {
+        const entry = await buildTrustedLeaderboardEntry(uid);
+        await getFirestore().collection("leaderboards").doc(uid).set(
+          {
+            ...entry,
+            userID: uid,
+            updatedAt: FieldValue.serverTimestamp()
+          },
+          { merge: true }
+        );
+        return { entry } satisfies LeaderboardResponse;
+      }
+    );
+  }
+);
+
+export const createCommunityPost = onRequest(
+  secureHttpOptions,
+  async (request, response) => {
+    await handleAuthenticatedPost(
+      request,
+      response,
+      "createCommunityPost",
+      "Sign in before posting.",
+      async ({ uid }) => {
+        const body = request.body as Record<string, unknown> | undefined;
+        const postBody = requiredCleanText(body?.body, "Post text", 1, 500);
+        enforceCommunitySafety(postBody);
+
+        const profile = await publicUserProfile(uid);
+        const postId = cleanDocumentID(body?.id) || randomUUID();
+        const now = Timestamp.now();
+        const post = {
+          id: postId,
+          authorID: uid,
+          author: profile.displayName,
+          body: postBody,
+          createdAt: now,
+          amenCount: 0,
+          userID: uid,
+          updatedAt: FieldValue.serverTimestamp()
+        };
+
+        await getFirestore().collection("posts").doc(postId).create(post);
+
+        return {
+          post: {
+            id: post.id,
+            authorID: post.authorID,
+            author: post.author,
+            body: post.body,
+            createdAt: now.toDate().toISOString(),
+            amenCount: post.amenCount
+          }
+        } satisfies CommunityPostResponse;
+      }
+    );
+  }
+);
+
+export const addCommunityPostAmen = onRequest(
+  secureHttpOptions,
+  async (request, response) => {
+    await handleAuthenticatedPost(
+      request,
+      response,
+      "addCommunityPostAmen",
+      "Sign in before reacting to a post.",
+      async () => {
+        const body = request.body as Record<string, unknown> | undefined;
+        const postId = requiredDocumentID(body?.postID, "Post");
+        const reference = getFirestore().collection("posts").doc(postId);
+
+        await getFirestore().runTransaction(async (transaction) => {
+          const snapshot = await transaction.get(reference);
+          if (!snapshot.exists) {
+            throw new HTTPError(404, "Post not found.");
+          }
+          transaction.update(reference, {
+            amenCount: FieldValue.increment(1),
+            updatedAt: FieldValue.serverTimestamp()
+          });
+        });
+
+        return { ok: true };
+      }
+    );
+  }
+);
+
+export const deleteCommunityPost = onRequest(
+  secureHttpOptions,
+  async (request, response) => {
+    await handleAuthenticatedPost(
+      request,
+      response,
+      "deleteCommunityPost",
+      "Sign in before deleting a post.",
+      async ({ uid }) => {
+        const body = request.body as Record<string, unknown> | undefined;
+        const postId = requiredDocumentID(body?.postID, "Post");
+        const reference = getFirestore().collection("posts").doc(postId);
+
+        await getFirestore().runTransaction(async (transaction) => {
+          const snapshot = await transaction.get(reference);
+          if (!snapshot.exists) {
+            throw new HTTPError(404, "Post not found.");
+          }
+          if (cleanText(snapshot.get("authorID")) !== uid) {
+            throw new HTTPError(403, "You can only delete your own posts.");
+          }
+          transaction.delete(reference);
+        });
+
+        await deleteQuery(getFirestore().collection("reports").where("postID", "==", postId));
+        return { ok: true };
+      }
+    );
+  }
+);
+
+export const createCommunityGroup = onRequest(
+  secureHttpOptions,
+  async (request, response) => {
+    await handleAuthenticatedPost(
+      request,
+      response,
+      "createCommunityGroup",
+      "Sign in before creating a group.",
+      async ({ uid }) => {
+        const body = request.body as Record<string, unknown> | undefined;
+        const profile = await publicUserProfile(uid);
+        const groupId = cleanDocumentID(body?.id) || randomUUID();
+        const name = requiredCleanText(body?.name, "Group name", 1, 42);
+        const subtitle = requiredCleanText(body?.subtitle, "Group subtitle", 1, 96);
+        const activeChallenge = requiredCleanText(body?.activeChallenge, "Group focus", 1, 40);
+        enforceCommunitySafety(`${name} ${subtitle} ${activeChallenge}`);
+
+        const memberNames = { [uid]: profile.displayName };
+        const groupState: CommunityGroupState = {
+          id: groupId,
+          name,
+          subtitle,
+          activeChallenge,
+          ownerID: uid,
+          creatorID: uid,
+          adminIDs: [uid],
+          memberIDs: [uid],
+          memberNames
+        };
+        const group = {
+          ...groupState,
+          members: 1,
+          userID: uid,
+          createdAt: FieldValue.serverTimestamp(),
+          updatedAt: FieldValue.serverTimestamp()
+        };
+
+        await getFirestore().collection("groups").doc(groupId).create(group);
+        return { group: groupResponse(groupState, uid) } satisfies CommunityGroupResponse;
+      }
+    );
+  }
+);
+
+export const joinCommunityGroup = onRequest(
+  secureHttpOptions,
+  async (request, response) => {
+    await handleAuthenticatedPost(
+      request,
+      response,
+      "joinCommunityGroup",
+      "Sign in before joining a group.",
+      async ({ uid }) => {
+        const body = request.body as Record<string, unknown> | undefined;
+        const groupId = requiredDocumentID(body?.groupID, "Group");
+        const profile = await publicUserProfile(uid);
+        const displayName = optionalCleanText(body?.displayName, 40) || profile.displayName;
+        const group = await updateGroupTransaction(groupId, uid, (state) => {
+          if (!state.memberIDs.includes(uid)) {
+            if (state.memberIDs.length >= 5000) {
+              throw new HTTPError(409, "This group is full.");
+            }
+            state.memberIDs.push(uid);
+          }
+          state.memberNames[uid] = displayName;
+          return state;
+        });
+
+        return { group: groupResponse(group, uid) } satisfies CommunityGroupResponse;
+      }
+    );
+  }
+);
+
+export const leaveCommunityGroup = onRequest(
+  secureHttpOptions,
+  async (request, response) => {
+    await handleAuthenticatedPost(
+      request,
+      response,
+      "leaveCommunityGroup",
+      "Sign in before leaving a group.",
+      async ({ uid }) => {
+        const body = request.body as Record<string, unknown> | undefined;
+        const groupId = requiredDocumentID(body?.groupID, "Group");
+        const group = await updateGroupTransaction(groupId, uid, (state) => {
+          if (state.ownerID === uid) {
+            throw new HTTPError(403, "Group owners must delete the group instead of leaving it.");
+          }
+          state.memberIDs = state.memberIDs.filter((memberID) => memberID !== uid);
+          state.adminIDs = state.adminIDs.filter((adminID) => adminID !== uid);
+          delete state.memberNames[uid];
+          return state;
+        });
+
+        return { group: groupResponse(group, uid) } satisfies CommunityGroupResponse;
+      }
+    );
+  }
+);
+
+export const updateCommunityGroup = onRequest(
+  secureHttpOptions,
+  async (request, response) => {
+    await handleAuthenticatedPost(
+      request,
+      response,
+      "updateCommunityGroup",
+      "Sign in before editing a group.",
+      async ({ uid }) => {
+        const body = request.body as Record<string, unknown> | undefined;
+        const groupId = requiredDocumentID(body?.groupID, "Group");
+        const name = requiredCleanText(body?.name, "Group name", 1, 42);
+        const subtitle = requiredCleanText(body?.subtitle, "Group subtitle", 1, 96);
+        const activeChallenge = requiredCleanText(body?.activeChallenge, "Group focus", 1, 40);
+        enforceCommunitySafety(`${name} ${subtitle} ${activeChallenge}`);
+
+        const group = await updateGroupTransaction(groupId, uid, (state) => {
+          requireGroupAdmin(state, uid);
+          state.name = name;
+          state.subtitle = subtitle;
+          state.activeChallenge = activeChallenge;
+          return state;
+        });
+
+        return { group: groupResponse(group, uid) } satisfies CommunityGroupResponse;
+      }
+    );
+  }
+);
+
+export const setCommunityGroupAdmin = onRequest(
+  secureHttpOptions,
+  async (request, response) => {
+    await handleAuthenticatedPost(
+      request,
+      response,
+      "setCommunityGroupAdmin",
+      "Sign in before managing group admins.",
+      async ({ uid }) => {
+        const body = request.body as Record<string, unknown> | undefined;
+        const groupId = requiredDocumentID(body?.groupID, "Group");
+        const memberId = requiredUserID(body?.memberID, "Member");
+        const isAdmin = body?.isAdmin === true;
+
+        const group = await updateGroupTransaction(groupId, uid, (state) => {
+          requireGroupOwner(state, uid);
+          if (memberId === state.ownerID) {
+            return state;
+          }
+          if (!state.memberIDs.includes(memberId)) {
+            throw new HTTPError(400, "This person is not in the group.");
+          }
+          state.adminIDs = isAdmin ?
+            uniqueStrings([...state.adminIDs, memberId]) :
+            state.adminIDs.filter((adminID) => adminID !== memberId);
+          return state;
+        });
+
+        return { group: groupResponse(group, uid) } satisfies CommunityGroupResponse;
+      }
+    );
+  }
+);
+
+export const removeCommunityGroupMember = onRequest(
+  secureHttpOptions,
+  async (request, response) => {
+    await handleAuthenticatedPost(
+      request,
+      response,
+      "removeCommunityGroupMember",
+      "Sign in before removing group members.",
+      async ({ uid }) => {
+        const body = request.body as Record<string, unknown> | undefined;
+        const groupId = requiredDocumentID(body?.groupID, "Group");
+        const memberId = requiredUserID(body?.memberID, "Member");
+
+        const group = await updateGroupTransaction(groupId, uid, (state) => {
+          requireGroupAdmin(state, uid);
+          if (memberId === state.ownerID) {
+            throw new HTTPError(403, "The group owner cannot be removed.");
+          }
+          state.memberIDs = state.memberIDs.filter((existingMemberID) => existingMemberID !== memberId);
+          state.adminIDs = state.adminIDs.filter((adminID) => adminID !== memberId);
+          delete state.memberNames[memberId];
+          return state;
+        });
+
+        return { group: groupResponse(group, uid) } satisfies CommunityGroupResponse;
+      }
+    );
+  }
+);
+
+export const deleteCommunityGroup = onRequest(
+  secureHttpOptions,
+  async (request, response) => {
+    await handleAuthenticatedPost(
+      request,
+      response,
+      "deleteCommunityGroup",
+      "Sign in before deleting a group.",
+      async ({ uid }) => {
+        const body = request.body as Record<string, unknown> | undefined;
+        const groupId = requiredDocumentID(body?.groupID, "Group");
+        const reference = getFirestore().collection("groups").doc(groupId);
+
+        await getFirestore().runTransaction(async (transaction) => {
+          const snapshot = await transaction.get(reference);
+          if (!snapshot.exists) {
+            throw new HTTPError(404, "Group not found.");
+          }
+          const state = communityGroupState(snapshot.data() ?? {}, groupId);
+          requireGroupOwner(state, uid);
+          transaction.delete(reference);
+        });
+
+        return { ok: true };
+      }
+    );
+  }
+);
+
 class HTTPError extends Error {
   constructor(
     readonly status: number,
     message: string
   ) {
     super(message);
+  }
+}
+
+type AuthenticatedRequestContext = {
+  uid: string;
+  requestId: string;
+  startedAt: number;
+};
+
+async function handleAuthenticatedPost(
+  request: Request,
+  response: Response,
+  functionName: string,
+  missingTokenMessage: string,
+  handler: (context: AuthenticatedRequestContext) => Promise<unknown>
+): Promise<void> {
+  const requestId = request.get("x-request-id") || randomUUID();
+  const startedAt = Date.now();
+  let uid = "unknown";
+
+  if (request.method !== "POST") {
+    response.status(405).json({ error: "Use POST." });
+    return;
+  }
+
+  try {
+    uid = await verifyFirebaseUser(
+      request.get("x-firebase-auth"),
+      request.get("authorization"),
+      missingTokenMessage
+    );
+    await verifyAppCheckToken(request.get("x-firebase-appcheck"), uid);
+
+    const result = await handler({ uid, requestId, startedAt });
+    logger.info(`${functionName} completed.`, {
+      uid,
+      requestId,
+      totalLatencyMs: Date.now() - startedAt
+    });
+    response.status(200).json({
+      ok: true,
+      requestId,
+      ...objectPayload(result)
+    });
+  } catch (error) {
+    const status = error instanceof HTTPError ? error.status : 500;
+    const severity = status >= 500 ? logger.error : logger.warn;
+    severity(`${functionName} request rejected.`, {
+      uid,
+      requestId,
+      status,
+      totalLatencyMs: Date.now() - startedAt,
+      error: error instanceof Error ? error.message : String(error)
+    });
+    response.status(status).json({
+      error: error instanceof Error ? error.message : "Unable to finish that request."
+    });
+  }
+}
+
+function objectPayload(value: unknown): Record<string, unknown> {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    return {};
+  }
+  return value as Record<string, unknown>;
+}
+
+async function buildTrustedLeaderboardEntry(uid: string): Promise<LeaderboardResponse["entry"]> {
+  const firestore = getFirestore();
+  const userReference = firestore.collection("users").doc(uid);
+  const [userSnapshot, stateSnapshot] = await Promise.all([
+    userReference.get(),
+    userReference.collection("state").doc("current").get()
+  ]);
+  const storedProfile = storedProfileFromPayload(stateSnapshot.get("payload")) ??
+    storedProfileFromDocument(userSnapshot.data() ?? {});
+  const publicProfile = await publicUserProfile(uid);
+
+  return {
+    id: uid,
+    name: resolvedDisplayName(storedProfile.displayName || publicProfile.displayName),
+    ovrScore: cleanNumber(storedProfile.ovrScore, 0, 100),
+    streak: cleanNumber(storedProfile.currentStreak, 0, 3650)
+  };
+}
+
+async function publicUserProfile(uid: string): Promise<{ displayName: string }> {
+  const userSnapshot = await getFirestore().collection("users").doc(uid).get();
+  const storedName = cleanText(userSnapshot.get("displayName"));
+  if (storedName) {
+    return { displayName: resolvedDisplayName(storedName) };
+  }
+
+  try {
+    const user = await getAuth().getUser(uid);
+    return {
+      displayName: resolvedDisplayName(user.displayName || user.email || "Climber")
+    };
+  } catch {
+    return { displayName: "Climber" };
+  }
+}
+
+function storedProfileFromPayload(payload: unknown): StoredUserProfile {
+  if (typeof payload !== "string" || payload.length === 0) {
+    return {};
+  }
+
+  try {
+    const decoded = JSON.parse(Buffer.from(payload, "base64").toString("utf8")) as StoredAppSnapshot;
+    return decoded.profile ?? {};
+  } catch {
+    return {};
+  }
+}
+
+function storedProfileFromDocument(data: Record<string, unknown>): StoredUserProfile {
+  return {
+    displayName: cleanText(data.displayName),
+    ovrScore: cleanNumber(data.ovrScore, 0, 100),
+    currentStreak: cleanNumber(data.currentStreak, 0, 3650)
+  };
+}
+
+function resolvedDisplayName(name: string): string {
+  const cleanedName = optionalCleanText(name, 40);
+  return cleanedName || "Climber";
+}
+
+function optionalCleanText(value: unknown, maxLength: number): string {
+  if (typeof value !== "string") {
+    return "";
+  }
+  return value.replace(/\s+/g, " ").trim().slice(0, maxLength);
+}
+
+function requiredCleanText(value: unknown, fieldName: string, minimumLength: number, maximumLength: number): string {
+  const cleaned = optionalCleanText(value, maximumLength);
+  if (cleaned.length < minimumLength) {
+    throw new HTTPError(400, `${fieldName} is required.`);
+  }
+  return cleaned;
+}
+
+function cleanDocumentID(value: unknown): string {
+  const cleaned = optionalCleanText(value, 128);
+  if (!cleaned || cleaned.includes("/") || cleaned === "." || cleaned === "..") {
+    return "";
+  }
+  return cleaned;
+}
+
+function requiredDocumentID(value: unknown, fieldName: string): string {
+  const cleaned = cleanDocumentID(value);
+  if (!cleaned) {
+    throw new HTTPError(400, `${fieldName} ID is required.`);
+  }
+  return cleaned;
+}
+
+function requiredUserID(value: unknown, fieldName: string): string {
+  const cleaned = requiredCleanText(value, `${fieldName} ID`, 1, 128);
+  if (cleaned.includes("/")) {
+    throw new HTTPError(400, `${fieldName} ID is invalid.`);
+  }
+  return cleaned;
+}
+
+type CommunitySafetyAssessment = {
+  isAllowed: boolean;
+  userMessage: string;
+};
+
+const communitySafetyRules: Array<{
+  tokens: string[];
+  userMessage: string;
+}> = [
+  {
+    tokens: ["kys", "kill yourself", "go die", "end yourself", "unalive yourself"],
+    userMessage: "This looks unsafe. Edit it so it supports life and immediate help."
+  },
+  {
+    tokens: ["nigger", "faggot", "chink", "spic", "tranny"],
+    userMessage: "Remove hateful or dehumanizing language before posting."
+  },
+  {
+    tokens: ["fuck", "shit", "bitch", "asshole", "whore", "slut", "retard"],
+    userMessage: "Edit the language and try again."
+  },
+  {
+    tokens: ["onlyfans", "send nudes", "porn", "sex tape"],
+    userMessage: "Sexual content is not allowed in community posts."
+  },
+  {
+    tokens: ["http://", "https://", "cashapp", "venmo", "telegram", "crypto"],
+    userMessage: "Links, payments, and promotional content are not allowed here."
+  }
+];
+
+function assessCommunitySafety(text: string): CommunitySafetyAssessment {
+  const normalized = text.toLowerCase().replace(/[^a-z0-9:/]+/g, " ").replace(/\s+/g, " ").trim();
+  const rule = communitySafetyRules.find((candidate) =>
+    candidate.tokens.some((token) => normalized.includes(token))
+  );
+  if (!rule) {
+    return { isAllowed: true, userMessage: "" };
+  }
+  return { isAllowed: false, userMessage: rule.userMessage };
+}
+
+function enforceCommunitySafety(text: string): void {
+  const assessment = assessCommunitySafety(text);
+  if (!assessment.isAllowed) {
+    throw new HTTPError(400, assessment.userMessage);
+  }
+}
+
+async function updateGroupTransaction(
+  groupId: string,
+  uid: string,
+  mutator: (state: CommunityGroupState) => CommunityGroupState
+): Promise<CommunityGroupState> {
+  const reference = getFirestore().collection("groups").doc(groupId);
+  let updatedGroup: CommunityGroupState | null = null;
+
+  await getFirestore().runTransaction(async (transaction) => {
+    const snapshot = await transaction.get(reference);
+    if (!snapshot.exists) {
+      throw new HTTPError(404, "Group not found.");
+    }
+
+    const currentState = communityGroupState(snapshot.data() ?? {}, groupId);
+    const nextState = normalizedGroupState(mutator({ ...currentState }));
+    transaction.update(reference, {
+      id: nextState.id,
+      name: nextState.name,
+      subtitle: nextState.subtitle,
+      activeChallenge: nextState.activeChallenge,
+      userID: nextState.creatorID,
+      ownerID: nextState.ownerID,
+      adminIDs: nextState.adminIDs,
+      memberIDs: nextState.memberIDs,
+      memberNames: nextState.memberNames,
+      members: nextState.memberIDs.length,
+      updatedAt: FieldValue.serverTimestamp()
+    });
+    updatedGroup = nextState;
+  });
+
+  if (!updatedGroup) {
+    throw new HTTPError(500, "Unable to update group.");
+  }
+  return updatedGroup;
+}
+
+function communityGroupState(data: Record<string, unknown>, fallbackId: string): CommunityGroupState {
+  const id = cleanDocumentID(data.id) || fallbackId;
+  const name = requiredCleanText(data.name, "Group name", 1, 42);
+  const subtitle = requiredCleanText(data.subtitle, "Group subtitle", 1, 96);
+  const activeChallenge = requiredCleanText(data.activeChallenge, "Group focus", 1, 40);
+  const ownerID = cleanText(data.ownerID) || cleanText(data.userID);
+  if (!ownerID) {
+    throw new HTTPError(409, "Group is missing an owner.");
+  }
+
+  return normalizedGroupState({
+    id,
+    name,
+    subtitle,
+    activeChallenge,
+    ownerID,
+    creatorID: cleanText(data.userID) || ownerID,
+    adminIDs: uniqueStrings(data.adminIDs),
+    memberIDs: uniqueStrings(data.memberIDs),
+    memberNames: stringRecord(data.memberNames)
+  });
+}
+
+function normalizedGroupState(state: CommunityGroupState): CommunityGroupState {
+  const memberIDs = uniqueStrings([state.ownerID, ...state.memberIDs]).slice(0, 5000);
+  const adminIDs = uniqueStrings([state.ownerID, ...state.adminIDs]).filter((adminID) => memberIDs.includes(adminID));
+  const memberNames = stringRecord(state.memberNames);
+  for (const memberID of memberIDs) {
+    if (!memberNames[memberID]) {
+      memberNames[memberID] = memberID === state.ownerID ? "Group Admin" : `Member ${memberID.slice(0, 6)}`;
+    }
+  }
+
+  return {
+    ...state,
+    memberIDs,
+    adminIDs,
+    memberNames
+  };
+}
+
+function groupResponse(state: CommunityGroupState, uid: string): CommunityGroupResponse["group"] {
+  return {
+    id: state.id,
+    name: state.name,
+    subtitle: state.subtitle,
+    members: state.memberIDs.length,
+    activeChallenge: state.activeChallenge,
+    isJoined: state.memberIDs.includes(uid),
+    ownerID: state.ownerID,
+    adminIDs: state.adminIDs,
+    memberIDs: state.memberIDs,
+    memberNames: state.memberNames
+  };
+}
+
+function requireGroupAdmin(state: CommunityGroupState, uid: string): void {
+  if (state.ownerID !== uid && !state.adminIDs.includes(uid)) {
+    throw new HTTPError(403, "Only group admins can do that.");
+  }
+}
+
+function requireGroupOwner(state: CommunityGroupState, uid: string): void {
+  if (state.ownerID !== uid) {
+    throw new HTTPError(403, "Only the group owner can do that.");
   }
 }
 

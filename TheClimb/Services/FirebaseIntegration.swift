@@ -20,6 +20,69 @@ private struct AccountDeletionCleanupRequest: Encodable {
     let userID: String
 }
 
+private struct EmptyCloudFunctionRequest: Encodable {}
+
+private struct EmptyCloudFunctionResponse: Decodable {}
+
+private struct CloudFunctionErrorResponse: Decodable {
+    let error: String?
+}
+
+private struct LeaderboardSyncResponse: Decodable {
+    let entry: LeaderboardEntry
+}
+
+private struct CommunityPostResponse: Decodable {
+    let post: EncouragementPost
+}
+
+private struct CommunityGroupResponse: Decodable {
+    let group: ClimbGroup
+}
+
+private struct CreateCommunityPostRequest: Encodable {
+    let id: String
+    let body: String
+}
+
+private struct CommunityPostIDRequest: Encodable {
+    let postID: String
+}
+
+private struct CreateCommunityGroupRequest: Encodable {
+    let id: String
+    let name: String
+    let subtitle: String
+    let activeChallenge: String
+}
+
+private struct CommunityGroupIDRequest: Encodable {
+    let groupID: String
+}
+
+private struct JoinCommunityGroupRequest: Encodable {
+    let groupID: String
+    let displayName: String
+}
+
+private struct UpdateCommunityGroupRequest: Encodable {
+    let groupID: String
+    let name: String
+    let subtitle: String
+    let activeChallenge: String
+}
+
+private struct SetCommunityGroupAdminRequest: Encodable {
+    let groupID: String
+    let memberID: String
+    let isAdmin: Bool
+}
+
+private struct RemoveCommunityGroupMemberRequest: Encodable {
+    let groupID: String
+    let memberID: String
+}
+
 enum FirebaseIntegration {
     @MainActor private static var appleSignInCoordinator: AppleSignInCoordinator?
 
@@ -460,6 +523,7 @@ enum FirebaseIntegrationError: LocalizedError {
     case presentationUnavailable
     case encodingFailed
     case decodingFailed
+    case remoteMessage(String)
 
     var errorDescription: String? {
         switch self {
@@ -491,6 +555,8 @@ enum FirebaseIntegrationError: LocalizedError {
             "Unable to prepare your Firebase data."
         case .decodingFailed:
             "Unable to read your Firebase data."
+        case .remoteMessage(let message):
+            message
         }
     }
 }
@@ -675,26 +741,14 @@ final class FirebaseAppRepository: AppRepository {
             return try await fallback.createEncouragementPost(post)
         }
 
-        let createdPost = EncouragementPost(
-            id: post.id,
-            authorID: userID,
-            author: post.author,
-            body: post.body,
-            createdAt: post.createdAt,
-            amenCount: max(0, post.amenCount)
+        let response: CommunityPostResponse = try await callCloudFunction(
+            named: "createCommunityPost",
+            body: CreateCommunityPostRequest(id: post.id, body: post.body)
         )
-        let data: [String: Any] = [
-            "id": createdPost.id,
-            "authorID": createdPost.authorID,
-            "author": createdPost.author,
-            "body": createdPost.body,
-            "createdAt": createdPost.createdAt,
-            "amenCount": createdPost.amenCount,
-            "userID": userID,
-            "updatedAt": FieldValue.serverTimestamp()
-        ]
-
-        try await firestore.collection("posts").document(createdPost.id).setDataResult(data, merge: false)
+        let createdPost = response.post
+        guard createdPost.authorID == userID else {
+            throw FirebaseIntegrationError.syncFailed
+        }
         _ = try? await fallback.createEncouragementPost(createdPost)
         return createdPost
     }
@@ -705,9 +759,10 @@ final class FirebaseAppRepository: AppRepository {
             return
         }
 
-        try await firestore.collection("posts").document(postID).updateDataResult([
-            "amenCount": FieldValue.increment(Int64(1))
-        ])
+        let _: EmptyCloudFunctionResponse = try await callCloudFunction(
+            named: "addCommunityPostAmen",
+            body: CommunityPostIDRequest(postID: postID)
+        )
         try? await fallback.addAmen(to: postID)
     }
 
@@ -747,7 +802,10 @@ final class FirebaseAppRepository: AppRepository {
             throw FirebaseIntegrationError.invalidAccountInfo
         }
 
-        try await firestore.collection("posts").document(postID).deleteResult()
+        let _: EmptyCloudFunctionResponse = try await callCloudFunction(
+            named: "deleteCommunityPost",
+            body: CommunityPostIDRequest(postID: postID)
+        )
         try? await fallback.deleteEncouragementPost(postID: postID, authorID: authorID)
     }
 
@@ -805,35 +863,16 @@ final class FirebaseAppRepository: AppRepository {
             return group
         }
 
-        let createdGroup = ClimbGroup(
-            id: group.id,
-            name: group.name,
-            subtitle: group.subtitle,
-            members: 1,
-            activeChallenge: group.activeChallenge,
-            isJoined: true,
-            ownerID: userID,
-            adminIDs: [userID],
-            memberIDs: [userID],
-            memberNames: [userID: group.memberNames[userID] ?? Auth.auth().currentUser?.displayName ?? "Climber"]
+        let response: CommunityGroupResponse = try await callCloudFunction(
+            named: "createCommunityGroup",
+            body: CreateCommunityGroupRequest(
+                id: group.id,
+                name: group.name,
+                subtitle: group.subtitle,
+                activeChallenge: group.activeChallenge
+            )
         )
-        let data: [String: Any] = [
-            "id": createdGroup.id,
-            "name": createdGroup.name,
-            "subtitle": createdGroup.subtitle,
-            "activeChallenge": createdGroup.activeChallenge,
-            "members": 1,
-            "userID": userID,
-            "ownerID": userID,
-            "adminIDs": [userID],
-            "memberIDs": [userID],
-            "memberNames": [userID: group.memberNames[userID] ?? Auth.auth().currentUser?.displayName ?? "Climber"],
-            "createdAt": FieldValue.serverTimestamp(),
-            "updatedAt": FieldValue.serverTimestamp()
-        ]
-
-        try await firestore.collection("groups").document(createdGroup.id).setDataResult(data, merge: false)
-        return createdGroup
+        return response.group
     }
 
     func joinCommunityGroup(_ groupID: String, displayName: String) async throws {
@@ -842,7 +881,10 @@ final class FirebaseAppRepository: AppRepository {
             return
         }
 
-        try await updateCommunityGroupMembership(groupID: groupID, userID: userID, displayName: displayName, shouldJoin: true)
+        let _: CommunityGroupResponse = try await callCloudFunction(
+            named: "joinCommunityGroup",
+            body: JoinCommunityGroupRequest(groupID: groupID, displayName: displayName)
+        )
         try? await fallback.joinCommunityGroup(groupID, displayName: displayName)
     }
 
@@ -852,7 +894,10 @@ final class FirebaseAppRepository: AppRepository {
             return
         }
 
-        try await updateCommunityGroupMembership(groupID: groupID, userID: userID, displayName: Auth.auth().currentUser?.displayName ?? "Climber", shouldJoin: false)
+        let _: CommunityGroupResponse = try await callCloudFunction(
+            named: "leaveCommunityGroup",
+            body: CommunityGroupIDRequest(groupID: groupID)
+        )
         try? await fallback.leaveCommunityGroup(groupID)
     }
 
@@ -861,13 +906,15 @@ final class FirebaseAppRepository: AppRepository {
 
         guard Auth.auth().currentUser?.uid != nil else { return }
 
-        let reference = firestore.collection("groups").document(groupID)
-        let document = try await reference.getDocumentResult()
-        guard var state = remoteGroupState(from: document.data() ?? [:], fallbackID: document.documentID) else { return }
-        state.name = name
-        state.subtitle = subtitle
-        state.activeChallenge = challenge
-        try await updateRemoteGroup(reference: reference, state: state)
+        let _: CommunityGroupResponse = try await callCloudFunction(
+            named: "updateCommunityGroup",
+            body: UpdateCommunityGroupRequest(
+                groupID: groupID,
+                name: name,
+                subtitle: subtitle,
+                activeChallenge: challenge
+            )
+        )
     }
 
     func setCommunityGroupAdmin(groupID: String, memberID: String, isAdmin: Bool) async throws {
@@ -875,25 +922,10 @@ final class FirebaseAppRepository: AppRepository {
 
         guard Auth.auth().currentUser?.uid != nil else { return }
 
-        let reference = firestore.collection("groups").document(groupID)
-        let document = try await reference.getDocumentResult()
-        guard var state = remoteGroupState(from: document.data() ?? [:], fallbackID: document.documentID),
-              state.memberIDs.contains(memberID),
-              memberID != state.ownerID else {
-            return
-        }
-
-        if isAdmin {
-            if !state.adminIDs.contains(memberID) {
-                state.adminIDs.append(memberID)
-            }
-        } else {
-            state.adminIDs.removeAll { $0 == memberID }
-            if !state.adminIDs.contains(state.ownerID) {
-                state.adminIDs.append(state.ownerID)
-            }
-        }
-        try await updateRemoteGroup(reference: reference, state: state)
+        let _: CommunityGroupResponse = try await callCloudFunction(
+            named: "setCommunityGroupAdmin",
+            body: SetCommunityGroupAdminRequest(groupID: groupID, memberID: memberID, isAdmin: isAdmin)
+        )
     }
 
     func removeCommunityGroupMember(groupID: String, memberID: String) async throws {
@@ -901,17 +933,10 @@ final class FirebaseAppRepository: AppRepository {
 
         guard Auth.auth().currentUser?.uid != nil else { return }
 
-        let reference = firestore.collection("groups").document(groupID)
-        let document = try await reference.getDocumentResult()
-        guard var state = remoteGroupState(from: document.data() ?? [:], fallbackID: document.documentID),
-              memberID != state.ownerID else {
-            return
-        }
-
-        state.memberIDs.removeAll { $0 == memberID }
-        state.adminIDs.removeAll { $0 == memberID }
-        state.memberNames.removeValue(forKey: memberID)
-        try await updateRemoteGroup(reference: reference, state: state)
+        let _: CommunityGroupResponse = try await callCloudFunction(
+            named: "removeCommunityGroupMember",
+            body: RemoveCommunityGroupMemberRequest(groupID: groupID, memberID: memberID)
+        )
     }
 
     func deleteCommunityGroup(_ groupID: String) async throws {
@@ -919,7 +944,10 @@ final class FirebaseAppRepository: AppRepository {
 
         guard Auth.auth().currentUser?.uid != nil else { return }
 
-        try await firestore.collection("groups").document(groupID).deleteResult()
+        let _: EmptyCloudFunctionResponse = try await callCloudFunction(
+            named: "deleteCommunityGroup",
+            body: CommunityGroupIDRequest(groupID: groupID)
+        )
     }
 
     func loadAccountabilityPartners(for profile: UserProfile) async throws -> [AccountabilityPartner] {
@@ -1146,6 +1174,64 @@ final class FirebaseAppRepository: AppRepository {
         }
     }
 
+    private func syncTrustedLeaderboardEntry() async throws {
+        let response: LeaderboardSyncResponse = try await callCloudFunction(
+            named: "syncLeaderboard",
+            body: EmptyCloudFunctionRequest()
+        )
+        await patchLocalLeaderboard(with: response.entry)
+    }
+
+    private func patchLocalLeaderboard(with entry: LeaderboardEntry) async {
+        guard var snapshot = try? await fallback.loadSnapshot() else { return }
+        snapshot.leaderboard.removeAll { $0.id == entry.id }
+        snapshot.leaderboard.insert(entry, at: 0)
+        snapshot.leaderboard = Array(snapshot.leaderboard.sortedForGlobalRank.prefix(100))
+        try? await fallback.saveSnapshot(snapshot)
+    }
+
+    private func callCloudFunction<RequestBody: Encodable, ResponseBody: Decodable>(
+        named functionName: String,
+        body: RequestBody
+    ) async throws -> ResponseBody {
+        guard let url = Self.cloudFunctionURL(named: functionName),
+              let user = Auth.auth().currentUser else {
+            throw FirebaseIntegrationError.invalidAccountInfo
+        }
+
+        var request = URLRequest(url: url)
+        request.httpMethod = "POST"
+        request.timeoutInterval = 30
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.setValue(try await user.idTokenString(), forHTTPHeaderField: "X-Firebase-Auth")
+
+        if let appCheckToken = try? await AppCheck.appCheck().token(forcingRefresh: false) {
+            request.setValue(appCheckToken.token, forHTTPHeaderField: "X-Firebase-AppCheck")
+        }
+
+        request.httpBody = try encoder.encode(body)
+
+        let (data, response) = try await URLSession.shared.data(for: request)
+        guard let httpResponse = response as? HTTPURLResponse else {
+            throw FirebaseIntegrationError.syncFailed
+        }
+
+        guard 200..<300 ~= httpResponse.statusCode else {
+            if let errorResponse = try? decoder.decode(CloudFunctionErrorResponse.self, from: data),
+               let error = errorResponse.error,
+               !error.isEmpty {
+                throw FirebaseIntegrationError.remoteMessage(error)
+            }
+            throw FirebaseIntegrationError.syncFailed
+        }
+
+        if ResponseBody.self == EmptyCloudFunctionResponse.self {
+            return EmptyCloudFunctionResponse() as! ResponseBody
+        }
+
+        return try decoder.decode(ResponseBody.self, from: data)
+    }
+
     func deleteUserDocument(collection: String, documentID: String, userID: String) async throws {
         guard Auth.auth().currentUser?.uid == userID else {
             throw FirebaseIntegrationError.invalidAccountInfo
@@ -1172,9 +1258,7 @@ final class FirebaseAppRepository: AppRepository {
         try await writeEncodedCollection(remoteSnapshot.devotionals, collection: "devotionals", userID: userID)
         try await writeEncodedCollection(remoteSnapshot.journalEntries, collection: "journalEntries", userID: userID)
         try await writeEncodedCollection(remoteSnapshot.progress, collection: "progress", userID: userID)
-        if let ownLeaderboardEntry = remoteSnapshot.leaderboard.first(where: { $0.id == userID }) {
-            try await writeEncodedCollection([ownLeaderboardEntry], collection: "leaderboards", userID: userID)
-        }
+        try? await syncTrustedLeaderboardEntry()
     }
 
     private func compactRemoteSnapshot(from snapshot: AppStateSnapshot, userID: String) -> AppStateSnapshot {
@@ -1577,12 +1661,16 @@ final class FirebaseAppRepository: AppRepository {
     }
 
     private static var accountDeletionCleanupURL: URL? {
+        cloudFunctionURL(named: "deleteAccountData")
+    }
+
+    private static func cloudFunctionURL(named functionName: String) -> URL? {
         guard let rawValue = Bundle.main.object(forInfoDictionaryKey: "AIProxyURL") as? String,
               let dailyPlanURL = URL(string: rawValue) else {
             return nil
         }
 
-        return dailyPlanURL.deletingLastPathComponent().appendingPathComponent("deleteAccountData")
+        return dailyPlanURL.deletingLastPathComponent().appendingPathComponent(functionName)
     }
 
     private func deleteDocuments(in collection: String, userID: String) async throws {
