@@ -11,11 +11,11 @@ enum ClimbShortcutDestination: String, AppEnum {
 
     static var typeDisplayRepresentation = TypeDisplayRepresentation(name: "The Climb Destination")
     static var caseDisplayRepresentations: [ClimbShortcutDestination: DisplayRepresentation] = [
-        .home: DisplayRepresentation(title: "Home"),
+        .home: DisplayRepresentation(title: "Focus"),
         .grow: DisplayRepresentation(title: "Daily Word"),
-        .community: DisplayRepresentation(title: "Community"),
-        .progress: DisplayRepresentation(title: "Progress"),
-        .profile: DisplayRepresentation(title: "Profile")
+        .community: DisplayRepresentation(title: "Circle"),
+        .progress: DisplayRepresentation(title: "Insights"),
+        .profile: DisplayRepresentation(title: "Me")
     ]
 
     var appTab: AppTab {
@@ -78,8 +78,8 @@ struct OpenClimbDestinationIntent: AppIntent {
 }
 
 struct StartTodayMissionShortcutIntent: AppIntent {
-    static let title: LocalizedStringResource = "Start Today’s Mission"
-    static let description = IntentDescription("Open The Climb to begin today’s focus mission.")
+    static let title: LocalizedStringResource = "Start Focus Block"
+    static let description = IntentDescription("Open The Climb to begin today’s protected faith focus block.")
     static let openAppWhenRun = true
 
     func perform() async throws -> some IntentResult {
@@ -126,11 +126,11 @@ struct TheClimbAppShortcuts: AppShortcutsProvider {
         AppShortcut(
             intent: StartTodayMissionShortcutIntent(),
             phrases: [
-                "Start my mission in \(.applicationName)",
-                "Begin my climb in \(.applicationName)"
+                "Start my focus block in \(.applicationName)",
+                "Begin protected focus in \(.applicationName)"
             ],
-            shortTitle: "Start Mission",
-            systemImageName: "target"
+            shortTitle: "Start Focus",
+            systemImageName: "shield.lefthalf.filled"
         )
 
         AppShortcut(

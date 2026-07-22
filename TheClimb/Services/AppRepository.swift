@@ -1,8 +1,27 @@
 import Foundation
 
+struct TrustedMissionResult: Codable, Equatable {
+    var profile: UserProfile
+    var mission: Mission
+    var journalEntry: ReflectionEntry?
+    var progressSnapshot: ProgressSnapshot?
+    var leaderboardEntry: LeaderboardEntry
+    var appliedDelta: Int
+}
+
 protocol AppRepository {
     func loadSnapshot() async throws -> AppStateSnapshot
     func loadGlobalLeaderboard(limit: Int) async throws -> [LeaderboardEntry]
+    func completeMission(
+        missionID: String,
+        hardestPart: String,
+        lessonLearned: String,
+        effortRating: Int,
+        improvementPlan: String,
+        mood: MoodRating
+    ) async throws -> TrustedMissionResult
+    func failMission(missionID: String, reason: String) async throws -> TrustedMissionResult
+    func completeRecoveryMission(missionID: String) async throws -> TrustedMissionResult
     func loadRecentEncouragementPosts(limit: Int) async throws -> [EncouragementPost]
     func createEncouragementPost(_ post: EncouragementPost) async throws -> EncouragementPost
     func addAmen(to postID: String) async throws

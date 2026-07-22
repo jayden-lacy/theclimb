@@ -428,6 +428,14 @@ service cloud.firestore {
       allow create, update, delete: if false;
     }
 
+    match /userScores/{userId} {
+      allow read, write: if false;
+    }
+
+    match /missionScoreEvents/{eventId} {
+      allow read, write: if false;
+    }
+
     match /{document=**} {
       allow read, write: if false;
     }

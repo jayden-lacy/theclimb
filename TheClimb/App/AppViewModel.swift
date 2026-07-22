@@ -190,6 +190,7 @@ final class AppViewModel: ObservableObject {
     @Published private(set) var notificationFatigue = NotificationFatigueState()
     @Published private(set) var monthlyLetters: [MonthlyReflectionLetter] = []
     @Published private(set) var verseMemory: [MemorizedVerse] = []
+    @Published private(set) var achievementUnlocks: [AchievementUnlock] = []
     @Published private(set) var focusState: FocusModeState = .unavailable
     @Published private(set) var notificationState: NotificationPermissionState = .notDetermined
     @Published private(set) var isRefreshingLeaderboard = false
@@ -458,6 +459,56 @@ final class AppViewModel: ObservableObject {
 
     var dueVerseMemory: [MemorizedVerse] {
         activeVerseMemory.filter(\.isDue)
+    }
+
+    var achievements: [AchievementProgress] {
+        AchievementEngine.merged(
+            achievementDefinitions,
+            with: achievementUnlocks
+        )
+    }
+
+    private var achievementDefinitions: [AchievementProgress] {
+        AchievementEngine.build(
+            profile: profile,
+            missions: missions,
+            journalEntries: journalEntries,
+            habits: habits,
+            groups: groups,
+            posts: posts,
+            partners: partners,
+            verseMemory: verseMemory,
+            prayerStats: prayerAchievementStats
+        )
+    }
+
+    var unlockedAchievements: [AchievementProgress] {
+        achievements.filter(\.isUnlocked)
+    }
+
+    var nextAchievements: [AchievementProgress] {
+        achievements
+            .filter { !$0.isUnlocked }
+            .sorted {
+                if $0.progress == $1.progress {
+                    return $0.targetValue < $1.targetValue
+                }
+                return $0.progress > $1.progress
+            }
+    }
+
+    var achievementCompletionRate: Double {
+        let allAchievements = achievements
+        guard !allAchievements.isEmpty else { return 0 }
+        return Double(allAchievements.filter(\.isUnlocked).count) / Double(allAchievements.count)
+    }
+
+    private var prayerAchievementStats: PrayerAchievementStats {
+        let defaults = UserDefaults(suiteName: LocalAppRepository.appGroupID) ?? .standard
+        return PrayerAchievementStats(
+            sessionsCompleted: defaults.integer(forKey: "climb.prayer.sessionsCompleted"),
+            minutesCompleted: defaults.integer(forKey: "climb.prayer.minutesCompleted")
+        )
     }
 
     func load() async {
@@ -818,7 +869,7 @@ final class AppViewModel: ObservableObject {
     ) async -> Bool {
         guard beginMissionMutation(missionID) else { return false }
         defer { endMissionMutation(missionID) }
-        guard var profile else { return false }
+        guard profile != nil else { return false }
         guard let missionIndex = missions.firstIndex(where: { $0.id == missionID }) else { return false }
 
         let mission = missions[missionIndex]
@@ -832,48 +883,30 @@ final class AppViewModel: ObservableObject {
             break
         }
 
-        let previousSnapshot = snapshot
-        let previousStreak = profile.currentStreak
         _ = notificationFatigue.recordReminderEngagement()
-        missions[missionIndex].status = .completed
-        advanceChallenges(for: mission)
+        let result: TrustedMissionResult
 
-        let entry = ReflectionEntry(
-            id: UUID().uuidString,
-            date: Date(),
-            missionID: missionID,
-            hardestPart: hardestPart,
-            lessonLearned: lessonLearned,
-            effortRating: effortRating,
-            improvementPlan: improvementPlan,
-            mood: mood,
-            failureReason: nil
-        )
-        journalEntries.insert(entry, at: 0)
-
-        profile.ovrScore = min(
-            100,
-            profile.ovrScore + OVRScoring.completionDelta(
-                previousStreak: previousStreak,
+        do {
+            result = try await repository.completeMission(
+                missionID: missionID,
+                hardestPart: hardestPart,
+                lessonLearned: lessonLearned,
                 effortRating: effortRating,
-                missionDifficulty: mission.difficulty,
-                currentOVR: profile.ovrScore
+                improvementPlan: improvementPlan,
+                mood: mood
             )
-        )
-        self.profile = profile
-        reconcileAdaptiveChallenges()
-        reconcileStreaksWithMissionHistory()
-        if let profile = self.profile {
-            syncLeaderboardProfile(profile)
+        } catch {
+            errorMessage = error.localizedDescription
+            return false
         }
-        recordProgressSnapshot()
 
+        applyTrustedMissionResult(result)
+        advanceChallenges(for: result.mission)
+        reconcileAdaptiveChallenges()
         do {
             try await save()
         } catch {
-            restoreSnapshot(previousSnapshot)
             errorMessage = error.localizedDescription
-            return false
         }
 
         await focusService.stopFocus()
@@ -884,7 +917,8 @@ final class AppViewModel: ObservableObject {
         AppAnalytics.record(.missionCompleted, properties: [
             "difficulty": "\(mission.difficulty)",
             "effort": "\(effortRating)",
-            "ovr": "\(profile.ovrScore)"
+            "ovr": "\(result.profile.ovrScore)",
+            "delta": "\(result.appliedDelta)"
         ])
         return true
     }
@@ -893,58 +927,27 @@ final class AppViewModel: ObservableObject {
     func failMission(missionID: String, reason: String) async -> Bool {
         guard beginMissionMutation(missionID) else { return false }
         defer { endMissionMutation(missionID) }
-        guard var profile else { return false }
+        guard profile != nil else { return false }
         guard let missionIndex = missions.firstIndex(where: { $0.id == missionID }) else { return false }
         guard missions[missionIndex].status != .completed, missions[missionIndex].status != .recovered else { return false }
 
-        let previousSnapshot = snapshot
         let trimmedReason = reason.trimmingCharacters(in: .whitespacesAndNewlines)
         let shouldApplyPenalty = missions[missionIndex].status != .failed
         _ = notificationFatigue.recordReminderEngagement()
-        missions[missionIndex].status = .failed
+        let result: TrustedMissionResult
 
-        if shouldApplyPenalty {
-            profile.ovrScore = max(
-                0,
-                profile.ovrScore - OVRScoring.failurePenalty(
-                    currentOVR: profile.ovrScore,
-                    missionDifficulty: missions[missionIndex].difficulty
-                )
-            )
-            profile.currentStreak = 0
-        }
-        self.profile = profile
-        syncLeaderboardProfile(profile)
-
-        if let existingIndex = journalEntries.firstIndex(where: { $0.missionID == missionID && $0.failureReason != nil }) {
-            journalEntries[existingIndex].date = Date()
-            journalEntries[existingIndex].hardestPart = trimmedReason
-            journalEntries[existingIndex].failureReason = trimmedReason
-        } else {
-            let entry = ReflectionEntry(
-                id: UUID().uuidString,
-                date: Date(),
-                missionID: missionID,
-                hardestPart: trimmedReason,
-                lessonLearned: "I need a recovery step instead of quitting the day.",
-                effortRating: 1,
-                improvementPlan: "Take the fallback mission and remove the first obstacle.",
-                mood: .low,
-                failureReason: trimmedReason
-            )
-            journalEntries.insert(entry, at: 0)
+        do {
+            result = try await repository.failMission(missionID: missionID, reason: trimmedReason)
+        } catch {
+            errorMessage = error.localizedDescription
+            return false
         }
 
-        if shouldApplyPenalty {
-            recordProgressSnapshot()
-        }
-
+        applyTrustedMissionResult(result)
         do {
             try await save()
         } catch {
-            restoreSnapshot(previousSnapshot)
             errorMessage = error.localizedDescription
-            return false
         }
 
         await focusService.stopFocus()
@@ -955,7 +958,8 @@ final class AppViewModel: ObservableObject {
         await notificationScheduler.scheduleRecoveryPrompt()
         AppAnalytics.record(.missionFailed, properties: [
             "difficulty": "\(missions[missionIndex].difficulty)",
-            "penalty_applied": "\(shouldApplyPenalty)"
+            "penalty_applied": "\(shouldApplyPenalty)",
+            "delta": "\(result.appliedDelta)"
         ])
         return true
     }
@@ -964,7 +968,7 @@ final class AppViewModel: ObservableObject {
     func completeFallback(missionID: String) async -> Bool {
         guard beginMissionMutation(missionID) else { return false }
         defer { endMissionMutation(missionID) }
-        guard var profile else { return false }
+        guard profile != nil else { return false }
         guard let missionIndex = missions.firstIndex(where: { $0.id == missionID }) else { return false }
 
         switch missions[missionIndex].status {
@@ -977,31 +981,29 @@ final class AppViewModel: ObservableObject {
             return false
         }
 
-        let previousSnapshot = snapshot
         _ = notificationFatigue.recordReminderEngagement()
-        missions[missionIndex].status = .recovered
-        profile.ovrScore = min(100, profile.ovrScore + OVRScoring.recoveryDelta(currentOVR: profile.ovrScore))
-        profile.recoveryStreak += 1
-        self.profile = profile
-        reconcileAdaptiveChallenges()
-        reconcileStreaksWithMissionHistory()
-        if let profile = self.profile {
-            syncLeaderboardProfile(profile)
-        }
-        recordProgressSnapshot()
+        let result: TrustedMissionResult
 
         do {
-            try await save()
+            result = try await repository.completeRecoveryMission(missionID: missionID)
         } catch {
-            restoreSnapshot(previousSnapshot)
             errorMessage = error.localizedDescription
             return false
         }
 
+        applyTrustedMissionResult(result)
+        reconcileAdaptiveChallenges()
+        do {
+            try await save()
+        } catch {
+            errorMessage = error.localizedDescription
+        }
+
         await notificationScheduler.cancelIncompleteMissionReminder()
         AppAnalytics.record(.missionRecovered, properties: [
-            "ovr": "\(profile.ovrScore)",
-            "recovery_streak": "\(profile.recoveryStreak)"
+            "ovr": "\(result.profile.ovrScore)",
+            "recovery_streak": "\(result.profile.recoveryStreak)",
+            "delta": "\(result.appliedDelta)"
         ])
         return true
     }
@@ -1230,14 +1232,6 @@ final class AppViewModel: ObservableObject {
         let target = max(challenges[index].targetCompletions, 1)
         challenges[index].completedCount = min(challenges[index].completedCount + 1, target)
         challenges[index].daysRemaining = max(challenges[index].daysRemaining - 1, 1)
-
-        if challenges[index].isComplete, var profile {
-            let reward = challenges[index].difficulty >= 4 ? 2 : 1
-            profile.ovrScore = min(100, profile.ovrScore + reward)
-            self.profile = profile
-            syncLeaderboardProfile(profile)
-            recordProgressSnapshot()
-        }
 
         do {
             try await save()
@@ -1797,7 +1791,7 @@ final class AppViewModel: ObservableObject {
         focusState = await focusService.refreshAuthorizationStatus()
         notificationState = await notificationScheduler.authorizationState()
         let didUpdateNotificationFatigue = updateNotificationFatigueForCurrentDay()
-        let didAutoFailExpiredMissions = applyExpiredMissionFailures()
+        let didAutoFailExpiredMissions = await applyExpiredMissionFailures()
         if didAutoFailExpiredMissions {
             await focusService.stopFocus()
             await MissionLiveActivityService.end()
@@ -1807,9 +1801,6 @@ final class AppViewModel: ObservableObject {
         }
         try await ensureTodayPlan()
         await restoreActiveMissionTimerIfNeeded()
-        if didAutoFailExpiredMissions {
-            recordProgressSnapshot()
-        }
         if reconcileStreaksWithMissionHistory() ||
             reconcilePendingMissionDifficulty() ||
             reconcileAdaptiveChallenges() ||
@@ -2078,48 +2069,30 @@ final class AppViewModel: ObservableObject {
     }
 
     @discardableResult
-    private func applyExpiredMissionFailures() -> Bool {
-        guard var profile else { return false }
-
+    private func applyExpiredMissionFailures() async -> Bool {
+        guard profile != nil else { return false }
         let today = Date().startOfDay
-        var expiredMissionIDs: [String] = []
-
-        for index in missions.indices {
-            guard missions[index].status == .pending || missions[index].status == .active else { continue }
-            guard missions[index].date.startOfDay < today else { continue }
-            missions[index].status = .failed
-            expiredMissionIDs.append(missions[index].id)
-        }
+        let expiredMissionIDs = missions
+            .filter { ($0.status == .pending || $0.status == .active) && $0.date.startOfDay < today }
+            .map(\.id)
 
         guard !expiredMissionIDs.isEmpty else { return false }
 
-        let totalPenalty = expiredMissionIDs.reduce(0) { total, missionID in
-            let difficulty = missions.first(where: { $0.id == missionID })?.difficulty ?? 1
-            return total + OVRScoring.failurePenalty(currentOVR: profile.ovrScore, missionDifficulty: difficulty)
-        }
-        profile.ovrScore = max(0, profile.ovrScore - totalPenalty)
-        profile.currentStreak = 0
-        self.profile = profile
-        syncLeaderboardProfile(profile)
-
-        for missionID in expiredMissionIDs where !journalEntries.contains(where: { $0.missionID == missionID && $0.failureReason != nil }) {
-            journalEntries.insert(
-                ReflectionEntry(
-                    id: UUID().uuidString,
-                    date: Date(),
+        var didApplyFailure = false
+        for missionID in expiredMissionIDs {
+            do {
+                let result = try await repository.failMission(
                     missionID: missionID,
-                    hardestPart: "The mission expired before it was completed.",
-                    lessonLearned: "I need to respond before the day closes.",
-                    effortRating: 1,
-                    improvementPlan: "Take the next recovery step and keep the next mission smaller.",
-                    mood: .low,
-                    failureReason: "The mission expired before it was completed."
-                ),
-                at: 0
-            )
+                    reason: "The mission expired before it was completed."
+                )
+                applyTrustedMissionResult(result)
+                didApplyFailure = true
+            } catch {
+                errorMessage = error.localizedDescription
+            }
         }
 
-        return true
+        return didApplyFailure
     }
 
     private func recordProgressSnapshot() {
@@ -2148,6 +2121,7 @@ final class AppViewModel: ObservableObject {
     }
 
     private func save() async throws {
+        reconcileAchievementUnlocks()
         try await repository.saveSnapshot(snapshot)
         WidgetCenter.shared.reloadAllTimelines()
     }
@@ -2170,7 +2144,8 @@ final class AppViewModel: ObservableObject {
             contentFeedback: contentFeedback,
             notificationFatigue: notificationFatigue,
             monthlyLetters: monthlyLetters,
-            verseMemory: verseMemory
+            verseMemory: verseMemory,
+            achievementUnlocks: AchievementEngine.unlocks(from: achievements)
         )
     }
 
@@ -2192,6 +2167,38 @@ final class AppViewModel: ObservableObject {
         notificationFatigue = snapshot.notificationFatigue
         monthlyLetters = snapshot.monthlyLetters
         verseMemory = snapshot.verseMemory
+        achievementUnlocks = snapshot.achievementUnlocks
+    }
+
+    private func applyTrustedMissionResult(_ result: TrustedMissionResult) {
+        profile = result.profile
+
+        if let index = missions.firstIndex(where: { $0.id == result.mission.id }) {
+            missions[index] = result.mission
+        } else {
+            missions.insert(result.mission, at: 0)
+        }
+
+        if let journalEntry = result.journalEntry {
+            journalEntries.removeAll { $0.id == journalEntry.id }
+            journalEntries.removeAll {
+                $0.missionID == journalEntry.missionID &&
+                    (($0.failureReason == nil && journalEntry.failureReason == nil) ||
+                        ($0.failureReason != nil && journalEntry.failureReason != nil))
+            }
+            journalEntries.insert(journalEntry, at: 0)
+        }
+
+        if let progressSnapshot = result.progressSnapshot {
+            progress.removeAll { $0.id == progressSnapshot.id }
+            progress.insert(progressSnapshot, at: 0)
+            progress = Array(progress.prefix(30))
+        }
+
+        leaderboard.removeAll { $0.id == result.leaderboardEntry.id }
+        leaderboard.insert(result.leaderboardEntry, at: 0)
+        leaderboard = Array(leaderboard.sortedForGlobalRank.prefix(100))
+        reconcileAchievementUnlocks()
     }
 
     @discardableResult
@@ -2214,6 +2221,7 @@ final class AppViewModel: ObservableObject {
         notificationFatigue = snapshot.notificationFatigue
         monthlyLetters = snapshot.monthlyLetters
         verseMemory = snapshot.verseMemory
+        achievementUnlocks = snapshot.achievementUnlocks
         var didMutate = enrichedDevotionals != snapshot.devotionals
         if let profile {
             didMutate = removeLaunchDemoData(currentUserID: profile.id) || didMutate
@@ -2224,7 +2232,21 @@ final class AppViewModel: ObservableObject {
                 syncLeaderboardProfile(profile)
             }
         }
+        didMutate = reconcileAchievementUnlocks() || didMutate
         return didMutate
+    }
+
+    @discardableResult
+    private func reconcileAchievementUnlocks() -> Bool {
+        let nextUnlocks = AchievementEngine.unlocks(
+            from: AchievementEngine.merged(
+                achievementDefinitions,
+                with: achievementUnlocks
+            )
+        )
+        guard nextUnlocks != achievementUnlocks else { return false }
+        achievementUnlocks = nextUnlocks
+        return true
     }
 
     private func applyGlobalLeaderboard(_ entries: [LeaderboardEntry]) {
@@ -2258,6 +2280,7 @@ final class AppViewModel: ObservableObject {
 
     @discardableResult
     private func reconcileStreaksWithMissionHistory() -> Bool {
+        guard FirebaseIntegration.currentUserID == nil else { return false }
         guard var profile else { return false }
 
         let calculatedStreak = calculatedCurrentStreak()

@@ -34,6 +34,171 @@ final class LocalAppRepository: AppRepository {
         return Array(snapshot.leaderboard.sortedForGlobalRank.prefix(max(1, limit)))
     }
 
+    func completeMission(
+        missionID: String,
+        hardestPart: String,
+        lessonLearned: String,
+        effortRating: Int,
+        improvementPlan: String,
+        mood: MoodRating
+    ) async throws -> TrustedMissionResult {
+        var snapshot = try await loadSnapshot()
+        guard var profile = snapshot.profile,
+              let missionIndex = snapshot.missions.firstIndex(where: { $0.id == missionID }) else {
+            throw RepositoryError.decodingFailed
+        }
+
+        let mission = snapshot.missions[missionIndex]
+        let previousStreak = profile.currentStreak
+        let delta = OVRScoring.completionDelta(
+            previousStreak: previousStreak,
+            effortRating: effortRating,
+            missionDifficulty: mission.difficulty,
+            currentOVR: profile.ovrScore
+        )
+        profile.ovrScore = min(100, profile.ovrScore + delta)
+
+        snapshot.missions[missionIndex].status = .completed
+        let entry = ReflectionEntry(
+            id: UUID().uuidString,
+            date: Date(),
+            missionID: missionID,
+            hardestPart: hardestPart,
+            lessonLearned: lessonLearned,
+            effortRating: effortRating,
+            improvementPlan: improvementPlan,
+            mood: mood,
+            failureReason: nil
+        )
+        snapshot.journalEntries.insert(entry, at: 0)
+        profile = Self.reconciledStreaks(profile: profile, missions: snapshot.missions)
+        snapshot.profile = profile
+        let progress = Self.progressSnapshot(profile: profile, missions: snapshot.missions)
+        snapshot.progress.insert(progress, at: 0)
+        snapshot.progress = Array(snapshot.progress.prefix(30))
+        let leaderboardEntry = LeaderboardEntry(
+            id: profile.id,
+            name: profile.displayName,
+            ovrScore: profile.ovrScore,
+            streak: profile.currentStreak
+        )
+        snapshot.leaderboard.removeAll { $0.id == leaderboardEntry.id }
+        snapshot.leaderboard.insert(leaderboardEntry, at: 0)
+        snapshot.leaderboard = Array(snapshot.leaderboard.sortedForGlobalRank.prefix(100))
+        try await saveSnapshot(snapshot)
+
+        return TrustedMissionResult(
+            profile: profile,
+            mission: snapshot.missions[missionIndex],
+            journalEntry: entry,
+            progressSnapshot: progress,
+            leaderboardEntry: leaderboardEntry,
+            appliedDelta: delta
+        )
+    }
+
+    func failMission(missionID: String, reason: String) async throws -> TrustedMissionResult {
+        var snapshot = try await loadSnapshot()
+        guard var profile = snapshot.profile,
+              let missionIndex = snapshot.missions.firstIndex(where: { $0.id == missionID }) else {
+            throw RepositoryError.decodingFailed
+        }
+
+        let mission = snapshot.missions[missionIndex]
+        let shouldApplyPenalty = mission.status != .failed
+        let penalty = shouldApplyPenalty ?
+            OVRScoring.failurePenalty(currentOVR: profile.ovrScore, missionDifficulty: mission.difficulty) :
+            0
+        profile.ovrScore = max(0, profile.ovrScore - penalty)
+        profile.currentStreak = 0
+        snapshot.missions[missionIndex].status = .failed
+
+        let trimmedReason = reason.trimmingCharacters(in: .whitespacesAndNewlines)
+        let entry: ReflectionEntry
+        if let existingIndex = snapshot.journalEntries.firstIndex(where: { $0.missionID == missionID && $0.failureReason != nil }) {
+            snapshot.journalEntries[existingIndex].date = Date()
+            snapshot.journalEntries[existingIndex].hardestPart = trimmedReason
+            snapshot.journalEntries[existingIndex].failureReason = trimmedReason
+            entry = snapshot.journalEntries[existingIndex]
+        } else {
+            entry = ReflectionEntry(
+                id: UUID().uuidString,
+                date: Date(),
+                missionID: missionID,
+                hardestPart: trimmedReason,
+                lessonLearned: "I need a recovery step instead of quitting the day.",
+                effortRating: 1,
+                improvementPlan: "Take the fallback mission and remove the first obstacle.",
+                mood: .low,
+                failureReason: trimmedReason
+            )
+            snapshot.journalEntries.insert(entry, at: 0)
+        }
+
+        snapshot.profile = profile
+        let progress = Self.progressSnapshot(profile: profile, missions: snapshot.missions)
+        if shouldApplyPenalty {
+            snapshot.progress.insert(progress, at: 0)
+            snapshot.progress = Array(snapshot.progress.prefix(30))
+        }
+        let leaderboardEntry = LeaderboardEntry(
+            id: profile.id,
+            name: profile.displayName,
+            ovrScore: profile.ovrScore,
+            streak: profile.currentStreak
+        )
+        snapshot.leaderboard.removeAll { $0.id == leaderboardEntry.id }
+        snapshot.leaderboard.insert(leaderboardEntry, at: 0)
+        snapshot.leaderboard = Array(snapshot.leaderboard.sortedForGlobalRank.prefix(100))
+        try await saveSnapshot(snapshot)
+
+        return TrustedMissionResult(
+            profile: profile,
+            mission: snapshot.missions[missionIndex],
+            journalEntry: entry,
+            progressSnapshot: shouldApplyPenalty ? progress : nil,
+            leaderboardEntry: leaderboardEntry,
+            appliedDelta: -penalty
+        )
+    }
+
+    func completeRecoveryMission(missionID: String) async throws -> TrustedMissionResult {
+        var snapshot = try await loadSnapshot()
+        guard var profile = snapshot.profile,
+              let missionIndex = snapshot.missions.firstIndex(where: { $0.id == missionID }) else {
+            throw RepositoryError.decodingFailed
+        }
+
+        let delta = OVRScoring.recoveryDelta(currentOVR: profile.ovrScore)
+        profile.ovrScore = min(100, profile.ovrScore + delta)
+        profile.recoveryStreak += 1
+        snapshot.missions[missionIndex].status = .recovered
+        profile = Self.reconciledStreaks(profile: profile, missions: snapshot.missions)
+        snapshot.profile = profile
+        let progress = Self.progressSnapshot(profile: profile, missions: snapshot.missions)
+        snapshot.progress.insert(progress, at: 0)
+        snapshot.progress = Array(snapshot.progress.prefix(30))
+        let leaderboardEntry = LeaderboardEntry(
+            id: profile.id,
+            name: profile.displayName,
+            ovrScore: profile.ovrScore,
+            streak: profile.currentStreak
+        )
+        snapshot.leaderboard.removeAll { $0.id == leaderboardEntry.id }
+        snapshot.leaderboard.insert(leaderboardEntry, at: 0)
+        snapshot.leaderboard = Array(snapshot.leaderboard.sortedForGlobalRank.prefix(100))
+        try await saveSnapshot(snapshot)
+
+        return TrustedMissionResult(
+            profile: profile,
+            mission: snapshot.missions[missionIndex],
+            journalEntry: nil,
+            progressSnapshot: progress,
+            leaderboardEntry: leaderboardEntry,
+            appliedDelta: delta
+        )
+    }
+
     func loadRecentEncouragementPosts(limit: Int) async throws -> [EncouragementPost] {
         let snapshot = try await loadSnapshot()
         return Array(snapshot.posts.sorted { $0.createdAt > $1.createdAt }.prefix(max(1, limit)))
@@ -238,5 +403,59 @@ final class LocalAppRepository: AppRepository {
     private static func inviteCode() -> String {
         let alphabet = Array("ABCDEFGHJKLMNPQRSTUVWXYZ23456789")
         return String((0..<6).compactMap { _ in alphabet.randomElement() })
+    }
+
+    private static func reconciledStreaks(profile: UserProfile, missions: [Mission]) -> UserProfile {
+        var updated = profile
+        let streak = currentMissionStreak(missions: missions)
+        updated.currentStreak = streak
+        updated.longestStreak = max(updated.longestStreak, streak)
+        return updated
+    }
+
+    private static func currentMissionStreak(missions: [Mission]) -> Int {
+        let calendar = Calendar.current
+        let today = Date().startOfDay
+        if missions.contains(where: { calendar.isDate($0.date, inSameDayAs: today) && $0.status == .failed }) {
+            return 0
+        }
+
+        let completedDays = Set(
+            missions
+                .filter { $0.status == .completed || $0.status == .recovered }
+                .map { $0.date.startOfDay }
+        )
+        let yesterday = today.addingDays(-1)
+        let startDay: Date
+        if completedDays.contains(today) {
+            startDay = today
+        } else if completedDays.contains(yesterday) {
+            startDay = yesterday
+        } else {
+            return 0
+        }
+
+        var streak = 0
+        var cursor = startDay
+        while completedDays.contains(cursor) {
+            streak += 1
+            cursor = cursor.addingDays(-1)
+        }
+        return streak
+    }
+
+    private static func progressSnapshot(profile: UserProfile, missions: [Mission]) -> ProgressSnapshot {
+        let completed = missions.filter { $0.status == .completed || $0.status == .recovered }.count
+        let failed = missions.filter { $0.status == .failed }.count
+        let completionRate = missions.isEmpty ? 0 : Double(completed) / Double(missions.count)
+        return ProgressSnapshot(
+            id: UUID().uuidString,
+            date: Date(),
+            ovrScore: profile.ovrScore,
+            currentStreak: profile.currentStreak,
+            completionRate: completionRate,
+            completedMissions: completed,
+            failedMissions: failed
+        )
     }
 }

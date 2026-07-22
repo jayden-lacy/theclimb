@@ -95,7 +95,7 @@ Current 1.0 release decision: ship iPhone-only and submit iPhone screenshots onl
 - The DeviceActivity monitor bundle ID `com.jaydenlacy.theclimb.deviceactivitymonitor` must be registered and entitled with the rest of the Screen Time bundle set.
 - Server-side daily pregeneration is not required for launch; the app currently generates the next plan when the user opens the app on a new day.
 - Watch source files exist in the repository, but no Watch native target is registered in the Xcode project. Do not advertise Apple Watch support until the target, archive, screenshots, and paired-device sync are real.
-- Website `/download` returns `503` until the Cloudflare Worker `APP_STORE_URL` environment variable is set to a valid Apple App Store URL. Keep public copy launch-pending until that variable points to the live listing.
+- Website `/download` redirects to the App Store when the Cloudflare Worker `APP_STORE_URL` environment variable is set to a valid Apple URL. Without that variable, it serves a public fallback download page instead of an internal setup error.
 
 ## Official References
 

@@ -1,15 +1,28 @@
 import SwiftUI
+#if os(iOS)
+import UIKit
+#endif
+#if canImport(FamilyControls) && os(iOS)
+import FamilyControls
+#endif
 
 struct HomeView: View {
+    @Environment(\.openURL) private var openURL
     @ObservedObject var viewModel: AppViewModel
     @State private var isMissionPresented = false
     @State private var focusedDevotional: Devotional?
     @State private var isRegenerationDialogPresented = false
+#if canImport(FamilyControls) && os(iOS)
+    @State private var showActivityPicker = false
+    @State private var activitySelection = FamilyActivitySelection()
+    @State private var adultWebFilterEnabled = FocusAdultContentFilterStore.isEnabled
+#endif
 
     var body: some View {
-        ScreenContainer(title: "Today", hidesNavigationBar: true, bottomSafeAreaSpacing: 142) {
+        ScreenContainer(title: "Focus", hidesNavigationBar: true, bottomSafeAreaSpacing: 142) {
             if let profile = viewModel.profile {
                 homeHeader(profile)
+                screenTimeCommandCenter(profile)
             }
 
             if let mission = viewModel.todayMission {
@@ -37,6 +50,28 @@ struct HomeView: View {
                 MissionSessionView(viewModel: viewModel, mission: mission)
             }
         }
+#if canImport(FamilyControls) && os(iOS)
+        .familyActivityPicker(
+            headerText: "Choose the apps, categories, or websites The Climb should block during faith focus.",
+            footerText: "Your choices stay on this device and are reused for future protected focus blocks.",
+            isPresented: $showActivityPicker,
+            selection: $activitySelection
+        )
+        .onAppear {
+            activitySelection = ScreenTimeActivitySelectionStore.loadSelection()
+            adultWebFilterEnabled = FocusAdultContentFilterStore.isEnabled
+            Task {
+                await viewModel.refreshScreenTimeAuthorization()
+            }
+        }
+        .onChange(of: activitySelection) { _, newSelection in
+            ScreenTimeActivitySelectionStore.saveSelection(newSelection)
+        }
+#else
+        .task {
+            await viewModel.refreshScreenTimeAuthorization()
+        }
+#endif
         .overlay {
             if let focusedDevotional {
                 DevotionalFocusOverlay(
@@ -141,12 +176,66 @@ struct HomeView: View {
         .climbEntrance()
     }
 
+    private func screenTimeCommandCenter(_ profile: UserProfile) -> some View {
+        FaithFocusCommandCenter(
+            focusState: viewModel.focusState,
+            blockedItemCount: selectedBlockingItemCount,
+            adultWebFilterEnabled: adultWebFilterEnabled,
+            streak: profile.currentStreak,
+            protectedMinutes: viewModel.todayMission?.durationMinutes ?? profile.ageGroup.baseMissionMinutes,
+            isMissionReady: viewModel.todayMission != nil,
+            isPreparingPlan: viewModel.isPreparingTodayPlan,
+            onStart: {
+                guard viewModel.todayMission != nil else { return }
+                isMissionPresented = true
+            },
+            onSetup: {
+                handleBlockingSetup()
+            }
+        )
+    }
+
+    private var selectedBlockingItemCount: Int {
+#if canImport(FamilyControls) && os(iOS)
+        if #available(iOS 16.0, *) {
+            return activitySelection.shieldableContentCount
+        }
+#endif
+        return 0
+    }
+
+    private func handleBlockingSetup() {
+#if canImport(FamilyControls) && os(iOS)
+        if viewModel.focusState == .denied,
+           let settingsURL = URL(string: UIApplication.openSettingsURLString) {
+            openURL(settingsURL)
+            return
+        }
+
+        if viewModel.focusState == .permissionRequired || viewModel.focusState == .unavailable {
+            Task {
+                await viewModel.requestScreenTimeAuthorization()
+                await MainActor.run {
+                    activitySelection = ScreenTimeActivitySelectionStore.loadSelection()
+                    if viewModel.focusState == .authorized || viewModel.focusState == .active {
+                        showActivityPicker = true
+                    }
+                }
+            }
+            return
+        }
+
+        activitySelection = ScreenTimeActivitySelectionStore.loadSelection()
+        showActivityPicker = true
+#endif
+    }
+
     private func missionCard(_ mission: Mission) -> some View {
         HomeSurface(padding: 0, cornerRadius: 27, accent: statusColor(mission.status), prominence: .hero) {
             VStack(alignment: .leading, spacing: 0) {
                 VStack(alignment: .leading, spacing: 16) {
                     HStack(alignment: .center, spacing: 12) {
-                        Text("Mission")
+                        Text("Focus block")
                             .font(ClimbTypography.sans(12, weight: .semibold))
                             .tracking(1.25)
                             .foregroundStyle(Color.climbTextSecondary)
@@ -355,12 +444,12 @@ struct HomeView: View {
     private func homeContextLine(for profile: UserProfile) -> String {
         let path = GrowthPathPersonalization.resolve(for: profile)
         guard let mission = viewModel.todayMission else {
-            return "\(path.primaryGoal) · preparing today’s plan"
+            return "\(path.primaryGoal) · preparing today’s block"
         }
 
         switch mission.status {
         case .active:
-            return "Mission active · stay with the window"
+            return "Block active · stay with the window"
         case .completed:
             return "\(profile.currentStreak)-day streak · reflection locked in"
         case .recovered:
@@ -393,7 +482,7 @@ struct HomeView: View {
 
     private func missionLabel(for mission: Mission) -> String {
         let day = max(viewModel.missions.count, 1)
-        return "DAY \(day) MISSION"
+        return "DAY \(day) BLOCK"
     }
 
     private func missionSummaryPreview(_ summary: String) -> String {
@@ -418,7 +507,7 @@ struct HomeView: View {
     private func missionButtonTitle(_ status: MissionStatus) -> String {
         switch status {
         case .pending:
-            "Start Mission"
+            "Start Protected Focus"
         case .active:
             "Continue"
         case .completed, .recovered:
@@ -476,6 +565,213 @@ struct HomeView: View {
         }
     }
 
+}
+
+private struct FaithFocusCommandCenter: View {
+    let focusState: FocusModeState
+    let blockedItemCount: Int
+    let adultWebFilterEnabled: Bool
+    let streak: Int
+    let protectedMinutes: Int
+    let isMissionReady: Bool
+    let isPreparingPlan: Bool
+    let onStart: () -> Void
+    let onSetup: () -> Void
+
+    var body: some View {
+        HomeSurface(padding: 0, cornerRadius: 30, accent: statusColor, prominence: .hero) {
+            VStack(alignment: .leading, spacing: 0) {
+                VStack(alignment: .leading, spacing: 17) {
+                    HStack(alignment: .center, spacing: 12) {
+                        Image(systemName: "shield.lefthalf.filled")
+                            .font(ClimbTypography.sans(17, weight: .semibold))
+                            .foregroundStyle(statusColor)
+                            .frame(width: 42, height: 42)
+                            .background(statusColor.opacity(0.13), in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+
+                        VStack(alignment: .leading, spacing: 3) {
+                            Text("Faith Focus")
+                                .font(ClimbTypography.sans(12, weight: .semibold))
+                                .tracking(1.35)
+                                .foregroundStyle(Color.climbTextSecondary)
+                                .textCase(.uppercase)
+                            Text(statusTitle)
+                                .font(ClimbTypography.sans(15, weight: .semibold))
+                                .foregroundStyle(statusColor)
+                        }
+
+                        Spacer(minLength: 0)
+
+                        Text(protectionBadgeText)
+                            .font(ClimbTypography.sans(12, weight: .semibold).monospacedDigit())
+                            .foregroundStyle(hasProtection ? Color.climbMist : Color.climbGold)
+                            .padding(.horizontal, 11)
+                            .padding(.vertical, 7)
+                            .background(Color.black.opacity(0.18), in: Capsule())
+                    }
+
+                    VStack(alignment: .leading, spacing: 9) {
+                        Text("Block what pulls you away.")
+                            .font(ClimbTypography.sans(31, weight: .semibold))
+                            .tracking(-0.45)
+                            .foregroundStyle(Color.climbMist)
+                            .fixedSize(horizontal: false, vertical: true)
+
+                        Text("Protect scripture, prayer, and focused work. Adult websites are blocked by default, and you can add the apps or sites that usually steal the first yes of your day.")
+                            .font(ClimbTypography.sans(15, weight: .medium))
+                            .foregroundStyle(Color.climbTextSecondary)
+                            .lineSpacing(4)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+
+                    HStack(spacing: 8) {
+                        FocusMetricTile(value: "\(protectedMinutes)m", label: "today", tint: .climbGreen)
+                        FocusMetricTile(value: "\(streak)", label: streak == 1 ? "day" : "days", tint: .climbGold)
+                        FocusMetricTile(value: adultWebFilterEnabled ? "18+" : (blockedItemCount > 0 ? "Ready" : "Pick"), label: adultWebFilterEnabled ? "web filter" : "apps", tint: hasProtection ? .climbSage : .climbGold)
+                    }
+                }
+                .padding(.horizontal, 22)
+                .padding(.top, 22)
+                .padding(.bottom, 16)
+
+                VStack(spacing: 10) {
+                    PrimaryActionButton(
+                        title: primaryActionTitle,
+                        systemImage: primaryActionIcon,
+                        tint: .climbGreen,
+                        isDisabled: !isMissionReady || isPreparingPlan
+                    ) {
+                        onStart()
+                    }
+
+                    Button {
+                        HapticFeedback.selection()
+                        onSetup()
+                    } label: {
+                        HStack(spacing: 8) {
+                            Image(systemName: hasProtection ? "slider.horizontal.3" : "square.grid.2x2")
+                                .font(ClimbTypography.sans(12, weight: .semibold))
+                            Text(setupButtonTitle)
+                                .font(ClimbTypography.sans(13, weight: .semibold))
+                        }
+                        .foregroundStyle(Color.climbTextSecondary)
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 4)
+                    }
+                    .buttonStyle(ScaleButtonStyle())
+                }
+                .padding(.horizontal, 18)
+                .padding(.top, 14)
+                .padding(.bottom, 17)
+                .background(Color.black.opacity(0.15))
+            }
+        }
+    }
+
+    private var primaryActionTitle: String {
+        if isPreparingPlan { return "Preparing focus block" }
+        return hasProtection ? "Start Protected Focus" : "Start Focus Setup"
+    }
+
+    private var primaryActionIcon: String {
+        hasProtection ? "lock.shield.fill" : "play.fill"
+    }
+
+    private var hasProtection: Bool {
+        blockedItemCount > 0 || adultWebFilterEnabled
+    }
+
+    private var protectionBadgeText: String {
+        if blockedItemCount > 0, adultWebFilterEnabled {
+            return "\(blockedItemCount) + 18+"
+        }
+
+        if adultWebFilterEnabled {
+            return "18+ blocked"
+        }
+
+        if blockedItemCount > 0 {
+            return "\(blockedItemCount) blocked"
+        }
+
+        return "setup needed"
+    }
+
+    private var setupButtonTitle: String {
+        if blockedItemCount > 0 { return "Edit blocked apps" }
+        if adultWebFilterEnabled { return "Add apps or websites" }
+        return setupActionTitle
+    }
+
+    private var setupActionTitle: String {
+        switch focusState {
+        case .permissionRequired, .unavailable:
+            "Allow Screen Time access"
+        case .denied:
+            "Open Screen Time settings"
+        case .active, .authorized, .selectionRequired, .simulated:
+            "Choose apps to block"
+        }
+    }
+
+    private var statusTitle: String {
+        switch focusState {
+        case .active:
+            "Blocking now"
+        case .authorized:
+            hasProtection ? "Shield ready" : "Access ready"
+        case .permissionRequired:
+            "Needs Screen Time access"
+        case .selectionRequired:
+            "Choose apps to block"
+        case .denied:
+            "Access denied"
+        case .simulated:
+            "Timer-only mode"
+        case .unavailable:
+            "Checking access"
+        }
+    }
+
+    private var statusColor: Color {
+        switch focusState {
+        case .active, .authorized:
+            hasProtection ? .climbGreen : .climbGold
+        case .permissionRequired, .selectionRequired, .simulated, .unavailable:
+            .climbGold
+        case .denied:
+            .climbRed
+        }
+    }
+}
+
+private struct FocusMetricTile: View {
+    let value: String
+    let label: String
+    let tint: Color
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 3) {
+            Text(value)
+                .font(ClimbTypography.sans(15, weight: .semibold).monospacedDigit())
+                .foregroundStyle(Color.climbMist)
+                .lineLimit(1)
+                .minimumScaleFactor(0.72)
+            Text(label)
+                .font(ClimbTypography.sans(10, weight: .semibold))
+                .tracking(0.7)
+                .foregroundStyle(tint.opacity(0.88))
+                .textCase(.uppercase)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(.horizontal, 12)
+        .padding(.vertical, 10)
+        .background(Color.climbBackgroundLifted.opacity(0.50), in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+        .overlay(
+            RoundedRectangle(cornerRadius: 16, style: .continuous)
+                .stroke(Color.white.opacity(0.050), lineWidth: 0.7)
+        )
+    }
 }
 
 private enum HomeSurfaceProminence {

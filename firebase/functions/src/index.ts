@@ -3,7 +3,7 @@ import { randomUUID } from "crypto";
 import { initializeApp } from "firebase-admin/app";
 import { getAppCheck } from "firebase-admin/app-check";
 import { getAuth } from "firebase-admin/auth";
-import { FieldValue, getFirestore, Timestamp, type DocumentReference, type Query } from "firebase-admin/firestore";
+import { FieldValue, getFirestore, Timestamp, type DocumentReference, type Query, type Transaction } from "firebase-admin/firestore";
 import { logger } from "firebase-functions/v2";
 import { onRequest, type Request } from "firebase-functions/v2/https";
 import { defineSecret } from "firebase-functions/params";
@@ -112,6 +112,7 @@ type GenerationObservability = {
 };
 
 type StoredMission = {
+  id?: string;
   date?: string;
   title?: string;
   summary?: string;
@@ -119,6 +120,11 @@ type StoredMission = {
   durationMinutes?: number;
   difficulty?: number;
   status?: string;
+  fallbackTitle?: string;
+  fallbackSummary?: string;
+  extraChallenges?: string[];
+  devotionalID?: string;
+  appBlockingEnabled?: boolean;
 };
 
 type StoredDevotional = {
@@ -147,12 +153,49 @@ type StoredSnapshot = {
 type StoredUserProfile = {
   id?: string;
   displayName?: string;
+  ageGroup?: string;
+  goals?: string[];
+  mainStruggle?: string;
+  streakGoal?: number;
+  notificationHour?: number;
+  notificationMinute?: number;
   ovrScore?: number;
   currentStreak?: number;
+  longestStreak?: number;
+  recoveryStreak?: number;
+  appBlockingEnabled?: boolean;
+  joinedAt?: string;
+};
+
+type StoredReflectionEntry = {
+  id?: string;
+  date?: string;
+  missionID?: string;
+  hardestPart?: string;
+  lessonLearned?: string;
+  effortRating?: number;
+  improvementPlan?: string;
+  mood?: string;
+  failureReason?: string | null;
+};
+
+type StoredProgressSnapshot = {
+  id?: string;
+  date?: string;
+  ovrScore?: number;
+  currentStreak?: number;
+  completionRate?: number;
+  completedMissions?: number;
+  failedMissions?: number;
 };
 
 type StoredAppSnapshot = {
   profile?: StoredUserProfile;
+  missions?: StoredMission[];
+  journalEntries?: StoredReflectionEntry[];
+  progress?: StoredProgressSnapshot[];
+  leaderboard?: LeaderboardResponse["entry"][];
+  [key: string]: unknown;
 };
 
 type CommunityPostResponse = {
@@ -200,6 +243,27 @@ type LeaderboardResponse = {
     ovrScore: number;
     streak: number;
   };
+};
+
+type TrustedMissionResult = {
+  profile: StoredUserProfile;
+  mission: StoredMission;
+  journalEntry?: StoredReflectionEntry;
+  progressSnapshot?: StoredProgressSnapshot;
+  leaderboardEntry: LeaderboardResponse["entry"];
+  appliedDelta: number;
+};
+
+type TrustedScoreState = {
+  userID: string;
+  ovrScore: number;
+  currentStreak: number;
+  longestStreak: number;
+  recoveryStreak: number;
+  completedMissionIDs: string[];
+  failedMissionIDs: string[];
+  recoveredMissionIDs: string[];
+  completedDayKeys: string[];
 };
 
 type FallbackDevotionalOption = {
@@ -571,6 +635,54 @@ const secureHttpOptions = {
   timeoutSeconds: 30,
   maxInstances: 10
 };
+
+export const completeMission = onRequest(
+  secureHttpOptions,
+  async (request, response) => {
+    await handleAuthenticatedPost(
+      request,
+      response,
+      "completeMission",
+      "Sign in before completing a mission.",
+      async ({ uid }) => {
+        const body = request.body as Record<string, unknown> | undefined;
+        return completeMissionForUser(uid, body);
+      }
+    );
+  }
+);
+
+export const failMission = onRequest(
+  secureHttpOptions,
+  async (request, response) => {
+    await handleAuthenticatedPost(
+      request,
+      response,
+      "failMission",
+      "Sign in before marking a mission missed.",
+      async ({ uid }) => {
+        const body = request.body as Record<string, unknown> | undefined;
+        return failMissionForUser(uid, body);
+      }
+    );
+  }
+);
+
+export const completeRecoveryMission = onRequest(
+  secureHttpOptions,
+  async (request, response) => {
+    await handleAuthenticatedPost(
+      request,
+      response,
+      "completeRecoveryMission",
+      "Sign in before completing recovery.",
+      async ({ uid }) => {
+        const body = request.body as Record<string, unknown> | undefined;
+        return completeRecoveryMissionForUser(uid, body);
+      }
+    );
+  }
+);
 
 export const syncLeaderboard = onRequest(
   secureHttpOptions,
@@ -998,22 +1110,309 @@ function objectPayload(value: unknown): Record<string, unknown> {
   return value as Record<string, unknown>;
 }
 
-async function buildTrustedLeaderboardEntry(uid: string): Promise<LeaderboardResponse["entry"]> {
+type MissionScoringContext = {
+  userReference: DocumentReference;
+  stateReference: DocumentReference;
+  scoreReference: DocumentReference;
+  eventReference: DocumentReference;
+  appSnapshot: StoredAppSnapshot;
+  missionIndex: number;
+  profile: StoredUserProfile;
+  score: TrustedScoreState;
+};
+
+async function completeMissionForUser(uid: string, body: Record<string, unknown> | undefined): Promise<TrustedMissionResult> {
+  const missionID = requiredDocumentID(body?.missionID, "Mission");
+  const hardestPart = requiredCleanText(body?.hardestPart, "Hardest part", 1, 500);
+  const lessonLearned = requiredCleanText(body?.lessonLearned, "Lesson learned", 1, 500);
+  const effortRating = cleanNumber(body?.effortRating, 1, 5);
+  const improvementPlan = requiredCleanText(body?.improvementPlan, "Improvement plan", 1, 500);
+  const mood = requiredCleanText(body?.mood, "Mood", 1, 24);
+
+  return getFirestore().runTransaction(async (transaction) => {
+    const context = await missionScoringContext(transaction, uid, missionID);
+    const mission = normalizedMission(context.appSnapshot.missions?.[context.missionIndex], missionID);
+    if (mission.status === "failed") {
+      throw new HTTPError(409, "Complete the recovery mission for this miss.");
+    }
+    if (mission.status === "completed" || mission.status === "recovered") {
+      return persistTrustedMissionResult(transaction, context, {
+        mission,
+        journalEntry: existingReflectionForMission(context.appSnapshot, missionID, false),
+        progressSnapshot: undefined,
+        appliedDelta: 0,
+        eventStatus: mission.status
+      });
+    }
+
+    const alreadyScored = context.score.completedMissionIDs.includes(missionID);
+    const previousStreak = context.score.currentStreak;
+    const delta = alreadyScored ? 0 : completionDelta(
+      previousStreak,
+      effortRating,
+      mission.difficulty ?? 1,
+      context.score.ovrScore
+    );
+    mission.status = "completed";
+
+    const journalEntry: StoredReflectionEntry = {
+      id: randomUUID(),
+      date: isoString(),
+      missionID,
+      hardestPart,
+      lessonLearned,
+      effortRating,
+      improvementPlan,
+      mood,
+      failureReason: null
+    };
+
+    if (!alreadyScored) {
+      context.score.ovrScore = Math.min(100, context.score.ovrScore + delta);
+      context.score.completedMissionIDs = uniqueTextValues([...context.score.completedMissionIDs, missionID]);
+      context.score.failedMissionIDs = context.score.failedMissionIDs.filter((id) => id !== missionID);
+      context.score.completedDayKeys = uniqueTextValues([...context.score.completedDayKeys, missionDateKey(mission)]);
+      reconcileTrustedScoreStreak(context.score);
+    }
+
+    return persistTrustedMissionResult(transaction, context, {
+      mission,
+      journalEntry,
+      progressSnapshot: progressSnapshotFor(context.score, context.appSnapshot, mission),
+      appliedDelta: delta,
+      eventStatus: "completed"
+    });
+  });
+}
+
+async function failMissionForUser(uid: string, body: Record<string, unknown> | undefined): Promise<TrustedMissionResult> {
+  const missionID = requiredDocumentID(body?.missionID, "Mission");
+  const reason = requiredCleanText(body?.reason, "Failure reason", 1, 500);
+
+  return getFirestore().runTransaction(async (transaction) => {
+    const context = await missionScoringContext(transaction, uid, missionID);
+    const mission = normalizedMission(context.appSnapshot.missions?.[context.missionIndex], missionID);
+    if (mission.status === "completed" || mission.status === "recovered") {
+      throw new HTTPError(409, "Completed missions cannot be marked missed.");
+    }
+
+    const alreadyFailed = context.score.failedMissionIDs.includes(missionID) || mission.status === "failed";
+    const penalty = alreadyFailed ? 0 : failurePenalty(context.score.ovrScore, mission.difficulty ?? 1);
+    mission.status = "failed";
+    const journalEntry = failureReflectionFor(context.appSnapshot, missionID, reason);
+
+    if (!alreadyFailed) {
+      context.score.ovrScore = Math.max(0, context.score.ovrScore - penalty);
+      context.score.currentStreak = 0;
+      context.score.failedMissionIDs = uniqueTextValues([...context.score.failedMissionIDs, missionID]);
+      context.score.completedMissionIDs = context.score.completedMissionIDs.filter((id) => id !== missionID);
+      context.score.recoveredMissionIDs = context.score.recoveredMissionIDs.filter((id) => id !== missionID);
+      context.score.completedDayKeys = context.score.completedDayKeys.filter((key) => key !== missionDateKey(mission));
+    }
+
+    return persistTrustedMissionResult(transaction, context, {
+      mission,
+      journalEntry,
+      progressSnapshot: alreadyFailed ? undefined : progressSnapshotFor(context.score, context.appSnapshot, mission),
+      appliedDelta: -penalty,
+      eventStatus: "failed"
+    });
+  });
+}
+
+async function completeRecoveryMissionForUser(uid: string, body: Record<string, unknown> | undefined): Promise<TrustedMissionResult> {
+  const missionID = requiredDocumentID(body?.missionID, "Mission");
+
+  return getFirestore().runTransaction(async (transaction) => {
+    const context = await missionScoringContext(transaction, uid, missionID);
+    const mission = normalizedMission(context.appSnapshot.missions?.[context.missionIndex], missionID);
+    if (mission.status === "completed" || mission.status === "recovered") {
+      return persistTrustedMissionResult(transaction, context, {
+        mission,
+        journalEntry: existingReflectionForMission(context.appSnapshot, missionID, mission.status === "recovered"),
+        progressSnapshot: undefined,
+        appliedDelta: 0,
+        eventStatus: mission.status
+      });
+    }
+    if (mission.status !== "failed" && !context.score.failedMissionIDs.includes(missionID)) {
+      throw new HTTPError(409, "Log the miss before completing recovery.");
+    }
+
+    const alreadyRecovered = context.score.recoveredMissionIDs.includes(missionID);
+    const delta = alreadyRecovered ? 0 : recoveryDelta(context.score.ovrScore);
+    mission.status = "recovered";
+
+    if (!alreadyRecovered) {
+      context.score.ovrScore = Math.min(100, context.score.ovrScore + delta);
+      context.score.recoveryStreak += 1;
+      context.score.recoveredMissionIDs = uniqueTextValues([...context.score.recoveredMissionIDs, missionID]);
+      context.score.completedMissionIDs = uniqueTextValues([...context.score.completedMissionIDs, missionID]);
+      context.score.completedDayKeys = uniqueTextValues([...context.score.completedDayKeys, missionDateKey(mission)]);
+      reconcileTrustedScoreStreak(context.score);
+    }
+
+    return persistTrustedMissionResult(transaction, context, {
+      mission,
+      journalEntry: existingReflectionForMission(context.appSnapshot, missionID, true),
+      progressSnapshot: progressSnapshotFor(context.score, context.appSnapshot, mission),
+      appliedDelta: delta,
+      eventStatus: "recovered"
+    });
+  });
+}
+
+async function missionScoringContext(
+  transaction: Transaction,
+  uid: string,
+  missionID: string
+): Promise<MissionScoringContext> {
   const firestore = getFirestore();
   const userReference = firestore.collection("users").doc(uid);
-  const [userSnapshot, stateSnapshot] = await Promise.all([
-    userReference.get(),
-    userReference.collection("state").doc("current").get()
+  const stateReference = userReference.collection("state").doc("current");
+  const scoreReference = firestore.collection("userScores").doc(uid);
+  const eventReference = firestore.collection("missionScoreEvents").doc(`${uid}_${missionID}`);
+
+  const [userSnapshot, stateSnapshot, scoreSnapshot] = await Promise.all([
+    transaction.get(userReference),
+    transaction.get(stateReference),
+    transaction.get(scoreReference)
   ]);
-  const storedProfile = storedProfileFromPayload(stateSnapshot.get("payload")) ??
-    storedProfileFromDocument(userSnapshot.data() ?? {});
+
+  const appSnapshot = storedAppSnapshotFromPayload(stateSnapshot.get("payload"));
+  appSnapshot.profile = {
+    ...storedProfileFromDocument(userSnapshot.data() ?? {}),
+    ...(appSnapshot.profile ?? {}),
+    id: uid
+  };
+  appSnapshot.missions = Array.isArray(appSnapshot.missions) ? appSnapshot.missions : [];
+  appSnapshot.journalEntries = Array.isArray(appSnapshot.journalEntries) ? appSnapshot.journalEntries : [];
+  appSnapshot.progress = Array.isArray(appSnapshot.progress) ? appSnapshot.progress : [];
+  appSnapshot.leaderboard = Array.isArray(appSnapshot.leaderboard) ? appSnapshot.leaderboard : [];
+
+  const missionIndex = appSnapshot.missions.findIndex((mission) => cleanText(mission.id) === missionID);
+  if (missionIndex < 0) {
+    throw new HTTPError(404, "Mission not found.");
+  }
+
+  return {
+    userReference,
+    stateReference,
+    scoreReference,
+    eventReference,
+    appSnapshot,
+    missionIndex,
+    profile: appSnapshot.profile,
+    score: trustedScoreStateFromSnapshot(scoreSnapshot, uid)
+  };
+}
+
+function persistTrustedMissionResult(
+  transaction: Transaction,
+  context: MissionScoringContext,
+  result: {
+    mission: StoredMission;
+    journalEntry?: StoredReflectionEntry;
+    progressSnapshot?: StoredProgressSnapshot;
+    appliedDelta: number;
+    eventStatus: string;
+  }
+): TrustedMissionResult {
+  const missions = context.appSnapshot.missions ?? [];
+  missions[context.missionIndex] = result.mission;
+  context.appSnapshot.missions = missions;
+  context.profile.ovrScore = context.score.ovrScore;
+  context.profile.currentStreak = context.score.currentStreak;
+  context.profile.longestStreak = context.score.longestStreak;
+  context.profile.recoveryStreak = context.score.recoveryStreak;
+  context.profile.id = context.profile.id || context.score.userID;
+  context.appSnapshot.profile = context.profile;
+
+  if (result.journalEntry) {
+    context.appSnapshot.journalEntries = upsertReflection(context.appSnapshot.journalEntries ?? [], result.journalEntry);
+  }
+  if (result.progressSnapshot) {
+    context.appSnapshot.progress = [result.progressSnapshot, ...(context.appSnapshot.progress ?? []).filter((entry) => entry.id !== result.progressSnapshot?.id)].slice(0, 30);
+  }
+
+  const leaderboardEntry = leaderboardEntryForProfile(context.profile, context.score);
+  context.appSnapshot.leaderboard = [leaderboardEntry, ...(context.appSnapshot.leaderboard ?? []).filter((entry) => entry.id !== leaderboardEntry.id)].slice(0, 100);
+
+  transaction.set(context.stateReference, {
+    payload: Buffer.from(JSON.stringify(context.appSnapshot), "utf8").toString("base64"),
+    updatedAt: FieldValue.serverTimestamp()
+  }, { merge: true });
+  transaction.set(context.userReference, {
+    id: context.score.userID,
+    userID: context.score.userID,
+    displayName: resolvedDisplayName(cleanText(context.profile.displayName)),
+    ovrScore: context.score.ovrScore,
+    currentStreak: context.score.currentStreak,
+    longestStreak: context.score.longestStreak,
+    recoveryStreak: context.score.recoveryStreak,
+    updatedAt: FieldValue.serverTimestamp()
+  }, { merge: true });
+  transaction.set(context.scoreReference, {
+    ...context.score,
+    updatedAt: FieldValue.serverTimestamp()
+  }, { merge: true });
+  transaction.set(context.eventReference, {
+    userID: context.score.userID,
+    missionID: cleanText(result.mission.id),
+    status: result.eventStatus,
+    appliedDelta: result.appliedDelta,
+    missionDateKey: missionDateKey(result.mission),
+    updatedAt: FieldValue.serverTimestamp()
+  }, { merge: true });
+  transaction.set(getFirestore().collection("missions").doc(cleanText(result.mission.id)), {
+    ...result.mission,
+    userID: context.score.userID,
+    updatedAt: FieldValue.serverTimestamp()
+  }, { merge: true });
+  if (result.journalEntry) {
+    transaction.set(getFirestore().collection("journalEntries").doc(cleanText(result.journalEntry.id)), {
+      ...result.journalEntry,
+      userID: context.score.userID,
+      updatedAt: FieldValue.serverTimestamp()
+    }, { merge: true });
+  }
+  if (result.progressSnapshot) {
+    transaction.set(getFirestore().collection("progress").doc(cleanText(result.progressSnapshot.id)), {
+      ...result.progressSnapshot,
+      userID: context.score.userID,
+      updatedAt: FieldValue.serverTimestamp()
+    }, { merge: true });
+  }
+  transaction.set(getFirestore().collection("leaderboards").doc(context.score.userID), {
+    ...leaderboardEntry,
+    userID: context.score.userID,
+    updatedAt: FieldValue.serverTimestamp()
+  }, { merge: true });
+
+  return {
+    profile: context.profile,
+    mission: result.mission,
+    journalEntry: result.journalEntry,
+    progressSnapshot: result.progressSnapshot,
+    leaderboardEntry,
+    appliedDelta: result.appliedDelta
+  };
+}
+
+async function buildTrustedLeaderboardEntry(uid: string): Promise<LeaderboardResponse["entry"]> {
+  const firestore = getFirestore();
+  const [userSnapshot, scoreSnapshot] = await Promise.all([
+    firestore.collection("users").doc(uid).get(),
+    firestore.collection("userScores").doc(uid).get()
+  ]);
+  const score = trustedScoreStateFromSnapshot(scoreSnapshot, uid);
   const publicProfile = await publicUserProfile(uid);
 
   return {
     id: uid,
-    name: resolvedDisplayName(storedProfile.displayName || publicProfile.displayName),
-    ovrScore: cleanNumber(storedProfile.ovrScore, 0, 100),
-    streak: cleanNumber(storedProfile.currentStreak, 0, 3650)
+    name: resolvedDisplayName(cleanText(userSnapshot.get("displayName")) || publicProfile.displayName),
+    ovrScore: score.ovrScore,
+    streak: score.currentStreak
   };
 }
 
@@ -1034,14 +1433,17 @@ async function publicUserProfile(uid: string): Promise<{ displayName: string }> 
   }
 }
 
-function storedProfileFromPayload(payload: unknown): StoredUserProfile {
+function storedAppSnapshotFromPayload(payload: unknown): StoredAppSnapshot {
   if (typeof payload !== "string" || payload.length === 0) {
     return {};
   }
 
   try {
-    const decoded = JSON.parse(Buffer.from(payload, "base64").toString("utf8")) as StoredAppSnapshot;
-    return decoded.profile ?? {};
+    const decoded = JSON.parse(Buffer.from(payload, "base64").toString("utf8")) as unknown;
+    if (!decoded || typeof decoded !== "object" || Array.isArray(decoded)) {
+      return {};
+    }
+    return decoded as StoredAppSnapshot;
   } catch {
     return {};
   }
@@ -1049,10 +1451,259 @@ function storedProfileFromPayload(payload: unknown): StoredUserProfile {
 
 function storedProfileFromDocument(data: Record<string, unknown>): StoredUserProfile {
   return {
+    id: cleanText(data.id) || cleanText(data.userID),
     displayName: cleanText(data.displayName),
+    ageGroup: cleanText(data.ageGroup),
+    goals: Array.isArray(data.goals) ? data.goals.map(cleanText).filter(Boolean) : [],
+    mainStruggle: cleanText(data.mainStruggle),
+    streakGoal: cleanNumber(data.streakGoal, 7, 365),
+    notificationHour: cleanNumber(data.notificationHour, 0, 23),
+    notificationMinute: cleanNumber(data.notificationMinute, 0, 59),
     ovrScore: cleanNumber(data.ovrScore, 0, 100),
-    currentStreak: cleanNumber(data.currentStreak, 0, 3650)
+    currentStreak: cleanNumber(data.currentStreak, 0, 3650),
+    longestStreak: cleanNumber(data.longestStreak, 0, 3650),
+    recoveryStreak: cleanNumber(data.recoveryStreak, 0, 3650),
+    appBlockingEnabled: data.appBlockingEnabled === true,
+    joinedAt: cleanText(data.joinedAt)
   };
+}
+
+function trustedScoreStateFromSnapshot(
+  snapshot: { exists: boolean; get(fieldPath: string): unknown },
+  uid: string
+): TrustedScoreState {
+  if (!snapshot.exists) {
+    return {
+      userID: uid,
+      ovrScore: 50,
+      currentStreak: 0,
+      longestStreak: 0,
+      recoveryStreak: 0,
+      completedMissionIDs: [],
+      failedMissionIDs: [],
+      recoveredMissionIDs: [],
+      completedDayKeys: []
+    };
+  }
+
+  const currentStreak = cleanNumber(snapshot.get("currentStreak"), 0, 3650);
+  return {
+    userID: uid,
+    ovrScore: cleanNumber(snapshot.get("ovrScore"), 0, 100),
+    currentStreak,
+    longestStreak: Math.max(cleanNumber(snapshot.get("longestStreak"), 0, 3650), currentStreak),
+    recoveryStreak: cleanNumber(snapshot.get("recoveryStreak"), 0, 3650),
+    completedMissionIDs: uniqueTextValues(snapshot.get("completedMissionIDs")),
+    failedMissionIDs: uniqueTextValues(snapshot.get("failedMissionIDs")),
+    recoveredMissionIDs: uniqueTextValues(snapshot.get("recoveredMissionIDs")),
+    completedDayKeys: uniqueTextValues(snapshot.get("completedDayKeys"))
+  };
+}
+
+function normalizedMission(value: StoredMission | undefined, missionID: string): StoredMission {
+  const mission = value ?? {};
+  return {
+    id: cleanText(mission.id) || missionID,
+    date: cleanText(mission.date) || isoString(),
+    title: cleanText(mission.title) || "Daily Mission",
+    summary: cleanText(mission.summary),
+    category: cleanText(mission.category) || "Discipline",
+    durationMinutes: cleanNumber(mission.durationMinutes, 1, 180),
+    difficulty: cleanNumber(mission.difficulty, 1, 5),
+    status: normalizedMissionStatus(mission.status),
+    fallbackTitle: cleanText(mission.fallbackTitle) || "Recovery step",
+    fallbackSummary: cleanText(mission.fallbackSummary),
+    extraChallenges: Array.isArray(mission.extraChallenges) ? mission.extraChallenges.map(cleanText).filter(Boolean).slice(0, 5) : [],
+    devotionalID: cleanText(mission.devotionalID),
+    appBlockingEnabled: mission.appBlockingEnabled === true
+  };
+}
+
+function normalizedMissionStatus(value: unknown): string {
+  const status = cleanText(value);
+  return ["pending", "active", "completed", "failed", "recovered"].includes(status) ? status : "pending";
+}
+
+function existingReflectionForMission(
+  snapshot: StoredAppSnapshot,
+  missionID: string,
+  wantsFailureEntry: boolean
+): StoredReflectionEntry | undefined {
+  return (snapshot.journalEntries ?? []).find((entry) => {
+    if (cleanText(entry.missionID) !== missionID) {
+      return false;
+    }
+    const hasFailure = cleanText(entry.failureReason).length > 0;
+    return wantsFailureEntry ? hasFailure : !hasFailure;
+  });
+}
+
+function failureReflectionFor(snapshot: StoredAppSnapshot, missionID: string, reason: string): StoredReflectionEntry {
+  const existing = existingReflectionForMission(snapshot, missionID, true);
+  return {
+    id: cleanText(existing?.id) || randomUUID(),
+    date: isoString(),
+    missionID,
+    hardestPart: reason,
+    lessonLearned: cleanText(existing?.lessonLearned) || "I need a recovery step instead of quitting the day.",
+    effortRating: cleanNumber(existing?.effortRating ?? 1, 1, 5),
+    improvementPlan: cleanText(existing?.improvementPlan) || "Take the fallback mission and remove the first obstacle.",
+    mood: cleanText(existing?.mood) || "Low",
+    failureReason: reason
+  };
+}
+
+function upsertReflection(entries: StoredReflectionEntry[], entry: StoredReflectionEntry): StoredReflectionEntry[] {
+  const entryHasFailure = cleanText(entry.failureReason).length > 0;
+  return [
+    entry,
+    ...entries.filter((candidate) => {
+      if (cleanText(candidate.id) === cleanText(entry.id)) {
+        return false;
+      }
+      if (cleanText(candidate.missionID) !== cleanText(entry.missionID)) {
+        return true;
+      }
+      const candidateHasFailure = cleanText(candidate.failureReason).length > 0;
+      return candidateHasFailure !== entryHasFailure;
+    })
+  ].slice(0, 240);
+}
+
+function progressSnapshotFor(
+  score: TrustedScoreState,
+  snapshot: StoredAppSnapshot,
+  mission: StoredMission
+): StoredProgressSnapshot {
+  const missions = (snapshot.missions ?? []).map((candidate) =>
+    cleanText(candidate.id) === cleanText(mission.id) ? mission : candidate
+  );
+  const completedMissions = missions.filter((candidate) => {
+    const status = normalizedMissionStatus(candidate.status);
+    return status === "completed" || status === "recovered";
+  }).length;
+  const failedMissions = missions.filter((candidate) => normalizedMissionStatus(candidate.status) === "failed").length;
+
+  return {
+    id: randomUUID(),
+    date: isoString(),
+    ovrScore: score.ovrScore,
+    currentStreak: score.currentStreak,
+    completionRate: missions.length === 0 ? 0 : completedMissions / missions.length,
+    completedMissions,
+    failedMissions
+  };
+}
+
+function leaderboardEntryForProfile(profile: StoredUserProfile, score: TrustedScoreState): LeaderboardResponse["entry"] {
+  return {
+    id: score.userID,
+    name: resolvedDisplayName(cleanText(profile.displayName)),
+    ovrScore: score.ovrScore,
+    streak: score.currentStreak
+  };
+}
+
+function completionDelta(previousStreak: number, effortRating: number, missionDifficulty: number, currentOVR: number): number {
+  const rawScore = 3 +
+    1 +
+    Math.min(2, Math.max(0, effortRating - 3)) +
+    (previousStreak >= 3 ? 1 : 0) +
+    difficultyBonus(missionDifficulty);
+  return scaledGain(rawScore, currentOVR, missionDifficulty);
+}
+
+function recoveryDelta(currentOVR: number): number {
+  return scaledGain(3, currentOVR, Math.max(1, ovrDifficultyStep(currentOVR) - 1));
+}
+
+function failurePenalty(currentOVR: number, missionDifficulty: number): number {
+  return 5 +
+    difficultyBonus(missionDifficulty) +
+    (currentOVR >= 70 ? 1 : 0) +
+    (currentOVR >= 85 ? 2 : 0) +
+    (currentOVR >= 95 ? 2 : 0);
+}
+
+function difficultyBonus(missionDifficulty: number): number {
+  return Math.max(0, Math.min(missionDifficulty, 5) - 2);
+}
+
+function scaledGain(rawScore: number, currentOVR: number, missionDifficulty: number): number {
+  const expectedDifficulty = ovrDifficultyStep(currentOVR);
+  const underLevelPenalty = Math.max(0, expectedDifficulty - missionDifficulty) * 2;
+  const adjustedRawScore = rawScore - underLevelPenalty;
+  if (adjustedRawScore <= 0) {
+    return 0;
+  }
+  if (currentOVR >= 80 && missionDifficulty < expectedDifficulty) {
+    return 0;
+  }
+
+  const scaled = Math.round(adjustedRawScore * growthMultiplier(currentOVR));
+  return Math.max(1, scaled);
+}
+
+function growthMultiplier(currentOVR: number): number {
+  if (currentOVR < 60) {
+    return 0.65;
+  }
+  if (currentOVR < 70) {
+    return 0.50;
+  }
+  if (currentOVR < 80) {
+    return 0.36;
+  }
+  if (currentOVR < 90) {
+    return 0.24;
+  }
+  if (currentOVR < 95) {
+    return 0.16;
+  }
+  return 0.10;
+}
+
+function reconcileTrustedScoreStreak(score: TrustedScoreState): void {
+  const completedDays = new Set(score.completedDayKeys);
+  const today = dayKey(new Date());
+  const yesterday = dayKey(addDays(new Date(), -1));
+  let cursor = completedDays.has(today) ? today : completedDays.has(yesterday) ? yesterday : "";
+  let streak = 0;
+
+  while (cursor && completedDays.has(cursor)) {
+    streak += 1;
+    cursor = dayKey(addDays(new Date(`${cursor}T00:00:00.000Z`), -1));
+  }
+
+  score.currentStreak = streak;
+  score.longestStreak = Math.max(score.longestStreak, streak);
+}
+
+function missionDateKey(mission: StoredMission): string {
+  const rawDate = cleanText(mission.date);
+  const parsedDate = rawDate ? new Date(rawDate) : new Date();
+  return dayKey(Number.isNaN(parsedDate.getTime()) ? new Date() : parsedDate);
+}
+
+function dayKey(date: Date): string {
+  return date.toISOString().slice(0, 10);
+}
+
+function addDays(date: Date, days: number): Date {
+  const nextDate = new Date(date);
+  nextDate.setUTCDate(nextDate.getUTCDate() + days);
+  return nextDate;
+}
+
+function isoString(date = new Date()): string {
+  return date.toISOString().replace(/\.\d{3}Z$/, "Z");
+}
+
+function uniqueTextValues(value: unknown): string[] {
+  if (!Array.isArray(value)) {
+    return [];
+  }
+  return Array.from(new Set(value.map(cleanText).filter(Boolean))).slice(0, 500);
 }
 
 function resolvedDisplayName(name: string): string {
@@ -1488,11 +2139,15 @@ async function deleteAccountDataForUser(uid: string): Promise<Record<string, num
   deleted.aiUsage = await deleteQuery(
     firestore.collection("aiUsage").where("uid", "==", uid)
   );
+  deleted.missionScoreEvents = await deleteQuery(
+    firestore.collection("missionScoreEvents").where("userID", "==", uid)
+  );
   deleted.userState = await deleteQuery(
     firestore.collection("users").doc(uid).collection("state")
   );
   deleted.knownUserDocuments = await deleteDocumentReferences([
     firestore.collection("leaderboards").doc(uid),
+    firestore.collection("userScores").doc(uid),
     firestore.collection("users").doc(uid)
   ]);
 
@@ -2294,12 +2949,14 @@ async function createDailyPlan(
     {
       role: "system",
       content: [
-        "You generate daily Christian discipline plans for The Climb.",
+        "You generate daily Christian Screen Time blocker plans for The Climb.",
+        "The Climb is primarily a faith-based distraction blocking app: like a protected focus coach for scripture, prayer, work, and self-control.",
         "Write in a calm, serious, modern tone for teens and young adults.",
         "Return only the requested JSON shape.",
         "Use one of the provided WEB/public-domain references exactly for bibleVerse; set verseText to an empty string because the server will attach the approved public-domain verse text.",
         "Make the devotional explanation 140-220 words and tie it directly to the user's struggle.",
-        "Make the mission concrete, measurable, and possible today.",
+        "Treat the JSON mission field as a focus block. Make it concrete, measurable, and possible today.",
+        "The primary action should usually include a protected window, app blocking, phone distance, notification silence, or a named no-scroll boundary. If app blocking is not explicitly possible, use a physical phone boundary.",
         "Use onboardingIntent as the main personalization contract. The mission, practicalAction, at least one habit, and the primary challenge must directly reflect onboardingIntent.primaryGoal, onboardingIntent.missionCue, and onboardingIntent.challengeTitle.",
         "Use personalizationContext as the strongest source of truth after safety and schema. It contains the user's first-week day, behavior signals, feedback signals, and specific generation requirements.",
         "Use personalizationContext.userSignals.ageMaturity to adjust maturity and difficulty. The devotional must follow ageMaturity.devotionalDirective and the mission must follow ageMaturity.missionDirective without directly naming these directives.",
@@ -2317,8 +2974,8 @@ async function createDailyPlan(
         "Every generated day must feel materially different from the recent plan memory.",
         "Do not reuse or lightly paraphrase recent mission titles, mission summaries, devotional titles, reflection questions, or practical actions.",
         "Prefer an allowed Bible reference that is not in recentlyUsedVerses. If all allowed references were used recently, pick the least similar angle and write a new devotional title.",
-        "Rotate mission mechanics across focus block, prayer, scripture, environment reset, service, accountability, planning, cleanup, courage conversation, and recovery action. Do not default to a phone-away deep-work mission unless recentPlanMemory has no similar mission.",
-        "Mission title must name the concrete action; summary must include a clear duration, setting, and success condition.",
+        "Rotate the spiritual emphasis across scripture, prayer, environment reset, service, accountability, planning, cleanup, courage conversation, and recovery action, but keep the behavioral container centered on protected attention and distraction blocking.",
+        "Mission title must name the concrete protected action; summary must include a clear duration, setting, blocked distraction or phone boundary, and success condition.",
         "The devotional should focus on a distinct spiritual angle such as obedience, endurance, courage, repentance, attention, surrender, wisdom, honesty, humility, or service.",
         "Do not repeat generic habit-tracker language. Write like a focused Christian discipline coach.",
         "Avoid clinical, medical, crisis, or therapy claims. Keep advice practical and spiritually grounded.",

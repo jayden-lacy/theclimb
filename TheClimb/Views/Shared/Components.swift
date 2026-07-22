@@ -446,6 +446,134 @@ struct MetricTile: View {
     }
 }
 
+extension AchievementTone {
+    var color: Color {
+        switch self {
+        case .green:
+            .climbGreen
+        case .gold:
+            .climbGold
+        case .blue:
+            .climbBlue
+        case .red:
+            .climbRed
+        case .sage:
+            .climbSage
+        case .warm:
+            .climbWarm
+        }
+    }
+}
+
+struct AchievementBadgePill: View {
+    let achievement: AchievementProgress
+    var isCompact = false
+
+    private var tint: Color {
+        achievement.tone.color
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: isCompact ? 8 : 10) {
+            ZStack {
+                Circle()
+                    .fill(tint.opacity(achievement.isUnlocked ? 0.18 : 0.08))
+                Circle()
+                    .stroke(tint.opacity(achievement.isUnlocked ? 0.44 : 0.16), lineWidth: 1)
+                Image(systemName: achievement.isUnlocked ? achievement.systemImage : "lock.fill")
+                    .font(ClimbTypography.sans(isCompact ? 16 : 20, weight: .semibold))
+                    .foregroundStyle(achievement.isUnlocked ? tint : Color.climbMuted)
+                    .symbolRenderingMode(.hierarchical)
+            }
+            .frame(width: isCompact ? 42 : 50, height: isCompact ? 42 : 50)
+
+            VStack(alignment: .leading, spacing: 3) {
+                Text(achievement.title)
+                    .font(ClimbTypography.sans(isCompact ? 13 : 15, weight: .semibold))
+                    .foregroundStyle(Color.climbMist)
+                    .lineLimit(2)
+                    .minimumScaleFactor(0.78)
+                Text(achievement.category.rawValue.uppercased())
+                    .font(ClimbTypography.sans(10, weight: .semibold))
+                    .tracking(0.8)
+                    .foregroundStyle(tint.opacity(0.86))
+                    .lineLimit(1)
+            }
+
+            if !isCompact {
+                Text(achievement.detail)
+                    .font(ClimbTypography.sans(12, weight: .medium))
+                    .foregroundStyle(Color.climbTextSecondary)
+                    .lineLimit(3)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+        }
+        .frame(width: isCompact ? 118 : 160, alignment: .leading)
+        .padding(isCompact ? 12 : 14)
+        .background(Color.climbSurfaceRaised.opacity(0.54), in: RoundedRectangle(cornerRadius: 20, style: .continuous))
+        .overlay {
+            RoundedRectangle(cornerRadius: 20, style: .continuous)
+                .stroke(tint.opacity(achievement.isUnlocked ? 0.18 : 0.07), lineWidth: 0.8)
+        }
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel("\(achievement.title), \(achievement.category.rawValue) badge")
+        .accessibilityValue(achievement.isUnlocked ? "Unlocked" : "\(achievement.progressLabel) complete")
+    }
+}
+
+struct AchievementProgressRow: View {
+    let achievement: AchievementProgress
+
+    private var tint: Color {
+        achievement.tone.color
+    }
+
+    var body: some View {
+        HStack(spacing: 12) {
+            ZStack {
+                Circle()
+                    .stroke(Color.white.opacity(0.08), lineWidth: 4)
+                Circle()
+                    .trim(from: 0, to: achievement.progress)
+                    .stroke(tint, style: StrokeStyle(lineWidth: 4, lineCap: .round))
+                    .rotationEffect(.degrees(-90))
+                    .animation(ClimbMotion.standard, value: achievement.progress)
+                Image(systemName: achievement.isUnlocked ? achievement.systemImage : "lock.fill")
+                    .font(ClimbTypography.sans(13, weight: .semibold))
+                    .foregroundStyle(achievement.isUnlocked ? tint : Color.climbMuted)
+            }
+            .frame(width: 44, height: 44)
+
+            VStack(alignment: .leading, spacing: 4) {
+                HStack(spacing: 8) {
+                    Text(achievement.title)
+                        .font(ClimbTypography.sans(15, weight: .semibold))
+                        .foregroundStyle(Color.climbMist)
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.78)
+                    Spacer(minLength: 8)
+                    Text(achievement.progressLabel)
+                        .font(ClimbTypography.sans(11, weight: .semibold).monospacedDigit())
+                        .foregroundStyle(achievement.isUnlocked ? tint : Color.climbMuted)
+                }
+
+                Text(achievement.subtitle)
+                    .font(ClimbTypography.sans(12, weight: .medium))
+                    .foregroundStyle(Color.climbTextSecondary)
+                    .lineLimit(2)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+        }
+        .padding(13)
+        .background(Color.climbSurface.opacity(0.58), in: RoundedRectangle(cornerRadius: 18, style: .continuous))
+        .overlay {
+            RoundedRectangle(cornerRadius: 18, style: .continuous)
+                .stroke(Color.white.opacity(0.055), lineWidth: 0.7)
+        }
+        .accessibilityElement(children: .combine)
+    }
+}
+
 struct PrimaryActionButton: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 

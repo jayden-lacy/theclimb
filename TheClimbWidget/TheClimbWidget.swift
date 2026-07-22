@@ -51,7 +51,7 @@ struct FinishPrayerTimerIntent: AppIntent {
 @available(iOSApplicationExtension 17.0, *)
 struct OpenTheClimbIntent: AppIntent {
     static let title: LocalizedStringResource = "Open The Climb"
-    static let description = IntentDescription("Open The Climb to continue today’s mission.")
+    static let description = IntentDescription("Open The Climb to continue today’s protected focus block.")
     static let openAppWhenRun = true
 
     func perform() async throws -> some IntentResult {
@@ -343,8 +343,8 @@ struct ClimbWidgetProvider: TimelineProvider {
 
         return ClimbWidgetEntry(
             date: Date(),
-            missionTitle: mission?.title ?? "Today’s mission is ready",
-            missionSummary: mission?.summary ?? "Open The Climb to start your discipline rhythm.",
+            missionTitle: mission?.title ?? "Today’s focus block is ready",
+            missionSummary: mission?.summary ?? "Open The Climb to start your protected faith focus rhythm.",
             missionStatus: mission?.status.capitalized ?? "Ready",
             missionCategory: mission?.category ?? "Discipline",
             durationMinutes: mission?.durationMinutes ?? 0,
@@ -629,7 +629,7 @@ struct TheClimbWidgetEntryView: View {
                         .frame(width: 88, height: 88)
                     VStack(alignment: .leading, spacing: 9) {
                         WidgetProgressRow(title: "Streak protection", value: "\(entry.streak)/\(max(entry.streakGoal, 1))", progress: streakProgress, tint: WidgetTheme.sage)
-                        WidgetProgressRow(title: "Mission consistency", value: "\(Int(entry.completionRate * 100))%", progress: entry.completionRate, tint: WidgetTheme.blue)
+                        WidgetProgressRow(title: "Focus consistency", value: "\(Int(entry.completionRate * 100))%", progress: entry.completionRate, tint: WidgetTheme.blue)
                     }
                 }
                 .padding(12)
@@ -761,7 +761,7 @@ struct TheClimbWidget: Widget {
             TheClimbWidgetEntryView(entry: entry)
         }
         .configurationDisplayName("The Climb")
-        .description("Mission, Daily Word, streak, OVR, habits, and accountability.")
+        .description("Focus block, Daily Word, streak, OVR, habits, and accountability.")
         .supportedFamilies([.systemSmall, .systemMedium, .systemLarge, .systemExtraLarge, .accessoryInline, .accessoryCircular, .accessoryRectangular])
         .contentMarginsDisabled()
     }
@@ -912,7 +912,7 @@ private struct MissionLiveActivityLockScreenView: View {
                     }
             }
 
-            Text("Stay with the mission. Reflection is next.")
+            Text("Stay with the focus block. Reflection is next.")
                 .font(.caption.weight(.semibold))
                 .foregroundStyle(WidgetTheme.secondaryText)
                 .lineLimit(1)
@@ -1249,11 +1249,11 @@ private extension ClimbWidgetEntry {
         case "recovered":
             "Recovery logged"
         case "active":
-            appBlockingEnabled ? "Protected focus" : "Stay in the mission"
+            appBlockingEnabled ? "Protected focus" : "Stay in the block"
         case "failed":
             "Take the recovery step"
         default:
-            "Start today’s mission"
+            "Start today’s focus"
         }
     }
 

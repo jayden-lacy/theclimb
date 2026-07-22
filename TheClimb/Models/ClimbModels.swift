@@ -1221,6 +1221,376 @@ struct MonthlyReflectionLetter: Identifiable, Codable, Equatable {
     }
 }
 
+enum AchievementCategory: String, CaseIterable, Codable, Identifiable, Equatable {
+    case focus = "Focus"
+    case streak = "Streak"
+    case prayer = "Prayer"
+    case scripture = "Scripture"
+    case habits = "Habits"
+    case recovery = "Recovery"
+    case community = "Community"
+    case growth = "Growth"
+
+    var id: String { rawValue }
+}
+
+enum AchievementTone: String, Codable, Equatable {
+    case green
+    case gold
+    case blue
+    case red
+    case sage
+    case warm
+}
+
+struct PrayerAchievementStats: Equatable {
+    var sessionsCompleted: Int
+    var minutesCompleted: Int
+
+    static let empty = PrayerAchievementStats(sessionsCompleted: 0, minutesCompleted: 0)
+}
+
+struct AchievementProgress: Identifiable, Codable, Equatable {
+    var id: String
+    var title: String
+    var subtitle: String
+    var detail: String
+    var systemImage: String
+    var category: AchievementCategory
+    var tone: AchievementTone
+    var currentValue: Int
+    var targetValue: Int
+    var unlockedAt: Date?
+
+    var isUnlocked: Bool {
+        currentValue >= targetValue
+    }
+
+    var progress: Double {
+        guard targetValue > 0 else { return isUnlocked ? 1 : 0 }
+        return min(max(Double(currentValue) / Double(targetValue), 0), 1)
+    }
+
+    var progressLabel: String {
+        isUnlocked ? "Unlocked" : "\(min(currentValue, targetValue))/\(targetValue)"
+    }
+
+    func preservingUnlock(_ unlock: AchievementUnlock) -> AchievementProgress {
+        var updated = self
+        updated.currentValue = max(currentValue, targetValue)
+        updated.unlockedAt = unlock.unlockedAt
+        return updated
+    }
+}
+
+struct AchievementUnlock: Identifiable, Codable, Equatable {
+    var id: String
+    var title: String
+    var systemImage: String
+    var category: AchievementCategory
+    var tone: AchievementTone
+    var unlockedAt: Date
+
+    init(
+        id: String,
+        title: String,
+        systemImage: String,
+        category: AchievementCategory,
+        tone: AchievementTone,
+        unlockedAt: Date
+    ) {
+        self.id = id
+        self.title = title
+        self.systemImage = systemImage
+        self.category = category
+        self.tone = tone
+        self.unlockedAt = unlockedAt
+    }
+
+    init?(achievement: AchievementProgress, fallbackDate: Date = Date()) {
+        guard achievement.isUnlocked else { return nil }
+        self.init(
+            id: achievement.id,
+            title: achievement.title,
+            systemImage: achievement.systemImage,
+            category: achievement.category,
+            tone: achievement.tone,
+            unlockedAt: achievement.unlockedAt ?? fallbackDate
+        )
+    }
+}
+
+enum AchievementEngine {
+    static func build(
+        profile: UserProfile?,
+        missions: [Mission],
+        journalEntries: [ReflectionEntry],
+        habits: [GrowthHabit],
+        groups: [ClimbGroup],
+        posts: [EncouragementPost],
+        partners: [AccountabilityPartner],
+        verseMemory: [MemorizedVerse],
+        prayerStats: PrayerAchievementStats
+    ) -> [AchievementProgress] {
+        guard let profile else { return [] }
+
+        let completedMissions = missions.filter { $0.status == .completed || $0.status == .recovered }
+        let recoveredMissions = missions.filter { $0.status == .recovered }
+        let highestCompletedDifficulty = completedMissions.map(\.difficulty).max() ?? 0
+        let journalCount = journalEntries.count
+        let habitCompletionCount = habits.reduce(0) { $0 + $1.completedDates.count }
+        let joinedGroupCount = groups.filter(\.isJoined).count
+        let userPostCount = posts.filter { $0.authorID == profile.id }.count
+        let activeVerseCount = verseMemory.filter { !$0.isArchived }.count
+        let masteredVerseCount = verseMemory.filter { !$0.isArchived && $0.mastery >= 0.80 }.count
+        let ovrMilestone = profile.ovrScore
+        let partnerCount = partners.count
+
+        return [
+            achievement(
+                id: "first-focus",
+                title: "First Yes",
+                subtitle: "Complete your first protected focus block.",
+                detail: "A real start beats a perfect plan.",
+                systemImage: "checkmark.seal.fill",
+                category: .focus,
+                tone: .green,
+                current: completedMissions.count,
+                target: 1,
+                unlockedAt: completedMissions.sorted { $0.date < $1.date }.first?.date
+            ),
+            achievement(
+                id: "shield-bearer",
+                title: "Shield Bearer",
+                subtitle: "Turn on app blocking for focus sessions.",
+                detail: "Your attention needs a wall before it needs more willpower.",
+                systemImage: "lock.shield.fill",
+                category: .focus,
+                tone: .sage,
+                current: profile.appBlockingEnabled ? 1 : 0,
+                target: 1,
+                unlockedAt: profile.appBlockingEnabled ? profile.joinedAt : nil
+            ),
+            achievement(
+                id: "three-day-return",
+                title: "Three-Day Return",
+                subtitle: "Hold a 3-day mission streak.",
+                detail: "Consistency starts looking real on day three.",
+                systemImage: "flame.fill",
+                category: .streak,
+                tone: .gold,
+                current: profile.longestStreak,
+                target: 3,
+                unlockedAt: profile.longestStreak >= 3 ? profile.joinedAt : nil
+            ),
+            achievement(
+                id: "week-of-obedience",
+                title: "Week of Obedience",
+                subtitle: "Hold a 7-day mission streak.",
+                detail: "Seven days is not luck. It is return repeated.",
+                systemImage: "calendar.badge.checkmark",
+                category: .streak,
+                tone: .gold,
+                current: profile.longestStreak,
+                target: 7,
+                unlockedAt: profile.longestStreak >= 7 ? profile.joinedAt : nil
+            ),
+            achievement(
+                id: "thirty-day-path",
+                title: "Thirty-Day Path",
+                subtitle: "Hold a 30-day mission streak.",
+                detail: "The path becomes visible when obedience gets ordinary.",
+                systemImage: "mountain.2.fill",
+                category: .streak,
+                tone: .warm,
+                current: profile.longestStreak,
+                target: 30,
+                unlockedAt: profile.longestStreak >= 30 ? profile.joinedAt : nil
+            ),
+            achievement(
+                id: "examined-heart",
+                title: "Examined Heart",
+                subtitle: "Submit 5 honest reflections.",
+                detail: "Reflection turns behavior into formation.",
+                systemImage: "book.pages.fill",
+                category: .growth,
+                tone: .blue,
+                current: journalCount,
+                target: 5,
+                unlockedAt: journalEntries.sorted { $0.date < $1.date }.dropFirst(4).first?.date
+            ),
+            achievement(
+                id: "return-after-miss",
+                title: "Return After Miss",
+                subtitle: "Complete a recovery mission.",
+                detail: "A miss is not the end when return becomes your reflex.",
+                systemImage: "arrow.counterclockwise.circle.fill",
+                category: .recovery,
+                tone: .red,
+                current: recoveredMissions.count,
+                target: 1,
+                unlockedAt: recoveredMissions.sorted { $0.date < $1.date }.first?.date
+            ),
+            achievement(
+                id: "quiet-minutes",
+                title: "Quiet Minutes",
+                subtitle: "Complete 30 minutes of prayer.",
+                detail: "Small quiet minutes become a practiced refuge.",
+                systemImage: "hands.sparkles.fill",
+                category: .prayer,
+                tone: .warm,
+                current: prayerStats.minutesCompleted,
+                target: 30,
+                unlockedAt: prayerStats.minutesCompleted >= 30 ? profile.joinedAt : nil
+            ),
+            achievement(
+                id: "prayer-rhythm",
+                title: "Prayer Rhythm",
+                subtitle: "Complete 3 prayer sessions.",
+                detail: "Prayer becomes stronger when return has a rhythm.",
+                systemImage: "timer.circle.fill",
+                category: .prayer,
+                tone: .sage,
+                current: prayerStats.sessionsCompleted,
+                target: 3,
+                unlockedAt: prayerStats.sessionsCompleted >= 3 ? profile.joinedAt : nil
+            ),
+            achievement(
+                id: "word-kept",
+                title: "Word Kept",
+                subtitle: "Save a verse to memory.",
+                detail: "A verse kept close is a weapon against drift.",
+                systemImage: "text.book.closed.fill",
+                category: .scripture,
+                tone: .blue,
+                current: activeVerseCount,
+                target: 1,
+                unlockedAt: verseMemory.filter { !$0.isArchived }.sorted { $0.addedAt < $1.addedAt }.first?.addedAt
+            ),
+            achievement(
+                id: "scripture-rooted",
+                title: "Scripture Rooted",
+                subtitle: "Master 3 memory verses.",
+                detail: "Memory turns the Word into a ready answer.",
+                systemImage: "leaf.fill",
+                category: .scripture,
+                tone: .green,
+                current: masteredVerseCount,
+                target: 3,
+                unlockedAt: masteredVerseCount >= 3 ? profile.joinedAt : nil
+            ),
+            achievement(
+                id: "habit-keeper",
+                title: "Habit Keeper",
+                subtitle: "Complete 10 habit check-ins.",
+                detail: "The unseen reps are where the person changes.",
+                systemImage: "checklist.checked",
+                category: .habits,
+                tone: .green,
+                current: habitCompletionCount,
+                target: 10,
+                unlockedAt: habitCompletionCount >= 10 ? profile.joinedAt : nil
+            ),
+            achievement(
+                id: "pressure-level",
+                title: "Pressure Level",
+                subtitle: "Complete a difficulty 3+ focus block.",
+                detail: "Growth requires resistance once the easy wins are done.",
+                systemImage: "bolt.shield.fill",
+                category: .focus,
+                tone: .gold,
+                current: highestCompletedDifficulty,
+                target: 3,
+                unlockedAt: completedMissions.filter { $0.difficulty >= 3 }.sorted { $0.date < $1.date }.first?.date
+            ),
+            achievement(
+                id: "conviction-level",
+                title: "Conviction Level",
+                subtitle: "Reach 70 OVR through real behavior.",
+                detail: "OVR is not identity. It is evidence of follow-through.",
+                systemImage: "chart.line.uptrend.xyaxis.circle.fill",
+                category: .growth,
+                tone: .sage,
+                current: ovrMilestone,
+                target: 70,
+                unlockedAt: ovrMilestone >= 70 ? profile.joinedAt : nil
+            ),
+            achievement(
+                id: "circle-builder",
+                title: "Circle Builder",
+                subtitle: "Join a group or add an accountability partner.",
+                detail: "Discipline grows stronger when someone can ask if you returned.",
+                systemImage: "person.2.badge.gearshape.fill",
+                category: .community,
+                tone: .blue,
+                current: max(joinedGroupCount, partnerCount),
+                target: 1,
+                unlockedAt: max(joinedGroupCount, partnerCount) > 0 ? profile.joinedAt : nil
+            ),
+            achievement(
+                id: "encourager",
+                title: "Encourager",
+                subtitle: "Post one encouragement to the community.",
+                detail: "Pressure gets lighter when someone else is strengthened.",
+                systemImage: "message.badge.filled.fill",
+                category: .community,
+                tone: .warm,
+                current: userPostCount,
+                target: 1,
+                unlockedAt: posts.filter { $0.authorID == profile.id }.sorted { $0.createdAt < $1.createdAt }.first?.createdAt
+            )
+        ]
+    }
+
+    private static func achievement(
+        id: String,
+        title: String,
+        subtitle: String,
+        detail: String,
+        systemImage: String,
+        category: AchievementCategory,
+        tone: AchievementTone,
+        current: Int,
+        target: Int,
+        unlockedAt: Date?
+    ) -> AchievementProgress {
+        AchievementProgress(
+            id: id,
+            title: title,
+            subtitle: subtitle,
+            detail: detail,
+            systemImage: systemImage,
+            category: category,
+            tone: tone,
+            currentValue: max(0, current),
+            targetValue: max(1, target),
+            unlockedAt: current >= target ? unlockedAt : nil
+        )
+    }
+
+    static func merged(
+        _ achievements: [AchievementProgress],
+        with storedUnlocks: [AchievementUnlock]
+    ) -> [AchievementProgress] {
+        let unlocksByID = Dictionary(uniqueKeysWithValues: storedUnlocks.map { ($0.id, $0) })
+        return achievements.map { achievement in
+            guard let unlock = unlocksByID[achievement.id] else { return achievement }
+            return achievement.preservingUnlock(unlock)
+        }
+    }
+
+    static func unlocks(from achievements: [AchievementProgress]) -> [AchievementUnlock] {
+        achievements
+            .compactMap { AchievementUnlock(achievement: $0) }
+            .sorted {
+                if $0.unlockedAt == $1.unlockedAt {
+                    return $0.title < $1.title
+                }
+                return $0.unlockedAt > $1.unlockedAt
+            }
+    }
+}
+
 struct AppStateSnapshot: Codable, Equatable {
     var profile: UserProfile?
     var missions: [Mission]
@@ -1239,6 +1609,7 @@ struct AppStateSnapshot: Codable, Equatable {
     var notificationFatigue: NotificationFatigueState
     var monthlyLetters: [MonthlyReflectionLetter]
     var verseMemory: [MemorizedVerse]
+    var achievementUnlocks: [AchievementUnlock]
 
     init(
         profile: UserProfile?,
@@ -1257,7 +1628,8 @@ struct AppStateSnapshot: Codable, Equatable {
         contentFeedback: [DailyContentFeedback] = [],
         notificationFatigue: NotificationFatigueState = NotificationFatigueState(),
         monthlyLetters: [MonthlyReflectionLetter] = [],
-        verseMemory: [MemorizedVerse] = []
+        verseMemory: [MemorizedVerse] = [],
+        achievementUnlocks: [AchievementUnlock] = []
     ) {
         self.profile = profile
         self.missions = missions
@@ -1276,6 +1648,7 @@ struct AppStateSnapshot: Codable, Equatable {
         self.notificationFatigue = notificationFatigue
         self.monthlyLetters = monthlyLetters
         self.verseMemory = verseMemory
+        self.achievementUnlocks = achievementUnlocks
     }
 
     private enum CodingKeys: String, CodingKey {
@@ -1296,6 +1669,7 @@ struct AppStateSnapshot: Codable, Equatable {
         case notificationFatigue
         case monthlyLetters
         case verseMemory
+        case achievementUnlocks
     }
 
     init(from decoder: Decoder) throws {
@@ -1317,6 +1691,7 @@ struct AppStateSnapshot: Codable, Equatable {
         notificationFatigue = try container.decodeIfPresent(NotificationFatigueState.self, forKey: .notificationFatigue) ?? NotificationFatigueState()
         monthlyLetters = try container.decodeIfPresent([MonthlyReflectionLetter].self, forKey: .monthlyLetters) ?? []
         verseMemory = try container.decodeIfPresent([MemorizedVerse].self, forKey: .verseMemory) ?? []
+        achievementUnlocks = try container.decodeIfPresent([AchievementUnlock].self, forKey: .achievementUnlocks) ?? []
     }
 
     static let empty = AppStateSnapshot(
@@ -1336,7 +1711,8 @@ struct AppStateSnapshot: Codable, Equatable {
         contentFeedback: [],
         notificationFatigue: NotificationFatigueState(),
         monthlyLetters: [],
-        verseMemory: []
+        verseMemory: [],
+        achievementUnlocks: []
     )
 }
 

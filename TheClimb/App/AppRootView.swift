@@ -246,15 +246,15 @@ private enum ClimbInviteLink: Equatable {
 
     private static func tab(from value: String) -> AppTab? {
         switch value.lowercased() {
-        case "home", "mission":
+        case "home", "mission", "focus", "block", "shield":
             .home
         case "grow", "dailyword", "word", "devotional":
             .grow
-        case "community", "partner", "partners":
+        case "community", "circle", "partner", "partners":
             .community
-        case "progress", "report":
+        case "progress", "insights", "report":
             .progress
-        case "profile", "settings":
+        case "profile", "me", "settings":
             .profile
         default:
             nil

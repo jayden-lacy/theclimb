@@ -32,6 +32,24 @@ private struct LeaderboardSyncResponse: Decodable {
     let entry: LeaderboardEntry
 }
 
+private struct CompleteMissionRequest: Encodable {
+    let missionID: String
+    let hardestPart: String
+    let lessonLearned: String
+    let effortRating: Int
+    let improvementPlan: String
+    let mood: String
+}
+
+private struct FailMissionRequest: Encodable {
+    let missionID: String
+    let reason: String
+}
+
+private struct RecoveryMissionRequest: Encodable {
+    let missionID: String
+}
+
 private struct CommunityPostResponse: Decodable {
     let post: EncouragementPost
 }
@@ -714,6 +732,66 @@ final class FirebaseAppRepository: AppRepository {
         }
     }
 
+    func completeMission(
+        missionID: String,
+        hardestPart: String,
+        lessonLearned: String,
+        effortRating: Int,
+        improvementPlan: String,
+        mood: MoodRating
+    ) async throws -> TrustedMissionResult {
+        guard Auth.auth().currentUser?.uid != nil else {
+            return try await fallback.completeMission(
+                missionID: missionID,
+                hardestPart: hardestPart,
+                lessonLearned: lessonLearned,
+                effortRating: effortRating,
+                improvementPlan: improvementPlan,
+                mood: mood
+            )
+        }
+
+        let result: TrustedMissionResult = try await callCloudFunction(
+            named: "completeMission",
+            body: CompleteMissionRequest(
+                missionID: missionID,
+                hardestPart: hardestPart,
+                lessonLearned: lessonLearned,
+                effortRating: effortRating,
+                improvementPlan: improvementPlan,
+                mood: mood.rawValue
+            )
+        )
+        try? await mergeTrustedMissionResult(result)
+        return result
+    }
+
+    func failMission(missionID: String, reason: String) async throws -> TrustedMissionResult {
+        guard Auth.auth().currentUser?.uid != nil else {
+            return try await fallback.failMission(missionID: missionID, reason: reason)
+        }
+
+        let result: TrustedMissionResult = try await callCloudFunction(
+            named: "failMission",
+            body: FailMissionRequest(missionID: missionID, reason: reason)
+        )
+        try? await mergeTrustedMissionResult(result)
+        return result
+    }
+
+    func completeRecoveryMission(missionID: String) async throws -> TrustedMissionResult {
+        guard Auth.auth().currentUser?.uid != nil else {
+            return try await fallback.completeRecoveryMission(missionID: missionID)
+        }
+
+        let result: TrustedMissionResult = try await callCloudFunction(
+            named: "completeRecoveryMission",
+            body: RecoveryMissionRequest(missionID: missionID)
+        )
+        try? await mergeTrustedMissionResult(result)
+        return result
+    }
+
     func loadRecentEncouragementPosts(limit: Int) async throws -> [EncouragementPost] {
         guard Auth.auth().currentUser?.uid != nil else {
             return try await fallback.loadRecentEncouragementPosts(limit: limit)
@@ -1190,6 +1268,38 @@ final class FirebaseAppRepository: AppRepository {
         try? await fallback.saveSnapshot(snapshot)
     }
 
+    private func mergeTrustedMissionResult(_ result: TrustedMissionResult) async throws {
+        var snapshot = try await fallback.loadSnapshot()
+        snapshot.profile = result.profile
+
+        if let index = snapshot.missions.firstIndex(where: { $0.id == result.mission.id }) {
+            snapshot.missions[index] = result.mission
+        } else {
+            snapshot.missions.insert(result.mission, at: 0)
+        }
+
+        if let journalEntry = result.journalEntry {
+            snapshot.journalEntries.removeAll { $0.id == journalEntry.id }
+            snapshot.journalEntries.removeAll {
+                $0.missionID == journalEntry.missionID &&
+                    (($0.failureReason == nil && journalEntry.failureReason == nil) ||
+                        ($0.failureReason != nil && journalEntry.failureReason != nil))
+            }
+            snapshot.journalEntries.insert(journalEntry, at: 0)
+        }
+
+        if let progressSnapshot = result.progressSnapshot {
+            snapshot.progress.removeAll { $0.id == progressSnapshot.id }
+            snapshot.progress.insert(progressSnapshot, at: 0)
+            snapshot.progress = Array(snapshot.progress.prefix(30))
+        }
+
+        snapshot.leaderboard.removeAll { $0.id == result.leaderboardEntry.id }
+        snapshot.leaderboard.insert(result.leaderboardEntry, at: 0)
+        snapshot.leaderboard = Array(snapshot.leaderboard.sortedForGlobalRank.prefix(100))
+        try await fallback.saveSnapshot(snapshot)
+    }
+
     private func callCloudFunction<RequestBody: Encodable, ResponseBody: Decodable>(
         named functionName: String,
         body: RequestBody
@@ -1279,7 +1389,8 @@ final class FirebaseAppRepository: AppRepository {
             contentFeedback: snapshot.contentFeedback,
             notificationFatigue: snapshot.notificationFatigue,
             monthlyLetters: snapshot.monthlyLetters,
-            verseMemory: Array(snapshot.verseMemory.prefix(120))
+            verseMemory: Array(snapshot.verseMemory.prefix(120)),
+            achievementUnlocks: Array(snapshot.achievementUnlocks.prefix(80))
         )
     }
 

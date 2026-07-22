@@ -25,12 +25,14 @@ struct ProfileView: View {
     @State private var showActivityPicker = false
     @State private var activitySelection = FamilyActivitySelection()
     @State private var focusTemplates: [FocusTemplateSummary] = []
+    @State private var adultWebFilterEnabled = FocusAdultContentFilterStore.isEnabled
 #endif
 
     var body: some View {
         ScreenContainer(title: "Profile") {
             if let profile = viewModel.profile {
                 profileHeader(profile)
+                badgeCaseCard
                 settingsCard
 #if canImport(FamilyControls) && os(iOS)
                 focusTemplatesCard
@@ -203,6 +205,56 @@ struct ProfileView: View {
         }
     }
 
+    private var badgeCaseCard: some View {
+        let unlocked = Array(viewModel.unlockedAchievements.prefix(6))
+        let next = viewModel.nextAchievements.first
+
+        return ClimbQuietPanel(padding: 18, cornerRadius: 22, accent: .climbGold, isProminent: true) {
+            HStack(alignment: .firstTextBaseline) {
+                SectionTitle(
+                    title: "Badge Case",
+                    subtitle: "\(viewModel.unlockedAchievements.count) earned · \(Int(viewModel.achievementCompletionRate * 100))% complete"
+                )
+                Spacer(minLength: 10)
+                StatusBadge(
+                    text: viewModel.unlockedAchievements.isEmpty ? "Start" : "Earned",
+                    color: viewModel.unlockedAchievements.isEmpty ? .climbGold : .climbGreen
+                )
+            }
+
+            if unlocked.isEmpty {
+                if let next {
+                    AchievementProgressRow(achievement: next)
+                } else {
+                    EmptyState(
+                        title: "No badges yet",
+                        detail: "Complete your first protected focus block to start your badge case.",
+                        systemImage: "seal"
+                    )
+                }
+            } else {
+                ScrollView(.horizontal, showsIndicators: false) {
+                    HStack(spacing: 10) {
+                        ForEach(unlocked) { achievement in
+                            AchievementBadgePill(achievement: achievement, isCompact: true)
+                        }
+                    }
+                }
+
+                if let next {
+                    VStack(alignment: .leading, spacing: 10) {
+                        Text("Next")
+                            .font(ClimbTypography.sans(12, weight: .semibold))
+                            .tracking(1.2)
+                            .foregroundStyle(Color.climbMuted)
+                            .textCase(.uppercase)
+                        AchievementProgressRow(achievement: next)
+                    }
+                }
+            }
+        }
+    }
+
     private var notificationPermissionRow: some View {
         VStack(alignment: .leading, spacing: 12) {
             HStack(spacing: 10) {
@@ -235,11 +287,15 @@ struct ProfileView: View {
     private var focusTemplatesCard: some View {
         ClimbQuietPanel(cornerRadius: 22, isProminent: true) {
             SectionTitle(
-                title: "Focus Templates",
-                subtitle: "Save app-blocking setups for the parts of your day that need the strongest boundaries."
+                title: "Focus Shield",
+                subtitle: "Adult websites are blocked during protected focus. Add app-blocking setups for the parts of your day that need stronger boundaries."
             )
 
             HStack(spacing: 12) {
+                FocusTemplateMetric(
+                    value: adultWebFilterEnabled ? "On" : "Off",
+                    label: "18+ web"
+                )
                 FocusTemplateMetric(
                     value: "\(activitySelection.shieldableContentCount)",
                     label: "selected"
@@ -251,7 +307,7 @@ struct ProfileView: View {
             }
 
             SecondaryActionButton(
-                title: activitySelection.hasShieldableContent ? "Edit Blocked Apps" : "Choose Apps to Block",
+                title: activitySelection.hasShieldableContent ? "Edit Blocked Apps" : "Add Apps to Block",
                 systemImage: "square.grid.2x2"
             ) {
                 showActivityPicker = true
@@ -308,6 +364,7 @@ struct ProfileView: View {
         }
         .animation(ClimbMotion.standard, value: focusTemplates)
         .animation(ClimbMotion.standard, value: activitySelection.shieldableContentCount)
+        .animation(ClimbMotion.standard, value: adultWebFilterEnabled)
     }
 #endif
 
@@ -376,6 +433,7 @@ struct ProfileView: View {
         appBlockingEnabled = profile.appBlockingEnabled
 #if canImport(FamilyControls) && os(iOS)
         activitySelection = ScreenTimeActivitySelectionStore.loadSelection()
+        adultWebFilterEnabled = FocusAdultContentFilterStore.isEnabled
         reloadFocusTemplates()
 #endif
         reminderTime = Calendar.current.date(

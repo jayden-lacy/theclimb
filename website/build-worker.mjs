@@ -12,10 +12,12 @@ const html = read("index.html");
 const mission = read("mission.html");
 const features = read("features.html");
 const community = read("community.html");
+const download = read("download.html");
 const privacy = read("privacy.html");
 const terms = read("terms.html");
 const css = read("styles.css");
 const js = read("script.js");
+const appleAppSiteAssociation = read("apple-app-site-association");
 
 const notFound = `<!doctype html>
 <html lang="en">
@@ -41,7 +43,7 @@ const notFound = `<!doctype html>
         }
       })();
     </script>
-    <link rel="stylesheet" href="/styles.css" />
+    <link rel="stylesheet" href="/styles.css?v=20260707b" />
   </head>
   <body>
     <main class="legal-page">
@@ -52,18 +54,22 @@ const notFound = `<!doctype html>
         <p><a class="button button-secondary" href="/">Back to The Climb</a></p>
       </article>
     </main>
-    <script src="/script.js"></script>
+    <script src="/script.js?v=20260707b"></script>
   </body>
 </html>`;
 
-const downloadNotConfigured = `<!doctype html>
+const linkFallback = `<!doctype html>
 <html lang="en">
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <base href="/" />
-    <title>Download Not Configured | The Climb</title>
-    <meta name="robots" content="noindex" />
+    <title>Open The Climb</title>
+    <meta
+      name="description"
+      content="Open a The Climb invite or group link in the iPhone app, or download The Climb from the App Store."
+    />
+    <meta name="robots" content="noindex,follow" />
     <meta name="theme-color" content="#f7f7f5" media="(prefers-color-scheme: light)" />
     <meta name="theme-color" content="#0d0e10" media="(prefers-color-scheme: dark)" />
     <link rel="icon" href="/assets/icons/app-icon.png" />
@@ -80,22 +86,24 @@ const downloadNotConfigured = `<!doctype html>
         }
       })();
     </script>
-    <link rel="stylesheet" href="/styles.css" />
+    <link rel="stylesheet" href="/styles.css?v=20260707b" />
   </head>
   <body>
-    <main class="legal-page">
+    <main class="legal-page link-fallback">
       <article class="legal-card">
-        <p class="eyebrow">Download</p>
-        <h1>App Store link missing.</h1>
+        <p class="eyebrow">The Climb link</p>
+        <h1>Open this in The Climb.</h1>
         <p>
-          The Climb download route is not public yet because the App Store URL is not configured.
-          Set the Cloudflare Worker environment variable APP_STORE_URL to the live
-          App Store listing before public traffic uses this link.
+          Invite and group links open directly in the iPhone app when The Climb is installed.
+          If the app did not open, download it first and then return to this link.
         </p>
-        <p><a class="button button-secondary" href="/">Back to The Climb</a></p>
+        <p>
+          <a class="button button-primary" href="/download">Download for iPhone</a>
+          <a class="button button-secondary" href="/">Back to The Climb</a>
+        </p>
       </article>
     </main>
-    <script src="/script.js"></script>
+    <script src="/script.js?v=20260707b"></script>
   </body>
 </html>`;
 
@@ -108,37 +116,43 @@ const sitemap = `<?xml version="1.0" encoding="UTF-8"?>
 <urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
   <url>
     <loc>${siteUrl}/</loc>
-    <lastmod>2026-07-04</lastmod>
+    <lastmod>2026-07-07</lastmod>
     <changefreq>weekly</changefreq>
     <priority>1.0</priority>
   </url>
   <url>
     <loc>${siteUrl}/mission</loc>
-    <lastmod>2026-07-04</lastmod>
+    <lastmod>2026-07-07</lastmod>
     <changefreq>monthly</changefreq>
     <priority>0.8</priority>
   </url>
   <url>
     <loc>${siteUrl}/features</loc>
-    <lastmod>2026-07-04</lastmod>
+    <lastmod>2026-07-07</lastmod>
     <changefreq>monthly</changefreq>
     <priority>0.8</priority>
   </url>
   <url>
     <loc>${siteUrl}/community</loc>
-    <lastmod>2026-07-04</lastmod>
+    <lastmod>2026-07-07</lastmod>
     <changefreq>monthly</changefreq>
     <priority>0.7</priority>
   </url>
   <url>
+    <loc>${siteUrl}/download</loc>
+    <lastmod>2026-07-07</lastmod>
+    <changefreq>monthly</changefreq>
+    <priority>0.9</priority>
+  </url>
+  <url>
     <loc>${siteUrl}/privacy</loc>
-    <lastmod>2026-07-04</lastmod>
+    <lastmod>2026-07-07</lastmod>
     <changefreq>monthly</changefreq>
     <priority>0.4</priority>
   </url>
   <url>
     <loc>${siteUrl}/terms</loc>
-    <lastmod>2026-07-04</lastmod>
+    <lastmod>2026-07-07</lastmod>
     <changefreq>monthly</changefreq>
     <priority>0.4</priority>
   </url>
@@ -211,8 +225,16 @@ const worker = `export default {
       return methodNotAllowed(["GET", "HEAD"]);
     }
 
-    if (url.pathname === "/download") {
+    if (url.pathname === "/download" || url.pathname === "/download.html") {
       return downloadResponse(env, request.method, nonce);
+    }
+
+    if (url.pathname === "/apple-app-site-association" || url.pathname === "/.well-known/apple-app-site-association") {
+      return textResponse(APPLE_APP_SITE_ASSOCIATION, "application/json; charset=utf-8", request.method, nonce, 200, "public, max-age=3600");
+    }
+
+    if (url.pathname === "/invite" || url.pathname.startsWith("/invite/") || url.pathname === "/group" || url.pathname.startsWith("/group/")) {
+      return textResponse(LINK_FALLBACK, "text/html; charset=utf-8", request.method, nonce, 200, "public, max-age=60");
     }
 
     if (url.pathname === "/robots.txt") {
@@ -278,7 +300,7 @@ function downloadResponse(env = {}, method, nonce) {
     });
   }
 
-  return textResponse(DOWNLOAD_NOT_CONFIGURED, "text/html; charset=utf-8", method, nonce, 503, "no-store");
+  return textResponse(DOWNLOAD, "text/html; charset=utf-8", method, nonce, 200, "public, max-age=300");
 }
 
 function isAllowedAppStoreUrl(value) {
@@ -376,15 +398,17 @@ const HTML = ${JSON.stringify(html)};
 const MISSION = ${JSON.stringify(mission)};
 const FEATURES = ${JSON.stringify(features)};
 const COMMUNITY = ${JSON.stringify(community)};
+const DOWNLOAD = ${JSON.stringify(download)};
 const PRIVACY = ${JSON.stringify(privacy)};
 const TERMS = ${JSON.stringify(terms)};
 const NOT_FOUND = ${JSON.stringify(notFound)};
-const DOWNLOAD_NOT_CONFIGURED = ${JSON.stringify(downloadNotConfigured)};
+const LINK_FALLBACK = ${JSON.stringify(linkFallback)};
 const CSS = ${JSON.stringify(css)};
 const JS = ${JSON.stringify(js)};
 const ROBOTS = ${JSON.stringify(robots)};
 const SITEMAP = ${JSON.stringify(sitemap)};
 const OG_IMAGE = ${JSON.stringify(ogImage)};
+const APPLE_APP_SITE_ASSOCIATION = ${JSON.stringify(appleAppSiteAssociation)};
 const ASSETS = ${JSON.stringify(assets)};
 `;
 

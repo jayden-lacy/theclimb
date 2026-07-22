@@ -42,7 +42,9 @@ themeButtons.forEach((button) => {
   });
 });
 
-const currentPath = window.location.pathname.replace(/\/index\.html$/, "/");
+const currentPath = window.location.pathname
+  .replace(/\/index\.html$/, "/")
+  .replace(/\.html$/, "");
 
 document.querySelectorAll(".nav-links a").forEach((link) => {
   const linkPath = new URL(link.href).pathname;

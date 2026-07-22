@@ -94,7 +94,7 @@ final class ScreenTimeFocusBlockingService: FocusBlockingService {
 #if canImport(FamilyControls) && os(iOS)
         if #available(iOS 16.0, *) {
             let selection = ScreenTimeActivitySelectionStore.loadSelection()
-            guard selection.hasShieldableContent else {
+            guard selection.hasShieldableContent || FocusAdultContentFilterStore.isEnabled else {
                 MissionDeviceActivityMonitorScheduler.stop()
                 state = .selectionRequired
                 return state
@@ -138,6 +138,14 @@ final class ScreenTimeFocusBlockingService: FocusBlockingService {
         store.shield.applications = selection.applicationTokens.isEmpty ? nil : selection.applicationTokens
         store.shield.webDomains = selection.webDomainTokens.isEmpty ? nil : selection.webDomainTokens
         store.shield.applicationCategories = selection.categoryTokens.isEmpty ? nil : .specific(selection.categoryTokens)
+        store.webContent.blockedByFilter = FocusAdultContentFilterStore.isEnabled
+            ? .auto(selection.webDomains)
+            : selectedWebContentFilter(for: selection)
+    }
+
+    @available(iOS 16.0, *)
+    private func selectedWebContentFilter(for selection: FamilyActivitySelection) -> WebContentSettings.FilterPolicy? {
+        selection.webDomains.isEmpty ? nil : .specific(selection.webDomains)
     }
 
     @available(iOS 16.0, *)
@@ -349,7 +357,7 @@ enum MissionLiveActivityService {
     private static func focusLabel(for mission: Mission, focusState: FocusModeState) -> String {
         switch focusState {
         case .active:
-            "Apps blocked"
+            "Shield active"
         case .selectionRequired:
             "Choose apps"
         case .permissionRequired:
@@ -388,6 +396,25 @@ enum MissionLiveActivityService {
 #endif
 
 #if canImport(FamilyControls) && os(iOS)
+enum FocusAdultContentFilterStore {
+    private static let appGroupID = "group.com.jaydenlacy.theclimb"
+    private static let storageKey = "the-climb.adult-web-content-filter.v1"
+
+    private static var defaults: UserDefaults {
+        UserDefaults(suiteName: appGroupID) ?? .standard
+    }
+
+    static var isEnabled: Bool {
+        guard defaults.object(forKey: storageKey) != nil else { return true }
+        return defaults.bool(forKey: storageKey)
+    }
+
+    static func setEnabled(_ isEnabled: Bool) {
+        defaults.set(isEnabled, forKey: storageKey)
+        defaults.synchronize()
+    }
+}
+
 enum ScreenTimeActivitySelectionStore {
     private static let appGroupID = "group.com.jaydenlacy.theclimb"
     private static let storageKey = "the-climb.screen-time-selection.v1"

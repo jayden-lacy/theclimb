@@ -14,6 +14,14 @@
   --line: rgba(16, 17, 20, 0.12);
   --line-strong: rgba(16, 17, 20, 0.22);
   --grid-line: rgba(16, 17, 20, 0.035);
+  --solid-bg: #101114;
+  --solid-fg: #ffffff;
+  --banner-start: #101114;
+  --banner-end: #2d3f35;
+  --banner-fg: #ffffff;
+  --banner-muted: rgba(255, 255, 255, 0.72);
+  --banner-button-bg: #ffffff;
+  --banner-button-fg: #101114;
   --forest: #354d42;
   --bronze: #b99054;
   --blue: #dfe7ef;
@@ -34,6 +42,14 @@
   --line: rgba(245, 242, 234, 0.12);
   --line-strong: rgba(245, 242, 234, 0.22);
   --grid-line: rgba(245, 242, 234, 0.035);
+  --solid-bg: #f5f2ea;
+  --solid-fg: #101114;
+  --banner-start: #f3efe5;
+  --banner-end: #d2ad6d;
+  --banner-fg: #101114;
+  --banner-muted: rgba(16, 17, 20, 0.7);
+  --banner-button-bg: #101114;
+  --banner-button-fg: #ffffff;
   --forest: #8fa896;
   --bronze: #d2ad6d;
   --blue: #1f2a35;
@@ -53,6 +69,14 @@
     --line: rgba(245, 242, 234, 0.12);
     --line-strong: rgba(245, 242, 234, 0.22);
     --grid-line: rgba(245, 242, 234, 0.035);
+    --solid-bg: #f5f2ea;
+    --solid-fg: #101114;
+    --banner-start: #f3efe5;
+    --banner-end: #d2ad6d;
+    --banner-fg: #101114;
+    --banner-muted: rgba(16, 17, 20, 0.7);
+    --banner-button-bg: #101114;
+    --banner-button-fg: #ffffff;
     --forest: #8fa896;
     --bronze: #d2ad6d;
     --blue: #1f2a35;
@@ -144,6 +168,7 @@ img {
 }
 
 .nav-links a {
+  flex: 0 0 auto;
   min-height: 36px;
   border-radius: 999px;
   padding: 8px 13px;
@@ -154,6 +179,10 @@ img {
     background-color 160ms var(--ease-out),
     color 160ms var(--ease-out),
     transform 160ms var(--ease-out);
+}
+
+.nav-download-link {
+  display: none;
 }
 
 .nav-links a[aria-current="page"],
@@ -196,8 +225,8 @@ img {
 }
 
 .theme-control button.is-active {
-  color: var(--surface);
-  background: var(--ink);
+  color: var(--solid-fg);
+  background: var(--solid-bg);
 }
 
 .nav-action,
@@ -229,8 +258,8 @@ img {
 
 .nav-action,
 .button-primary {
-  color: #ffffff;
-  background: var(--ink);
+  color: var(--solid-fg);
+  background: var(--solid-bg);
   box-shadow: 0 14px 38px rgba(16, 17, 20, 0.16);
 }
 
@@ -273,7 +302,8 @@ main {
 .feature-link > span,
 .manifesto-card > span,
 .principle-card > span,
-.partner-card > span {
+.partner-card > span,
+.release-card > span {
   color: var(--forest);
   font-size: 0.78rem;
   font-weight: 950;
@@ -319,6 +349,7 @@ h3 {
 .manifesto-card p,
 .principle-card p,
 .partner-card p,
+.release-card p,
 .loop-row p,
 .site-footer p,
 .legal-card p,
@@ -541,7 +572,8 @@ h3 {
 
 .split-section,
 .product-deep-dive,
-.community-layout {
+.community-layout,
+.download-preview {
   display: grid;
   grid-template-columns: minmax(0, 0.85fr) minmax(320px, 1fr);
   gap: 64px;
@@ -579,8 +611,8 @@ h3 {
   width: 42px;
   height: 42px;
   border-radius: 999px;
-  color: #ffffff;
-  background: var(--ink);
+  color: var(--solid-fg);
+  background: var(--solid-bg);
   font-size: 0.78rem;
   font-weight: 950;
 }
@@ -600,6 +632,7 @@ h3 {
 .feature-tile,
 .principle-card,
 .partner-card,
+.release-card,
 .legal-card {
   border: 1px solid var(--line);
   border-radius: 8px;
@@ -755,6 +788,31 @@ h3 {
   font-size: 1.3rem;
 }
 
+.download-preview {
+  align-items: center;
+}
+
+.download-stack {
+  display: grid;
+  gap: 12px;
+}
+
+.release-card {
+  min-height: 148px;
+  padding: 22px;
+}
+
+.release-card strong {
+  display: block;
+  margin: 10px 0 8px;
+  font-size: 1.32rem;
+}
+
+.release-card p {
+  margin-bottom: 0;
+  font-weight: 720;
+}
+
 .principle-card {
   min-height: 240px;
 }
@@ -769,24 +827,24 @@ h3 {
   border: 1px solid var(--line);
   border-radius: 8px;
   background:
-    linear-gradient(135deg, color-mix(in srgb, var(--ink) 96%, var(--forest)), color-mix(in srgb, var(--ink) 86%, var(--bronze)));
-  color: #ffffff;
+    linear-gradient(135deg, var(--banner-start), var(--banner-end));
+  color: var(--banner-fg);
   box-shadow: var(--shadow);
 }
 
 .download-band .eyebrow,
 .download-band p {
-  color: rgba(255, 255, 255, 0.72);
+  color: var(--banner-muted);
 }
 
 .download-band h2 {
   max-width: 720px;
-  color: #ffffff;
+  color: var(--banner-fg);
 }
 
 .download-band .button-primary {
-  color: var(--ink);
-  background: #ffffff;
+  color: var(--banner-button-fg);
+  background: var(--banner-button-bg);
 }
 
 .site-footer {
@@ -837,6 +895,21 @@ h3 {
   font-weight: 900;
   text-decoration: underline;
   text-underline-offset: 3px;
+}
+
+.legal-card a.button {
+  color: var(--ink);
+  text-decoration: none;
+}
+
+.legal-card a.button-primary {
+  color: var(--solid-fg);
+}
+
+.link-fallback .legal-card p:last-child {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
 }
 
 .legal-card ul {
@@ -919,6 +992,7 @@ h3 {
   .split-section,
   .product-deep-dive,
   .community-layout,
+  .download-preview,
   .download-band,
   .site-footer {
     grid-template-columns: 1fr;
@@ -974,6 +1048,30 @@ h3 {
 
   .nav-action {
     display: none;
+  }
+
+  .nav-download-link {
+    display: inline-flex;
+  }
+
+  .nav-links {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    width: 100%;
+    gap: 2px;
+    padding: 3px;
+  }
+
+  .nav-links a {
+    justify-content: center;
+    min-width: 0;
+    min-height: 34px;
+    padding: 7px 6px;
+    font-size: 0.82rem;
+  }
+
+  .nav-links:has(a:nth-child(5):last-child) a:nth-child(5) {
+    grid-column: span 2;
   }
 
   .theme-control button {

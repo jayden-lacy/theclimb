@@ -27,12 +27,14 @@ struct MissionSessionView: View {
     @State private var completedStreak: Int?
     @State private var completedOVR: Int?
     @State private var completedNewBest = false
+    @State private var newlyUnlockedAchievements: [AchievementProgress] = []
 #if canImport(FamilyControls) && os(iOS)
     @State private var showActivityPicker = false
     @State private var activitySelection = FamilyActivitySelection()
     @State private var shouldStartAfterActivityPicker = false
     @State private var focusTemplates: [FocusTemplateSummary] = []
     @State private var activeTemplateID: String?
+    @State private var adultWebFilterEnabled = FocusAdultContentFilterStore.isEnabled
 #endif
 
     private let timer = Timer.publish(every: 1, on: .main, in: .common).autoconnect()
@@ -79,7 +81,7 @@ struct MissionSessionView: View {
                 }
             }
             .background(ClimbScreenBackground())
-            .navigationTitle(phase == .running ? "Focus" : "Mission")
+            .navigationTitle(phase == .running ? "Protected Focus" : "Focus Block")
             .toolbarBackground(.ultraThinMaterial, for: .navigationBar)
             .toolbarBackground(.visible, for: .navigationBar)
             .toolbar {
@@ -111,6 +113,7 @@ struct MissionSessionView: View {
         .onAppear {
             activitySelection = ScreenTimeActivitySelectionStore.loadSelection()
             focusTemplates = ScreenTimeActivitySelectionStore.loadTemplateSummaries()
+            adultWebFilterEnabled = FocusAdultContentFilterStore.isEnabled
             activeTemplateID = nil
             Task {
                 await viewModel.refreshScreenTimeAuthorization()
@@ -123,7 +126,7 @@ struct MissionSessionView: View {
         .onChange(of: showActivityPicker) { _, isPresented in
             guard !isPresented, shouldStartAfterActivityPicker else { return }
             shouldStartAfterActivityPicker = false
-            guard activitySelection.hasShieldableContent else { return }
+            guard activitySelection.hasShieldableContent || adultWebFilterEnabled else { return }
             startFocusTimer()
         }
 #endif
@@ -132,7 +135,7 @@ struct MissionSessionView: View {
     private var header: some View {
         ClimbQuietPanel(padding: 22, cornerRadius: 22, isProminent: true) {
             VStack(alignment: .leading, spacing: 10) {
-                Text("Mission")
+                Text("Faith Focus")
                     .font(ClimbTypography.sans(12, weight: .semibold))
                     .tracking(1.1)
                     .foregroundStyle(Color.climbTextSecondary)
@@ -168,8 +171,8 @@ struct MissionSessionView: View {
 
     private var readyContent: some View {
         ClimbQuietPanel(padding: 22, cornerRadius: 22, isProminent: true) {
-            SectionTitle(title: "Before You Start", subtitle: "Make the room quiet before the timer begins.")
-            Text("Set your phone down, breathe once, and give this mission your full attention.")
+            SectionTitle(title: "Set the shield", subtitle: "Choose what gets blocked, then begin the protected window.")
+            Text("This is the point of friction: set your phone down, block the pull, and give the next minutes to obedience instead of impulse.")
                 .font(ClimbTypography.sans(15, weight: .medium))
                 .foregroundStyle(Color.climbTextSecondary)
                 .lineSpacing(3)
@@ -178,6 +181,7 @@ struct MissionSessionView: View {
                 FocusPreflightPanel(
                     authorizationState: viewModel.focusState,
                     selectedItemCount: activitySelection.shieldableContentCount,
+                    adultWebFilterEnabled: adultWebFilterEnabled,
                     templates: focusTemplates,
                     activeTemplateID: activeTemplateID,
                     onRequestPermission: {
@@ -206,7 +210,7 @@ struct MissionSessionView: View {
             }
 #endif
             DailyContentFeedbackStrip(
-                title: "Mission fit",
+                title: "Focus block fit",
                 selected: viewModel.contentFeedback(for: mission.id, kind: .mission)
             ) { rating in
                 viewModel.submitContentFeedback(
@@ -230,7 +234,7 @@ struct MissionSessionView: View {
                 HStack {
                     StatusBadge(text: focusStateLabel, color: focusStateColor)
                     Spacer()
-                    Text("FOCUS WINDOW")
+                        Text("PROTECTED WINDOW")
                         .font(ClimbTypography.sans(11, weight: .semibold))
                         .tracking(1.5)
                         .foregroundStyle(Color.climbMuted)
@@ -270,7 +274,7 @@ struct MissionSessionView: View {
                 Spacer()
 
                 VStack(spacing: 12) {
-                    PrimaryActionButton(title: "Complete Mission", systemImage: "checkmark.circle.fill") {
+                    PrimaryActionButton(title: "Complete Focus Block", systemImage: "checkmark.circle.fill") {
                         phase = .reflection
                         Task {
                             await viewModel.stopMissionFocus()
@@ -298,7 +302,7 @@ struct MissionSessionView: View {
 
     private var reflectionContent: some View {
         ClimbQuietPanel(padding: 22, cornerRadius: 22, accent: .climbWarm, isProminent: true) {
-            Text("What did this mission reveal?")
+            Text("What did the silence reveal?")
                 .font(ClimbTypography.serif(27))
                 .foregroundStyle(.white)
                 .fixedSize(horizontal: false, vertical: true)
@@ -329,6 +333,7 @@ struct MissionSessionView: View {
                 guard !isSubmittingResult else { return }
                 isSubmittingResult = true
                 let previousBest = viewModel.profile?.longestStreak ?? 0
+                let previousAchievementIDs = Set(viewModel.unlockedAchievements.map(\.id))
                 Task { @MainActor in
                     let didComplete = await viewModel.completeMission(
                         missionID: mission.id,
@@ -343,6 +348,9 @@ struct MissionSessionView: View {
                         completedStreak = newStreak
                         completedOVR = viewModel.profile?.ovrScore
                         completedNewBest = newStreak > previousBest
+                        newlyUnlockedAchievements = viewModel.unlockedAchievements.filter {
+                            !previousAchievementIDs.contains($0.id)
+                        }
                         HapticFeedback.success()
                         phase = .complete
                     }
@@ -355,14 +363,14 @@ struct MissionSessionView: View {
     private var failureContent: some View {
         ClimbQuietPanel(cornerRadius: 22, accent: .climbRed) {
             SectionTitle(
-                title: "Log the Miss",
-                subtitle: "Be honest, then take the recovery step. One missed mission should not become a missed day."
+                title: "Log the break",
+                subtitle: "Be honest, then take the recovery step. One broken focus block should not become a drifted day."
             )
-            TextField("Why did this mission fail?", text: $failureReason, axis: .vertical)
+            TextField("What pulled you out of focus?", text: $failureReason, axis: .vertical)
                 .lineLimit(2...5)
                 .formFieldStyle()
             PrimaryActionButton(
-                title: isSubmittingResult ? "Saving Failure" : "Log Failure",
+                title: isSubmittingResult ? "Saving Break" : "Log Break",
                 systemImage: "arrow.counterclockwise.circle",
                 tint: .climbRed,
                 isDisabled: failureReason.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || isSubmittingResult
@@ -411,7 +419,7 @@ struct MissionSessionView: View {
         return ClimbQuietPanel(cornerRadius: 24, isProminent: true) {
             StreakCelebrationView(streak: streak, isNewBest: completedNewBest)
 
-            Text("Mission Complete")
+            Text("Focus Protected")
                 .font(ClimbTypography.sans(27, weight: .semibold))
                 .foregroundStyle(.white)
 
@@ -428,6 +436,25 @@ struct MissionSessionView: View {
             }
             .padding(.top, 4)
 
+            if !newlyUnlockedAchievements.isEmpty {
+                VStack(alignment: .leading, spacing: 10) {
+                    Text("Badge unlocked")
+                        .font(ClimbTypography.sans(12, weight: .semibold))
+                        .tracking(1.2)
+                        .foregroundStyle(Color.climbGold)
+                        .textCase(.uppercase)
+
+                    ScrollView(.horizontal, showsIndicators: false) {
+                        HStack(spacing: 10) {
+                            ForEach(newlyUnlockedAchievements) { achievement in
+                                AchievementBadgePill(achievement: achievement, isCompact: true)
+                            }
+                        }
+                    }
+                }
+                .transition(.opacity.combined(with: .scale(scale: 0.985)))
+            }
+
             PrimaryActionButton(title: "Close", systemImage: "xmark") {
                 dismiss()
             }
@@ -437,12 +464,12 @@ struct MissionSessionView: View {
 
     private func completionMessage(streak: Int) -> String {
         if completedNewBest {
-            return "New best streak. Today counted because you finished the mission and reflected before moving on."
+            return "New best streak. Today counted because you protected the window and reflected before moving on."
         }
         if streak <= 1 {
             return "Day 1 is locked in. Come back tomorrow and protect the next small promise."
         }
-        return "\(streak) days in a row. Your streak grew because the mission and reflection are both complete."
+        return "\(streak) days in a row. Your streak grew because the focus block and reflection are both complete."
     }
 
     private var reflectionIsValid: Bool {
@@ -478,12 +505,14 @@ struct MissionSessionView: View {
     private func beginFocusFlow() {
 #if canImport(FamilyControls) && os(iOS)
         activitySelection = ScreenTimeActivitySelectionStore.loadSelection()
+        adultWebFilterEnabled = FocusAdultContentFilterStore.isEnabled
+        let hasShieldProtection = activitySelection.hasShieldableContent || adultWebFilterEnabled
         if mission.appBlockingEnabled, viewModel.focusState != .authorized, viewModel.focusState != .active {
             Task {
                 await viewModel.requestScreenTimeAuthorization()
                 await MainActor.run {
                     if viewModel.focusState == .authorized || viewModel.focusState == .active {
-                        if activitySelection.hasShieldableContent {
+                        if hasShieldProtection {
                             startFocusTimer()
                         } else {
                             shouldStartAfterActivityPicker = true
@@ -495,7 +524,7 @@ struct MissionSessionView: View {
             return
         }
 
-        if mission.appBlockingEnabled, !activitySelection.hasShieldableContent {
+        if mission.appBlockingEnabled, !hasShieldProtection {
             shouldStartAfterActivityPicker = true
             showActivityPicker = true
             return
@@ -518,11 +547,13 @@ struct MissionSessionView: View {
 
     private var beginFocusButtonTitle: String {
 #if canImport(FamilyControls) && os(iOS)
-        if mission.appBlockingEnabled, !ScreenTimeActivitySelectionStore.loadSelection().hasShieldableContent {
+        if mission.appBlockingEnabled,
+           !ScreenTimeActivitySelectionStore.loadSelection().hasShieldableContent,
+           !FocusAdultContentFilterStore.isEnabled {
             return "Choose Apps & Begin"
         }
 #endif
-        return "Begin Focus"
+        return "Begin Protected Focus"
     }
 
     private var timeString: String {
@@ -539,7 +570,7 @@ struct MissionSessionView: View {
     private var focusStateLabel: String {
         switch viewModel.focusState {
         case .active:
-            "Distractions blocked"
+            "Shield active"
         case .authorized:
             "Access ready"
         case .permissionRequired:
@@ -549,7 +580,7 @@ struct MissionSessionView: View {
         case .denied:
             "Permission denied"
         case .simulated:
-            "Focus active"
+            "Timer active"
         case .unavailable:
             "Preparing"
         }
@@ -569,9 +600,9 @@ struct MissionSessionView: View {
     private var focusText: String {
         switch viewModel.focusState {
         case .active:
-            "Selected distractions are blocked."
+            "Adult websites and selected distractions are blocked. Stay with the promise."
         case .authorized:
-            "Screen Time access is ready."
+            "Screen Time access is ready. Adult website filtering runs automatically, and you can add apps once for a stronger shield."
         case .permissionRequired:
             "Screen Time permission is needed to block apps."
         case .selectionRequired:
@@ -579,7 +610,7 @@ struct MissionSessionView: View {
         case .denied:
             "Screen Time permission was denied."
         case .simulated:
-            "Simulated focus is active."
+            "Timer-only focus is active."
         case .unavailable:
             "Focus mode is preparing."
         }
@@ -618,6 +649,7 @@ private enum MissionPhase: Hashable {
 private struct FocusPreflightPanel: View {
     let authorizationState: FocusModeState
     let selectedItemCount: Int
+    let adultWebFilterEnabled: Bool
     let templates: [FocusTemplateSummary]
     let activeTemplateID: String?
     let onRequestPermission: () -> Void
@@ -628,7 +660,7 @@ private struct FocusPreflightPanel: View {
         VStack(alignment: .leading, spacing: 14) {
             HStack(alignment: .firstTextBaseline) {
                 VStack(alignment: .leading, spacing: 4) {
-                    Text("Blocking preflight")
+                    Text("Shield preflight")
                         .font(ClimbTypography.sans(18, weight: .semibold))
                         .foregroundStyle(Color.climbMist)
                     Text(preflightSubtitle)
@@ -651,11 +683,20 @@ private struct FocusPreflightPanel: View {
                 )
 
                 FocusPreflightRow(
+                    systemImage: "eye.slash.fill",
+                    title: "Adult websites",
+                    detail: adultWebFilterEnabled ? "18+ sites blocked automatically" : "Not enabled",
+                    color: adultWebFilterEnabled ? .climbGreen : .climbGold,
+                    actionTitle: nil,
+                    action: {}
+                )
+
+                FocusPreflightRow(
                     systemImage: selectedItemCount > 0 ? "app.badge.checkmark" : "square.grid.2x2",
-                    title: "Apps selected",
-                    detail: selectedItemCount > 0 ? "\(selectedItemCount) distractions selected" : "Choose apps, categories, or websites",
+                    title: "Extra apps + sites",
+                    detail: selectedItemCount > 0 ? "\(selectedItemCount) distractions selected" : "Optional: add more distractions",
                     color: selectedItemCount > 0 ? .climbGreen : .climbGold,
-                    actionTitle: selectedItemCount > 0 ? "Edit" : "Choose",
+                    actionTitle: selectedItemCount > 0 ? "Edit" : "Add",
                     action: onChooseApps
                 )
             }
@@ -691,16 +732,17 @@ private struct FocusPreflightPanel: View {
                 .stroke(Color.white.opacity(0.065), lineWidth: 0.7)
         )
         .animation(ClimbMotion.standard, value: selectedItemCount)
+        .animation(ClimbMotion.standard, value: adultWebFilterEnabled)
         .animation(ClimbMotion.standard, value: activeTemplateID)
         .animation(ClimbMotion.standard, value: authorizationState)
     }
 
     private var readyForBlocking: Bool {
-        (authorizationState == .authorized || authorizationState == .active) && selectedItemCount > 0
+        (authorizationState == .authorized || authorizationState == .active) && (selectedItemCount > 0 || adultWebFilterEnabled)
     }
 
     private var preflightSubtitle: String {
-        readyForBlocking ? "Your shield is prepared before the timer begins." : "Handle setup once so the mission starts cleanly."
+        readyForBlocking ? "Your web filter is prepared before the timer begins." : "Handle setup once so protected focus starts cleanly."
     }
 
     private var authorizationIcon: String {
@@ -765,7 +807,7 @@ private struct FocusPreflightDisabledPanel: View {
         FocusPreflightRow(
             systemImage: "target",
             title: "Manual focus",
-            detail: "App blocking is off for this mission",
+            detail: "App blocking is off for this block",
             color: .climbGold,
             actionTitle: nil,
             action: {}

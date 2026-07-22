@@ -14,6 +14,7 @@ struct ProgressDashboardView: View {
             if let profile = viewModel.profile {
                 progressHeader(profile)
                 OVRScoreCard(score: profile.ovrScore, delta: latestDelta)
+                achievementCard
                 ovrRulesCard
                 statsCards(profile)
             }
@@ -106,6 +107,76 @@ struct ProgressDashboardView: View {
             Text("\(Int(viewModel.completionRate * 100))% mission completion")
                 .font(ClimbTypography.sans(13, weight: .semibold))
                 .foregroundStyle(Color.climbMuted)
+        }
+    }
+
+    private var achievementCard: some View {
+        let unlocked = viewModel.unlockedAchievements
+        let next = Array(viewModel.nextAchievements.prefix(4))
+
+        return ClimbQuietPanel(padding: 20, cornerRadius: 24, accent: .climbGold, isProminent: true) {
+            SectionTitle(
+                title: "Badges",
+                subtitle: "Earned through focus, prayer, recovery, scripture, and accountability."
+            )
+
+            HStack(spacing: 10) {
+                AchievementSummaryMetric(
+                    value: "\(unlocked.count)",
+                    label: "earned",
+                    tint: .climbGold
+                )
+                AchievementSummaryMetric(
+                    value: "\(viewModel.achievements.count)",
+                    label: "total",
+                    tint: .climbSage
+                )
+                AchievementSummaryMetric(
+                    value: "\(Int(viewModel.achievementCompletionRate * 100))%",
+                    label: "complete",
+                    tint: .climbBlue
+                )
+            }
+
+            ProgressBar(value: viewModel.achievementCompletionRate, height: 5, tint: .climbGold)
+
+            if unlocked.isEmpty {
+                EmptyState(
+                    title: "No badges yet",
+                    detail: "Complete your first protected focus block to earn First Yes.",
+                    systemImage: "seal"
+                )
+            } else {
+                VStack(alignment: .leading, spacing: 10) {
+                    Text("Earned")
+                        .font(ClimbTypography.sans(12, weight: .semibold))
+                        .tracking(1.25)
+                        .foregroundStyle(Color.climbMuted)
+                        .textCase(.uppercase)
+
+                    ScrollView(.horizontal, showsIndicators: false) {
+                        HStack(spacing: 10) {
+                            ForEach(unlocked) { achievement in
+                                AchievementBadgePill(achievement: achievement, isCompact: true)
+                            }
+                        }
+                    }
+                }
+            }
+
+            if !next.isEmpty {
+                VStack(alignment: .leading, spacing: 10) {
+                    Text("Next up")
+                        .font(ClimbTypography.sans(12, weight: .semibold))
+                        .tracking(1.25)
+                        .foregroundStyle(Color.climbMuted)
+                        .textCase(.uppercase)
+
+                    ForEach(next) { achievement in
+                        AchievementProgressRow(achievement: achievement)
+                    }
+                }
+            }
         }
     }
 
@@ -250,6 +321,35 @@ private struct MonthlyLetterMetric: View {
         .overlay {
             RoundedRectangle(cornerRadius: 15, style: .continuous)
                 .stroke(Color.climbHairline, lineWidth: 1)
+        }
+    }
+}
+
+private struct AchievementSummaryMetric: View {
+    let value: String
+    let label: String
+    let tint: Color
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 3) {
+            Text(value)
+                .font(ClimbTypography.sans(20, weight: .semibold).monospacedDigit())
+                .foregroundStyle(Color.climbMist)
+                .lineLimit(1)
+                .minimumScaleFactor(0.70)
+            Text(label.uppercased())
+                .font(ClimbTypography.sans(10, weight: .bold))
+                .tracking(0.75)
+                .foregroundStyle(tint.opacity(0.88))
+                .lineLimit(1)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(.horizontal, 12)
+        .padding(.vertical, 11)
+        .background(Color.climbSurfaceRaised.opacity(0.58), in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+        .overlay {
+            RoundedRectangle(cornerRadius: 16, style: .continuous)
+                .stroke(Color.white.opacity(0.055), lineWidth: 0.7)
         }
     }
 }

@@ -20,7 +20,7 @@ struct OnboardingView: View {
     @State private var email = ""
     @State private var password = ""
     @State private var ageChoice: AgeChoice = .teen16
-    @State private var selectedGoals: Set<String> = ["Build discipline", "Grow closer to God"]
+    @State private var selectedGoals: Set<String> = ["Control phone use", "Grow closer to God"]
     @State private var struggle: Struggle = .focus
     @State private var streakGoal = 30
     @State private var reminderTime = Calendar.current.date(bySettingHour: 8, minute: 0, second: 0, of: Date()) ?? Date()
@@ -249,7 +249,7 @@ struct OnboardingView: View {
 
     private var goalsStep: some View {
         VStack(alignment: .leading, spacing: 18) {
-            StepHeading(title: "What are your goals?", subtitle: "Select every goal that applies.")
+            StepHeading(title: "What should The Climb protect?", subtitle: "Your blocker, Daily Word, and AI plan will adapt around these goals.")
             VStack(spacing: 10) {
                 ForEach(goals) { goal in
                     SelectableRow(
@@ -308,7 +308,7 @@ struct OnboardingView: View {
 
     private var reminderStep: some View {
         VStack(alignment: .leading, spacing: 18) {
-            StepHeading(title: "When should we remind you?", subtitle: "We’ll send your daily mission at this time.")
+            StepHeading(title: "When should we remind you?", subtitle: "We’ll prompt your daily focus block at this time.")
 
             ClimbQuietPanel(padding: 20, cornerRadius: 22) {
                 DatePicker("", selection: $reminderTime, displayedComponents: .hourAndMinute)
@@ -316,7 +316,7 @@ struct OnboardingView: View {
                     .labelsHidden()
                     .frame(maxWidth: .infinity)
                     .clipped()
-                Text("Daily mission reminders and streak alerts use this time.")
+                Text("Focus block reminders and streak alerts use this time.")
                     .font(ClimbTypography.sans(13, weight: .semibold))
                     .foregroundStyle(Color.climbTextSecondary)
                     .frame(maxWidth: .infinity, alignment: .center)
@@ -348,8 +348,8 @@ struct OnboardingView: View {
     private var preparingStep: some View {
         VStack(spacing: 28) {
             StepHeading(
-                title: "Your path is being prepared.",
-                subtitle: "We’re creating your personalized plan, missions, and devotionals."
+                title: "Your shield is being prepared.",
+                subtitle: "We’re creating your first protected focus block, Daily Word, and recovery plan."
             )
             .frame(maxWidth: .infinity, alignment: .leading)
 
@@ -399,7 +399,7 @@ struct OnboardingView: View {
                 Text("Day 1 is ready.")
                     .font(ClimbTypography.sans(16, weight: .semibold))
                     .foregroundStyle(.white)
-                SetupSummaryRow(systemImage: "target", title: "Your mission", value: personalization.previewMissionTitle)
+                SetupSummaryRow(systemImage: "shield.lefthalf.filled", title: "Your block", value: personalization.previewMissionTitle)
                 SetupSummaryRow(systemImage: "book.closed", title: "Your devotional", value: personalization.devotionalFocus.capitalized)
                 SetupSummaryRow(systemImage: "square.and.pencil", title: "Your reflection", value: personalization.primaryGoal)
             }
@@ -1038,9 +1038,9 @@ private struct GoalOptionCard: View {
 private struct OnboardingValueStrip: View {
     var body: some View {
         HStack(spacing: 10) {
-            WelcomeValueTile(systemImage: "target", title: "Mission")
+            WelcomeValueTile(systemImage: "shield.lefthalf.filled", title: "Block")
             WelcomeValueTile(systemImage: "book.closed", title: "Word")
-            WelcomeValueTile(systemImage: "person.2", title: "Partner")
+            WelcomeValueTile(systemImage: "person.2", title: "Circle")
         }
         .padding(.horizontal, 4)
     }
@@ -1084,14 +1084,14 @@ private struct BrandWelcomeLockup: View {
                     .lineLimit(1)
                     .minimumScaleFactor(0.78)
 
-                Text("A daily rhythm for faith, discipline, and follow-through.")
+                Text("A Christian Screen Time blocker for faith, focus, and self-control.")
                     .font(ClimbTypography.sans(18, weight: .semibold))
                     .foregroundStyle(Color.climbTextSecondary)
                     .multilineTextAlignment(.center)
                     .lineSpacing(4)
                     .fixedSize(horizontal: false, vertical: true)
 
-                Text("Start with one honest step.")
+                Text("Block the drift. Keep the promise.")
                     .font(ClimbTypography.serif(24))
                     .foregroundStyle(Color.climbWarm.opacity(0.92))
                     .padding(.top, 4)
@@ -1144,7 +1144,7 @@ private struct WelcomeHeroPanel: View {
                         .lineLimit(1)
                         .minimumScaleFactor(0.78)
 
-                    Text("A quieter daily system for scripture, discipline, focus, and accountability.")
+                    Text("A quieter blocker for scripture, prayer, focus, and accountability.")
                         .font(ClimbTypography.sans(16, weight: .semibold))
                         .foregroundStyle(Color.climbTextSecondary)
                         .lineSpacing(4)
@@ -1152,7 +1152,7 @@ private struct WelcomeHeroPanel: View {
 
                     HStack(spacing: 8) {
                         WelcomeMicroPill(text: "Daily Word")
-                        WelcomeMicroPill(text: "Focus Mission")
+                        WelcomeMicroPill(text: "App Blocking")
                         WelcomeMicroPill(text: "Streaks")
                     }
                     .padding(.top, 4)
