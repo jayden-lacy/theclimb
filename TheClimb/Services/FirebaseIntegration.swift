@@ -233,7 +233,7 @@ enum FirebaseIntegration {
             throw FirebaseIntegrationError.presentationUnavailable
         }
 
-        let rawNonce = randomNonceString()
+        let rawNonce = try randomNonceString()
         let request = ASAuthorizationAppleIDProvider().createRequest()
         request.requestedScopes = [.fullName, .email]
         request.nonce = sha256(rawNonce)
@@ -341,7 +341,7 @@ enum FirebaseIntegration {
             throw FirebaseIntegrationError.presentationUnavailable
         }
 
-        let rawNonce = randomNonceString()
+        let rawNonce = try randomNonceString()
         let request = ASAuthorizationAppleIDProvider().createRequest()
         request.nonce = sha256(rawNonce)
 
@@ -505,15 +505,17 @@ enum FirebaseIntegration {
         return name.isEmpty ? nil : name
     }
 
-    private static func randomNonceString(length: Int = 32) -> String {
-        precondition(length > 0)
+    private static func randomNonceString(length: Int = 32) throws -> String {
+        guard length > 0 else {
+            throw FirebaseIntegrationError.secureRandomGenerationFailed
+        }
 
         let charset = Array("0123456789ABCDEFGHIJKLMNOPQRSTUVXYZabcdefghijklmnopqrstuvwxyz-._")
         var randomBytes = [UInt8](repeating: 0, count: length)
         let result = SecRandomCopyBytes(kSecRandomDefault, randomBytes.count, &randomBytes)
 
         guard result == errSecSuccess else {
-            fatalError("Unable to generate a secure random nonce.")
+            throw FirebaseIntegrationError.secureRandomGenerationFailed
         }
 
         return String(randomBytes.map { charset[Int($0) % charset.count] })
@@ -539,6 +541,7 @@ enum FirebaseIntegrationError: LocalizedError {
     case googleClientIDMissing
     case googleTokenMissing
     case presentationUnavailable
+    case secureRandomGenerationFailed
     case encodingFailed
     case decodingFailed
     case remoteMessage(String)
@@ -569,6 +572,8 @@ enum FirebaseIntegrationError: LocalizedError {
             "Google did not return an ID token. Try signing in again."
         case .presentationUnavailable:
             "Sign-in could not find a screen to present from."
+        case .secureRandomGenerationFailed:
+            "A secure sign-in request could not be created. Try again."
         case .encodingFailed:
             "Unable to prepare your Firebase data."
         case .decodingFailed:
@@ -937,7 +942,7 @@ final class FirebaseAppRepository: AppRepository {
     func createCommunityGroup(_ group: ClimbGroup) async throws -> ClimbGroup {
         _ = try await fallback.createCommunityGroup(group)
 
-        guard let userID = Auth.auth().currentUser?.uid else {
+        guard Auth.auth().currentUser?.uid != nil else {
             return group
         }
 
@@ -954,7 +959,7 @@ final class FirebaseAppRepository: AppRepository {
     }
 
     func joinCommunityGroup(_ groupID: String, displayName: String) async throws {
-        guard let userID = Auth.auth().currentUser?.uid else {
+        guard Auth.auth().currentUser?.uid != nil else {
             try await fallback.joinCommunityGroup(groupID, displayName: displayName)
             return
         }
@@ -967,7 +972,7 @@ final class FirebaseAppRepository: AppRepository {
     }
 
     func leaveCommunityGroup(_ groupID: String) async throws {
-        guard let userID = Auth.auth().currentUser?.uid else {
+        guard Auth.auth().currentUser?.uid != nil else {
             try await fallback.leaveCommunityGroup(groupID)
             return
         }

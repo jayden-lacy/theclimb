@@ -17,6 +17,7 @@
                BuildableIdentifier = "primary"
                BlueprintIdentifier = "A00000000000000000000013"
                BuildableName = "The ClimbShieldAction.appex"
+               BlueprintName = "The ClimbShieldAction"
                ReferencedContainer = "container:The Climb.xcodeproj">
             </BuildableReference>
          </BuildActionEntry>
@@ -30,6 +31,7 @@
                BuildableIdentifier = "primary"
                BlueprintIdentifier = "A00000000000000000000010"
                BuildableName = "The Climb: Daily Faith.app"
+               BlueprintName = "The Climb"
                ReferencedContainer = "container:The Climb.xcodeproj">
             </BuildableReference>
          </BuildActionEntry>
@@ -61,6 +63,7 @@
             BuildableIdentifier = "primary"
             BlueprintIdentifier = "A00000000000000000000010"
             BuildableName = "The Climb: Daily Faith.app"
+            BlueprintName = "The Climb"
             ReferencedContainer = "container:The Climb.xcodeproj">
          </BuildableReference>
       </BuildableProductRunnable>
@@ -79,6 +82,7 @@
             BuildableIdentifier = "primary"
             BlueprintIdentifier = "A00000000000000000000010"
             BuildableName = "The Climb: Daily Faith.app"
+            BlueprintName = "The Climb"
             ReferencedContainer = "container:The Climb.xcodeproj">
          </BuildableReference>
       </BuildableProductRunnable>

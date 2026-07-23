@@ -1056,15 +1056,15 @@ enum LegalDocument: Identifiable {
     }
 
     var updatedText: String {
-        "Last updated May 18, 2026"
+        "Last updated July 23, 2026"
     }
 
     var onlineURL: URL {
         switch self {
         case .privacyPolicy:
-            URL(string: "https://theclimbapp.org/privacy.html")!
+            URL(string: "https://theclimbapp.org/privacy")!
         case .termsOfService:
-            URL(string: "https://theclimbapp.org/terms.html")!
+            URL(string: "https://theclimbapp.org/terms")!
         }
     }
 
@@ -1072,21 +1072,22 @@ enum LegalDocument: Identifiable {
         switch self {
         case .privacyPolicy:
             [
-                ("What We Collect", "The Climb stores account details, onboarding choices, missions, devotionals, reflections, progress, community posts, reports, and app settings needed to run the app."),
-                ("How We Use Data", "Data is used to personalize missions and devotionals, sync progress across devices, support accountability features, improve safety, and respond to support requests."),
-                ("AI Features", "When AI generation is enabled, profile context and recent reflection history may be sent to the secure Firebase Cloud Function to generate a daily plan. API keys are not stored in the app."),
-                ("Community Safety", "Posts can be reported, blocked, or deleted by the post owner. Reports are used to review abuse, harassment, or unsafe content."),
-                ("Deleting Data", "You can delete your account in Profile. This removes your account and synced app data tied to your user ID."),
-                ("Contact", "Questions or privacy requests can be sent to support@theclimbapp.org.")
+                ("Information We Collect", "The Climb stores account details, sensitive onboarding choices, missions, devotionals, habits, prayer activity, reflections, progress, saved scripture, community activity, reports, and technical data needed to run and secure the app."),
+                ("Screen Time Privacy", "Apple represents selected apps, categories, and sites with opaque tokens stored locally in the App Group. The Climb does not receive a readable installed-app list and does not upload your Screen Time selection or browsing history."),
+                ("How We Use Information", "Information is used to authenticate accounts, personalize daily guidance, sync progress, operate focus tools, calculate streaks and achievements, provide accountability, maintain safety, and diagnose failures."),
+                ("AI and Service Providers", "Limited profile and recent behavior context may be processed through Firebase and OpenAI to generate a daily plan. The Climb also uses Firebase, Google Sign-In, and Sign in with Apple. We do not sell data or use it for advertising tracking."),
+                ("Deleting Data", "You can permanently delete your account in Profile. This removes your authentication account and active synced data tied to your user ID, subject to limited provider backup and security-log retention."),
+                ("Age and Contact", "The Climb is for users age 13 and older. Questions, access requests, or privacy requests can be sent to support@theclimbapp.org.")
             ]
         case .termsOfService:
             [
-                ("Use of The Climb", "The Climb is a faith-based discipline and self-improvement app. Use it respectfully and only for lawful purposes."),
-                ("Community Rules", "Do not post harassment, threats, hate, sexual content, spam, or abusive language. We may remove content or restrict access when safety rules are violated."),
-                ("Health and Spiritual Guidance", "The app provides encouragement, reflection, and habit support. It is not medical, mental health, legal, or pastoral counseling."),
+                ("Eligibility and Account", "You must be at least 13 years old to use The Climb. Protect your credentials and use the app only for lawful personal purposes."),
+                ("Screen Time Features", "App blocking depends on Apple permissions, device settings, and operating-system behavior. You remain responsible for confirming that a focus session is active."),
+                ("Community Rules", "Do not post harassment, threats, hate, exploitation, sexual content, spam, scams, private information, or content that encourages self-harm or violence. We may remove content or restrict unsafe accounts."),
+                ("Faith, AI, and Wellness", "The app provides Christian encouragement, AI-generated or curated guidance, reflection, and habit support. It is not medical, mental-health, legal, financial, crisis, or pastoral care."),
                 ("Scripture Attribution", "Scripture quotations marked (WEB) are from the World English Bible, a public-domain Bible translation."),
-                ("Your Content", "You are responsible for posts and reflections you create. You can delete your own community posts from the feed."),
-                ("Account Deletion", "You can sign out or delete your account in Profile. Deleting your account is permanent."),
+                ("Your Content", "You retain ownership of content you create and give The Climb a limited license to process it only as needed to operate, sync, secure, and moderate the service."),
+                ("Availability and Account Deletion", "Cloud features can occasionally be unavailable. You can sign out or permanently delete your account in Profile."),
                 ("Contact", "Support questions can be sent to support@theclimbapp.org.")
             ]
         }

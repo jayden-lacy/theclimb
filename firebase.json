@@ -22,7 +22,8 @@
     "public": "website",
     "ignore": [
       "firebase.json",
-      "**/.*",
+      "**/.DS_Store",
+      "**/.git/**",
       "**/node_modules/**"
     ],
     "cleanUrls": true,

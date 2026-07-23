@@ -1,33 +1,95 @@
 # The Climb Privacy Policy
 
-Last updated: May 18, 2026
+Last updated: July 23, 2026
 
-The Climb is a faith-based discipline and self-improvement app. This policy explains what the app collects and how that data is used.
+The Climb is a faith-based Screen Time, discipline, and accountability app. This policy explains what information The Climb collects, why it is used, and the choices available to you.
 
-## Data We Collect
+## Information We Collect
 
-- Account information, including authentication ID, email address, and display name.
-- Onboarding choices, including goals, age group, main struggle, streak goal, and notification preferences.
-- Missions, devotionals, journal entries, reflections, progress, streaks, and OVR history.
-- Community content, including posts, group activity, accountability interactions, reports, and blocked users.
-- Technical data needed to sync app state, support widgets, and operate Firebase services.
+### Account information
 
-## How We Use Data
+We collect the information needed to create and secure your account, including your Firebase user ID, email address, display name, and sign-in provider.
 
-We use data to personalize daily missions and devotionals, sync your progress across devices, power accountability features, maintain community safety, respond to support requests, and improve app reliability.
+### Personalization information
+
+We collect the choices you provide during onboarding and while using the app, including your age group, goals, main struggle, streak goal, notification preferences, and app-blocking preference. Because these choices can reflect religious beliefs or personal struggles, we treat them as sensitive information.
+
+### Activity and content
+
+We collect missions, devotionals, habit check-ins, prayer activity, journal entries, reflections, feedback, progress, streaks, OVR history, saved scripture, and achievement progress so the app can provide its core features and synchronize them across devices.
+
+### Community and safety information
+
+If you use Community, we collect content and activity needed to operate groups, accountability partnerships, posts, encouragements, reports, blocked-user lists, and moderation controls.
+
+### Technical information
+
+Firebase services may process device, app-instance, diagnostic, crash, security, and request information needed to authenticate users, prevent abuse, synchronize data, operate cloud functions, and diagnose failures. The Climb does not use this information for advertising or cross-app tracking.
+
+## Screen Time and App Blocking
+
+The Climb uses Apple Family Controls, Device Activity, and Managed Settings APIs only after you grant permission. Your selected apps, categories, and websites are represented by Apple-provided opaque tokens and are stored in the app's local App Group so blocking can continue during a mission. The Climb does not receive a readable list of your installed apps and does not upload your Screen Time selection to Firebase.
+
+The optional adult-web-content filter is enforced by Apple's Managed Settings framework on the device. The Climb does not receive or store your browsing history.
+
+## How We Use Information
+
+We use information to:
+
+- authenticate your account and synchronize app data;
+- personalize missions, devotionals, habits, and first-week guidance;
+- operate app blocking, timers, Live Activities, widgets, notifications, and recovery flows;
+- calculate streaks, OVR, progress, and achievements;
+- provide groups, accountability partnerships, leaderboards, and community safety tools;
+- detect abuse, enforce rate limits, investigate reports, and protect the service; and
+- diagnose crashes and improve reliability.
 
 ## AI Features
 
-When AI generation is enabled, profile context and recent reflection history may be sent to a secure Firebase Cloud Function to generate daily missions and devotionals. OpenAI API keys are stored server-side only and are not included in the iOS app.
+When AI generation is enabled, limited profile context, onboarding choices, recent mission history, and recent reflection signals may be sent to a Firebase Cloud Function and then to OpenAI to generate a daily mission and devotional. The Climb limits and sanitizes this payload before transmission. OpenAI API credentials remain on the server and are never included in the iOS app.
 
-## Community Safety
+Do not include information in reflections or community content that you do not want processed for these features.
 
-Users can report posts, block users, and delete their own posts. Reports may include the reported post, the reported user ID, the reporting user ID, the reason, and the report time.
+## Service Providers
 
-## Account Deletion
+The Climb relies on service providers that process information on our behalf:
 
-You can delete your account in the Profile tab. Deletion removes your account and synced app data tied to your user ID, including profile data, missions, devotionals, journal entries, progress, posts, reports, and leaderboard records.
+- Google Firebase for authentication, database synchronization, Cloud Functions, App Check, and crash diagnostics;
+- Google Sign-In and Sign in with Apple when you choose those login methods; and
+- OpenAI for daily-plan generation.
+
+These providers process information under their own terms and privacy commitments. The Climb does not sell personal information, show third-party advertising, or use personal information for cross-app tracking.
+
+## Data Retention and Deletion
+
+We keep account and app data while your account is active and as needed to operate and secure the service. Safety reports, security logs, and diagnostic records may be retained for a limited period when needed to prevent abuse, meet legal obligations, or investigate incidents.
+
+You can delete your account from Profile > Account > Delete Account. The deletion flow removes your Firebase Authentication account and active Firestore data tied to your user ID, including profile, mission, devotional, journal, progress, community, leaderboard, and AI-plan records. Limited records may remain temporarily in provider backups or security logs until they expire through normal retention processes.
+
+## Your Choices
+
+You can:
+
+- edit profile and notification settings in the app;
+- deny or revoke notification and Screen Time permissions in iOS Settings;
+- leave groups, end accountability links, block users, and delete your own posts;
+- sign out without deleting your cloud account; and
+- permanently delete your account and synced data in the app.
+
+For an access, correction, deletion, or privacy question that cannot be completed in the app, contact support@theclimbapp.org.
+
+## Security
+
+The Climb uses Firebase Authentication, App Check, restricted Firestore rules, server-owned scoring and community writes, encrypted network connections, rate limits, and platform security controls. No service can guarantee absolute security, so protect your sign-in credentials and contact us if you believe your account has been compromised.
+
+## Age Requirement
+
+The Climb is intended for users age 13 and older. We do not knowingly allow children under 13 to create accounts. If you believe a child under 13 has provided information, contact support@theclimbapp.org so it can be removed.
+
+## Changes
+
+We may update this policy as the app or legal requirements change. The current version and its effective date will remain available at https://theclimbapp.org/privacy.
 
 ## Contact
 
-For privacy questions or support, contact support@theclimbapp.org.
+For privacy, support, or community-safety questions, contact support@theclimbapp.org.

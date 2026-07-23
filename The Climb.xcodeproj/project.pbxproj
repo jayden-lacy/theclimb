@@ -51,6 +51,7 @@
 		B00000000000000000000061 /* The ClimbDeviceActivityMonitor.appex in Embed Foundation Extensions */ = {isa = PBXBuildFile; fileRef = P00000000000000000000005 /* The ClimbDeviceActivityMonitor.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
 		B00000000000000000000062 /* PrivacyInfo.xcprivacy in Resources */ = {isa = PBXBuildFile; fileRef = F00000000000000000000063 /* PrivacyInfo.xcprivacy */; };
 		B00000000000000000000063 /* PrivacyInfo.xcprivacy in Resources */ = {isa = PBXBuildFile; fileRef = F00000000000000000000064 /* PrivacyInfo.xcprivacy */; };
+		E10000000000000000000001 /* ClimbCoreTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = E10000000000000000000002 /* ClimbCoreTests.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -81,6 +82,13 @@
 			proxyType = 1;
 			remoteGlobalIDString = A00000000000000000000014;
 			remoteInfo = TheClimbDeviceActivityMonitor;
+		};
+		E1000000000000000000000C /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = A00000000000000000000001 /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = A00000000000000000000010;
+			remoteInfo = "The Climb";
 		};
 /* End PBXContainerItemProxy section */
 
@@ -149,6 +157,8 @@
 		F00000000000000000000062 /* TheClimbDeviceActivityMonitor.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = TheClimbDeviceActivityMonitor.entitlements; sourceTree = "<group>"; };
 		F00000000000000000000063 /* PrivacyInfo.xcprivacy */ = {isa = PBXFileReference; lastKnownFileType = text.xml; path = PrivacyInfo.xcprivacy; sourceTree = "<group>"; };
 		F00000000000000000000064 /* PrivacyInfo.xcprivacy */ = {isa = PBXFileReference; lastKnownFileType = text.xml; path = PrivacyInfo.xcprivacy; sourceTree = "<group>"; };
+		E10000000000000000000002 /* ClimbCoreTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ClimbCoreTests.swift; sourceTree = "<group>"; };
+		E10000000000000000000003 /* TheClimbTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = TheClimbTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		P00000000000000000000001 /* The Climb: Daily Faith.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = "The Climb: Daily Faith.app"; sourceTree = BUILT_PRODUCTS_DIR; };
 		P00000000000000000000002 /* The ClimbWidget.appex */ = {isa = PBXFileReference; explicitFileType = "wrapper.app-extension"; includeInIndex = 0; path = "The ClimbWidget.appex"; sourceTree = BUILT_PRODUCTS_DIR; };
 		P00000000000000000000003 /* The ClimbShieldConfiguration.appex */ = {isa = PBXFileReference; explicitFileType = "wrapper.app-extension"; includeInIndex = 0; path = "The ClimbShieldConfiguration.appex"; sourceTree = BUILT_PRODUCTS_DIR; };
@@ -198,6 +208,13 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
+		E10000000000000000000007 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 /* End PBXFrameworksBuildPhase section */
 
 /* Begin PBXGroup section */
@@ -210,6 +227,7 @@
 				G00000000000000000000005 /* TheClimbShieldAction */,
 				G00000000000000000000006 /* TheClimbDeviceActivityMonitor */,
 				G00000000000000000000003 /* TheClimbWatch Watch App */,
+				E10000000000000000000004 /* TheClimbTests */,
 				A00000000000000000000003 /* Products */,
 			);
 			sourceTree = "<group>";
@@ -222,6 +240,7 @@
 				P00000000000000000000003 /* The ClimbShieldConfiguration.appex */,
 				P00000000000000000000004 /* The ClimbShieldAction.appex */,
 				P00000000000000000000005 /* The ClimbDeviceActivityMonitor.appex */,
+				E10000000000000000000003 /* TheClimbTests.xctest */,
 			);
 			name = Products;
 			sourceTree = "<group>";
@@ -313,6 +332,14 @@
 				F00000000000000000000064 /* PrivacyInfo.xcprivacy */,
 			);
 			path = TheClimbDeviceActivityMonitor;
+			sourceTree = "<group>";
+		};
+		E10000000000000000000004 /* TheClimbTests */ = {
+			isa = PBXGroup;
+			children = (
+				E10000000000000000000002 /* ClimbCoreTests.swift */,
+			);
+			path = TheClimbTests;
 			sourceTree = "<group>";
 		};
 /* End PBXGroup section */
@@ -417,6 +444,24 @@
 			productReference = P00000000000000000000005 /* The ClimbDeviceActivityMonitor.appex */;
 			productType = "com.apple.product-type.app-extension";
 		};
+		E10000000000000000000005 /* TheClimbTests */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = E1000000000000000000000B /* Build configuration list for PBXNativeTarget "TheClimbTests" */;
+			buildPhases = (
+				E10000000000000000000006 /* Sources */,
+				E10000000000000000000007 /* Frameworks */,
+				E10000000000000000000008 /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+				E1000000000000000000000D /* PBXTargetDependency */,
+			);
+			name = TheClimbTests;
+			productName = TheClimbTests;
+			productReference = E10000000000000000000003 /* TheClimbTests.xctest */;
+			productType = "com.apple.product-type.bundle.unit-test";
+		};
 /* End PBXNativeTarget section */
 
 /* Begin PBXProject section */
@@ -442,6 +487,10 @@
 					A00000000000000000000014 = {
 						CreatedOnToolsVersion = 16.0;
 					};
+					E10000000000000000000005 = {
+						CreatedOnToolsVersion = 26.0;
+						TestTargetID = A00000000000000000000010;
+					};
 				};
 			};
 			buildConfigurationList = A00000000000000000000033 /* Build configuration list for PBXProject "The Climb" */;
@@ -466,6 +515,7 @@
 				A00000000000000000000012 /* The ClimbShieldConfiguration */,
 				A00000000000000000000013 /* The ClimbShieldAction */,
 				A00000000000000000000014 /* The ClimbDeviceActivityMonitor */,
+				E10000000000000000000005 /* TheClimbTests */,
 			);
 		};
 /* End PBXProject section */
@@ -511,6 +561,13 @@
 			buildActionMask = 2147483647;
 			files = (
 				B00000000000000000000063 /* PrivacyInfo.xcprivacy in Resources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		E10000000000000000000008 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -606,6 +663,14 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
+		E10000000000000000000006 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				E10000000000000000000001 /* ClimbCoreTests.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 /* End PBXSourcesBuildPhase section */
 
 /* Begin PBXTargetDependency section */
@@ -628,6 +693,11 @@
 			isa = PBXTargetDependency;
 			target = A00000000000000000000014 /* The ClimbDeviceActivityMonitor */;
 			targetProxy = C00000000000000000000004 /* PBXContainerItemProxy */;
+		};
+		E1000000000000000000000D /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = A00000000000000000000010 /* The Climb */;
+			targetProxy = E1000000000000000000000C /* PBXContainerItemProxy */;
 		};
 /* End PBXTargetDependency section */
 
@@ -1039,6 +1109,52 @@
 			};
 			name = Release;
 		};
+		E10000000000000000000009 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				BUNDLE_LOADER = "$(TEST_HOST)";
+				CODE_SIGN_STYLE = Automatic;
+				DEVELOPMENT_TEAM = BLH227B4U7;
+				GENERATE_INFOPLIST_FILE = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@loader_path/Frameworks",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = com.jaydenlacy.theclimb.tests;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SWIFT_EMIT_LOC_STRINGS = NO;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = 1;
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/The Climb: Daily Faith.app/$(BUNDLE_EXECUTABLE_FOLDER_PATH)/The Climb: Daily Faith";
+				TEST_TARGET_NAME = "The Climb";
+			};
+			name = Debug;
+		};
+		E1000000000000000000000A /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				BUNDLE_LOADER = "$(TEST_HOST)";
+				CODE_SIGN_STYLE = Automatic;
+				DEVELOPMENT_TEAM = BLH227B4U7;
+				GENERATE_INFOPLIST_FILE = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@loader_path/Frameworks",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = com.jaydenlacy.theclimb.tests;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SWIFT_EMIT_LOC_STRINGS = NO;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = 1;
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/The Climb: Daily Faith.app/$(BUNDLE_EXECUTABLE_FOLDER_PATH)/The Climb: Daily Faith";
+				TEST_TARGET_NAME = "The Climb";
+			};
+			name = Release;
+		};
 /* End XCBuildConfiguration section */
 
 /* Begin XCConfigurationList section */
@@ -1092,6 +1208,15 @@
 			buildConfigurations = (
 				A00000000000000000000064 /* Debug */,
 				A00000000000000000000065 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		E1000000000000000000000B /* Build configuration list for PBXNativeTarget "TheClimbTests" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				E10000000000000000000009 /* Debug */,
+				E1000000000000000000000A /* Release */,
 			);
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Release;
