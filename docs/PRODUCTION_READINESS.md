@@ -6,18 +6,21 @@ Current 1.0 release decision: ship iPhone-only and submit iPhone screenshots onl
 
 ## Verified Local Baseline
 
-Verified on July 23, 2026:
+Verified on July 27, 2026:
 
-- Xcode 26.6 recognizes the app, widget, shield configuration, shield action, DeviceActivity monitor, and native unit-test targets.
-- The Debug simulator build and native `ClimbCoreTests` suite pass.
+- Xcode 26.6 recognizes the iPhone app, widget, shield configuration, shield action, DeviceActivity monitor, and native unit-test targets. The release intentionally contains no watchOS target.
+- Debug and optimized Release builds succeed, static analysis passes, and all six native `ClimbCoreTests` pass.
 - Firebase iOS and Google Sign-In packages resolve at their pinned versions.
 - The main app, widget, shield configuration, and DeviceActivity monitor privacy manifests are tracked and included in their target resources.
 - The Shield Action extension does not currently access App Group `UserDefaults` or another required-reason API. Add a manifest to that target if its implementation changes.
 - Cloud Functions compile and the offline daily-plan validation script passes.
-- Firestore rules/indexes and all 16 callable functions were deployed successfully to `the-climb0` on July 23, 2026. Post-deploy unauthenticated AI and community smoke requests returned HTTP 401.
+- Firestore rules/indexes and all 16 second-generation functions were deployed successfully to `the-climb0` on July 27, 2026. Post-deploy unauthenticated AI and community smoke requests returned HTTP 401.
 - Community posts, groups, leaderboard scores, mission scoring, and account deletion use authenticated callable backend functions. Firestore client writes to server-owned collections are denied.
 - The current codebase uses local World English Bible text, authenticated AI generation, bounded retries/timeouts, same-day caching, per-user rate limits, and deterministic fallback plans.
-- A signed arm64 archive succeeds and contains valid signatures, all four extensions, expected privacy manifests, and app/extension dSYMs. App Store export remains blocked until the expired Apple account session is refreshed and an iOS Distribution certificate is available.
+- `https://theclimbapp.org`, `/privacy`, `/terms`, `/download`, and `/.well-known/apple-app-site-association` were deployed through Cloudflare and returned HTTP 200.
+- A signed arm64 archive succeeds and contains valid signatures, all four extensions, expected privacy manifests, and app/extension dSYMs.
+- iPhone build `1.0 (14)` was accepted by App Store Connect for processing on July 27, 2026. Firebase binary dSYM upload warnings remain non-blocking.
+- Three current iPhone screenshots were regenerated from the release candidate at exactly 1284 x 2778 in `App Store Previews - 1284x2778`.
 
 ## Apple Configuration
 
@@ -46,7 +49,7 @@ Verified on July 23, 2026:
 - Keep `GoogleService-Info.plist` in the main app target only.
 - Enable Email/Password and Google providers in Firebase Auth.
 - Deploy the `generateDailyPlan` Cloud Function after setting `OPENAI_API_KEY` as a Firebase secret.
-- Keep Firebase App Check enabled for the iOS app. Debug builds use the Debug provider; Release builds currently use DeviceCheck. Register simulator debug tokens only in development, and verify a release-signed physical-device request before enforcing App Check for all users. App Attest is a stronger future provider but requires matching Firebase Console registration before changing the client.
+- Keep Firebase App Check enabled for the iOS app. Debug builds use the Debug provider; Release builds currently use DeviceCheck. Production enforcement is enabled and rejects requests without a valid token. Register simulator debug tokens only in development, and verify a release-signed physical-device request before public launch. App Attest is a stronger future provider but requires matching Firebase Console registration before changing the client.
 - Deploy `generateDailyPlan` with these environment values when App Check is configured. Start from `firebase/functions/.env.example`:
   - `ENFORCE_APP_CHECK=true`
   - `AI_DAILY_LIMIT_PER_USER=6` or another low launch-safe number
@@ -90,9 +93,9 @@ Verified on July 23, 2026:
 - Background and foreground the app; verify missed-day streaks recalculate and persist.
 - Add a community post, join a group, check in with a partner, and tap Amen.
 - Report a community post, block a user, delete your own post, and confirm filtered language cannot be posted.
-- Host the Privacy Policy and Terms of Service at public URLs before App Store submission, then use those URLs in App Store Connect.
-- Confirm `https://theclimbapp.org/download` returns a public page or App Store redirect and `https://theclimbapp.org/.well-known/apple-app-site-association` returns JSON with HTTP 200. The local Cloudflare Worker source supports both routes, but production must be redeployed and checked.
-- Regenerate the three App Store screenshots from the final release build. Do not reuse a screenshot where Home content is clipped beneath the tab bar.
+- Confirm App Store Connect uses the live `https://theclimbapp.org/privacy` and `https://theclimbapp.org/terms` URLs.
+- Confirm `https://theclimbapp.org/download` and `https://theclimbapp.org/.well-known/apple-app-site-association` continue to return HTTP 200 immediately before submission.
+- Upload the three current files from `App Store Previews - 1284x2778`. They are 1284 x 2778 and do not contain the previous Home/tab-bar clipping.
 - Add the widget on a physical iPhone and verify mission, streak, and OVR are read from the App Group after app relaunch and mission completion.
 - Test on a physical iPhone before TestFlight. Simulator is not enough for launch.
 
@@ -105,7 +108,7 @@ Verified on July 23, 2026:
 - Apple login: first sign-in, returning sign-in, sign out, delete account, recent-login-required delete flow.
 - Widgets: add widget on a physical iPhone, verify mission/streak/OVR data, complete mission in app, confirm widget refreshes from App Group state.
 - Firebase save/load: install fresh, sign in, complete onboarding, force quit, relaunch, sign in on another device, confirm profile/mission/devotional/journal/progress reload.
-- App Check: with enforcement off, confirm AI works and debug token appears; register the debug token for development, configure the release provider for `com.jaydenlacy.theclimb`, turn enforcement on in a test environment, and confirm AI still works from a release-signed physical device build.
+- App Check: register simulator debug tokens only for development, then confirm AI works from build 14 or a later release-signed physical-device build while production enforcement remains enabled.
 - Accessibility: verify Dynamic Type through at least Accessibility Large, VoiceOver order and labels, Reduce Motion behavior, sufficient contrast, and 44-point minimum interactive targets.
 - Network resilience: test launch, cached Home content, mission completion, and sign-out while offline or on an unstable connection.
 
@@ -115,9 +118,9 @@ Verified on July 23, 2026:
 - The DeviceActivity monitor bundle ID `com.jaydenlacy.theclimb.deviceactivitymonitor` must be registered and entitled with the rest of the Screen Time bundle set.
 - Server-side daily pregeneration is not required for launch; the app currently generates the next plan when the user opens the app on a new day.
 - Website `/download` redirects to the App Store when the Cloudflare Worker `APP_STORE_URL` environment variable is set to a valid Apple URL. Without that variable, it serves a public fallback download page instead of an internal setup error.
-- The local website worker includes the correct `/download` fallback and associated-domain file, but the live worker is still stale until Cloudflare authentication and deployment are completed.
-- Existing App Store screenshots are correctly sized but must be regenerated after final visual QA because the current Home preview contains tab-bar clipping.
-- App Store distribution export currently requires signing back into the Apple account in Xcode and allowing Xcode to create or download an iOS Distribution certificate. The source archive itself is valid; do not upload its development-signed app directly.
+- Build 14 must finish App Store Connect processing before it can be selected for review. If App Store Connect rejects the processed build, increment `CURRENT_PROJECT_VERSION`, archive again, and upload a new build.
+- The remaining launch gate is a real-device pass for Family Controls, DeviceActivity, custom shields, notifications, widgets, release App Check, Google/Apple sign-in, and account deletion. Simulator evidence is not sufficient for these platform integrations.
+- App Store Connect privacy, age-rating, encryption, content-rights, support URL, review notes, and build-selection fields still require final confirmation before pressing Submit for Review.
 - Firebase's current Google Cloud dependency chain reports seven moderate transitive `uuid` advisories and no high or critical advisories. The project is on current stable Firebase Admin/Functions releases; do not use npm's suggested forced downgrade.
 
 ## Official References

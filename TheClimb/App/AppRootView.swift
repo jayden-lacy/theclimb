@@ -78,6 +78,11 @@ struct AppRootView: View {
         .preferredColorScheme(.dark)
         .task {
             await viewModel.load()
+#if DEBUG
+            if let screenshotTab = Self.debugScreenshotTab {
+                selectedTab = screenshotTab
+            }
+#endif
             handleShortcutDestinationIfPossible()
             await handlePendingInviteIfPossible()
         }
@@ -166,6 +171,17 @@ struct AppRootView: View {
             }
         )
     }
+
+#if DEBUG
+    private static var debugScreenshotTab: AppTab? {
+        let arguments = ProcessInfo.processInfo.arguments
+        guard let flagIndex = arguments.firstIndex(of: "-screenshotTab"),
+              arguments.indices.contains(flagIndex + 1) else {
+            return nil
+        }
+        return ClimbInviteLink.tab(from: arguments[flagIndex + 1])
+    }
+#endif
 }
 
 private enum ClimbInviteLink: Equatable {
@@ -244,7 +260,7 @@ private enum ClimbInviteLink: Equatable {
         return tab(from: rawValue)
     }
 
-    private static func tab(from value: String) -> AppTab? {
+    fileprivate static func tab(from value: String) -> AppTab? {
         switch value.lowercased() {
         case "home", "mission", "focus", "block", "shield":
             .home
