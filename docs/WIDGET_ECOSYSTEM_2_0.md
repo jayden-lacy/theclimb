@@ -1,6 +1,6 @@
 # The Climb Widget Ecosystem 2.0
 
-This is the product and engineering direction for The Climb's system surfaces: Home Screen widgets, Lock Screen widgets, StandBy, Live Activities, Dynamic Island, Apple Watch complications, Smart Stack, Siri, Shortcuts, and App Intents.
+This is the product and engineering direction for The Climb's system surfaces: Home Screen widgets, Lock Screen widgets, StandBy, Live Activities, Dynamic Island, Smart Stack, Siri, Shortcuts, and App Intents.
 
 The goal is not to show more data. The goal is to make the next faithful action obvious in under one second.
 
@@ -35,7 +35,6 @@ The Climb should behave like a quiet spiritual coach that lives across the user'
 
 - If no mission is active, widgets pivot to "protect the streak" messaging.
 - If a focus mission is active, Live Activity and Dynamic Island own the lock screen.
-- Apple Watch complication compresses to timer plus protection state.
 
 ### Evening
 
@@ -88,10 +87,10 @@ The following 40 concepts are intentionally not variations of one widget. They c
 | 32 | Recovery Coach | Large Home | Failure reason + next mission | User failed yesterday | Reduces shame, increases return | Tap opens recovery | Static widget |
 | 33 | Extra-Large Command Center | Extra Large | Full day plan | iPad/large widget surfaces | One glance replaces app opening | Tap zones | System extraLarge |
 | 34 | Extra-Large Weekly Review | Extra Large | Week path + Word archive | Weekly | Spiritual/productivity recap | Tap report | System extraLarge |
-| 35 | Watch Corner Streak | Watch Complication | Streak ring | Always | Very glanceable | Tap watch app | Accessory circular |
-| 36 | Watch Mission Timer | Watch Complication | Active focus countdown | Mission active | Best wrist use case | Tap mission | Timeline + Live Activity handoff |
-| 37 | Watch Word Inline | Watch Complication | Short verse reference | Morning | Low-friction scripture | Tap reader | Accessory inline |
-| 38 | Watch Partner Dot | Watch Complication | Partner waiting state | Partner waiting | Human accountability | Tap check-in | Accessory circular |
+| 35 | Lock Screen Streak Halo | Lock Screen Accessory | Streak ring and safe/risk state | Always | One-glance momentum | Tap progress | Accessory circular |
+| 36 | StandBy Focus Timer | StandBy | Active focus countdown and protection state | Mission active | Useful across the room | Tap mission | Live Activity timer |
+| 37 | Lock Screen Word Inline | Lock Screen Accessory | Short verse reference | Morning | Low-friction scripture | Tap reader | Accessory inline |
+| 38 | Partner Check-In Accessory | Lock Screen Accessory | Partner waiting state | Partner waiting | Human accountability | Tap check-in | Accessory rectangular |
 | 39 | Siri Start Mission | Siri/Shortcut | Begin today's mission | Suggested after reminder | Hands-free start | Voice starts/open app | App Intent |
 | 40 | Siri Quick Prayer | Siri/Shortcut | Start 2-minute prayer | Suggested during stress windows | Real spiritual utility | Voice starts timer | App Intent |
 
@@ -165,7 +164,6 @@ Reflection is next
 - Widget App Intents perform only small local mutations, then reload timelines.
 - ActivityKit state is limited to active-session data: mission id, title, start/end dates, focus label, and blocking state.
 - Siri/App Shortcuts should expose three first actions: start mission, open Daily Word, and start prayer.
-- Future watch complications should use the same snapshot fields and avoid duplicating business logic in the Watch app.
 
 ## Critique Filter
 
@@ -195,6 +193,6 @@ Rejected ideas:
 
 ### Phase 3
 
-- Add Watch complications backed by the same snapshot.
 - Add prayer/reflection Live Activities.
+- Add Control Center focus and prayer controls.
 - Add real widget previews and screenshot automation for App Store media.

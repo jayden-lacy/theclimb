@@ -104,7 +104,6 @@ Verified on July 23, 2026:
 - Google login: first sign-in, returning sign-in, sign out, delete account.
 - Apple login: first sign-in, returning sign-in, sign out, delete account, recent-login-required delete flow.
 - Widgets: add widget on a physical iPhone, verify mission/streak/OVR data, complete mission in app, confirm widget refreshes from App Group state.
-- Watch: do not market or submit Watch screenshots until a real Watch target is present in the Xcode project and paired-device sync is implemented and verified.
 - Firebase save/load: install fresh, sign in, complete onboarding, force quit, relaunch, sign in on another device, confirm profile/mission/devotional/journal/progress reload.
 - App Check: with enforcement off, confirm AI works and debug token appears; register the debug token for development, configure the release provider for `com.jaydenlacy.theclimb`, turn enforcement on in a test environment, and confirm AI still works from a release-signed physical device build.
 - Accessibility: verify Dynamic Type through at least Accessibility Large, VoiceOver order and labels, Reduce Motion behavior, sufficient contrast, and 44-point minimum interactive targets.
@@ -115,7 +114,6 @@ Verified on July 23, 2026:
 - Real Screen Time app shielding requires the approved Apple Family Controls capability; the app-selection flow and custom shield extensions are implemented.
 - The DeviceActivity monitor bundle ID `com.jaydenlacy.theclimb.deviceactivitymonitor` must be registered and entitled with the rest of the Screen Time bundle set.
 - Server-side daily pregeneration is not required for launch; the app currently generates the next plan when the user opens the app on a new day.
-- Watch source files exist in the repository, but no Watch native target is registered in the Xcode project. Do not advertise Apple Watch support until the target, archive, screenshots, and paired-device sync are real.
 - Website `/download` redirects to the App Store when the Cloudflare Worker `APP_STORE_URL` environment variable is set to a valid Apple URL. Without that variable, it serves a public fallback download page instead of an internal setup error.
 - The local website worker includes the correct `/download` fallback and associated-domain file, but the live worker is still stale until Cloudflare authentication and deployment are completed.
 - Existing App Store screenshots are correctly sized but must be regenerated after final visual QA because the current Home preview contains tab-bar clipping.

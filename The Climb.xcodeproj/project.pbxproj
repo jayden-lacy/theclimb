@@ -143,9 +143,6 @@
 		F00000000000000000000032 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
 		F00000000000000000000033 /* TheClimbWidget.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = TheClimbWidget.entitlements; sourceTree = "<group>"; };
 		F00000000000000000000034 /* PrivacyInfo.xcprivacy */ = {isa = PBXFileReference; lastKnownFileType = text.xml; path = PrivacyInfo.xcprivacy; sourceTree = "<group>"; };
-		F00000000000000000000040 /* TheClimbWatchApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TheClimbWatchApp.swift; sourceTree = "<group>"; };
-		F00000000000000000000041 /* WatchMissionView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WatchMissionView.swift; sourceTree = "<group>"; };
-		F00000000000000000000042 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
 		F00000000000000000000050 /* ShieldConfigurationExtension.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ShieldConfigurationExtension.swift; sourceTree = "<group>"; };
 		F00000000000000000000051 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
 		F00000000000000000000052 /* TheClimbShieldConfiguration.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = TheClimbShieldConfiguration.entitlements; sourceTree = "<group>"; };
@@ -226,7 +223,6 @@
 				G00000000000000000000004 /* TheClimbShieldConfiguration */,
 				G00000000000000000000005 /* TheClimbShieldAction */,
 				G00000000000000000000006 /* TheClimbDeviceActivityMonitor */,
-				G00000000000000000000003 /* TheClimbWatch Watch App */,
 				E10000000000000000000004 /* TheClimbTests */,
 				A00000000000000000000003 /* Products */,
 			);
@@ -290,16 +286,6 @@
 				F00000000000000000000032 /* Info.plist */,
 			);
 			path = TheClimbWidget;
-			sourceTree = "<group>";
-		};
-		G00000000000000000000003 /* TheClimbWatch Watch App */ = {
-			isa = PBXGroup;
-			children = (
-				F00000000000000000000040 /* TheClimbWatchApp.swift */,
-				F00000000000000000000041 /* WatchMissionView.swift */,
-				F00000000000000000000042 /* Info.plist */,
-			);
-			path = "TheClimbWatch Watch App";
 			sourceTree = "<group>";
 		};
 		G00000000000000000000004 /* TheClimbShieldConfiguration */ = {
@@ -708,8 +694,9 @@
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				CODE_SIGN_ENTITLEMENTS = TheClimb/TheClimb.entitlements;
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 5;
+				CURRENT_PROJECT_VERSION = 6;
 				DEBUG_INFORMATION_FORMAT = "dwarf-with-dsym";
+				DEVELOPMENT_TEAM = BLH227B4U7;
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = NO;
 				INFOPLIST_FILE = TheClimb/Info.plist;
@@ -742,8 +729,9 @@
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				CODE_SIGN_ENTITLEMENTS = TheClimb/TheClimb.entitlements;
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 5;
+				CURRENT_PROJECT_VERSION = 6;
 				DEBUG_INFORMATION_FORMAT = "dwarf-with-dsym";
+				DEVELOPMENT_TEAM = BLH227B4U7;
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = NO;
 				INFOPLIST_FILE = TheClimb/Info.plist;
@@ -897,7 +885,7 @@
 				APPLICATION_EXTENSION_API_ONLY = YES;
 				CODE_SIGN_ENTITLEMENTS = TheClimbWidget/TheClimbWidget.entitlements;
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 5;
+				CURRENT_PROJECT_VERSION = 6;
 				GENERATE_INFOPLIST_FILE = NO;
 				INFOPLIST_FILE = TheClimbWidget/Info.plist;
 				INFOPLIST_KEY_CFBundleDisplayName = "The Climb";
@@ -925,7 +913,7 @@
 				APPLICATION_EXTENSION_API_ONLY = YES;
 				CODE_SIGN_ENTITLEMENTS = TheClimbWidget/TheClimbWidget.entitlements;
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 5;
+				CURRENT_PROJECT_VERSION = 6;
 				GENERATE_INFOPLIST_FILE = NO;
 				INFOPLIST_FILE = TheClimbWidget/Info.plist;
 				INFOPLIST_KEY_CFBundleDisplayName = "The Climb";
@@ -953,7 +941,7 @@
 				APPLICATION_EXTENSION_API_ONLY = YES;
 				CODE_SIGN_ENTITLEMENTS = TheClimbShieldConfiguration/TheClimbShieldConfiguration.entitlements;
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 5;
+				CURRENT_PROJECT_VERSION = 6;
 				GENERATE_INFOPLIST_FILE = NO;
 				INFOPLIST_FILE = TheClimbShieldConfiguration/Info.plist;
 				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
@@ -980,7 +968,7 @@
 				APPLICATION_EXTENSION_API_ONLY = YES;
 				CODE_SIGN_ENTITLEMENTS = TheClimbShieldConfiguration/TheClimbShieldConfiguration.entitlements;
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 5;
+				CURRENT_PROJECT_VERSION = 6;
 				GENERATE_INFOPLIST_FILE = NO;
 				INFOPLIST_FILE = TheClimbShieldConfiguration/Info.plist;
 				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
@@ -1007,7 +995,7 @@
 				APPLICATION_EXTENSION_API_ONLY = YES;
 				CODE_SIGN_ENTITLEMENTS = TheClimbShieldAction/TheClimbShieldAction.entitlements;
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 5;
+				CURRENT_PROJECT_VERSION = 6;
 				GENERATE_INFOPLIST_FILE = NO;
 				INFOPLIST_FILE = TheClimbShieldAction/Info.plist;
 				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
@@ -1034,7 +1022,7 @@
 				APPLICATION_EXTENSION_API_ONLY = YES;
 				CODE_SIGN_ENTITLEMENTS = TheClimbShieldAction/TheClimbShieldAction.entitlements;
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 5;
+				CURRENT_PROJECT_VERSION = 6;
 				GENERATE_INFOPLIST_FILE = NO;
 				INFOPLIST_FILE = TheClimbShieldAction/Info.plist;
 				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
@@ -1061,7 +1049,7 @@
 				APPLICATION_EXTENSION_API_ONLY = YES;
 				CODE_SIGN_ENTITLEMENTS = TheClimbDeviceActivityMonitor/TheClimbDeviceActivityMonitor.entitlements;
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 5;
+				CURRENT_PROJECT_VERSION = 6;
 				GENERATE_INFOPLIST_FILE = NO;
 				INFOPLIST_FILE = TheClimbDeviceActivityMonitor/Info.plist;
 				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
@@ -1088,7 +1076,7 @@
 				APPLICATION_EXTENSION_API_ONLY = YES;
 				CODE_SIGN_ENTITLEMENTS = TheClimbDeviceActivityMonitor/TheClimbDeviceActivityMonitor.entitlements;
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 5;
+				CURRENT_PROJECT_VERSION = 6;
 				GENERATE_INFOPLIST_FILE = NO;
 				INFOPLIST_FILE = TheClimbDeviceActivityMonitor/Info.plist;
 				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
