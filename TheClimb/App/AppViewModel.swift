@@ -909,6 +909,10 @@ final class AppViewModel: ObservableObject {
             errorMessage = error.localizedDescription
         }
 
+        recordProtectedMissionIfAvailable(
+            mission,
+            outcome: .completed
+        )
         await focusService.stopFocus()
         await MissionLiveActivityService.end(missionID: missionID)
         focusState = .unavailable
@@ -950,6 +954,10 @@ final class AppViewModel: ObservableObject {
             errorMessage = error.localizedDescription
         }
 
+        recordProtectedMissionIfAvailable(
+            missions[missionIndex],
+            outcome: .interrupted
+        )
         await focusService.stopFocus()
         await MissionLiveActivityService.end(missionID: missionID)
         focusState = .unavailable
@@ -1593,6 +1601,7 @@ final class AppViewModel: ObservableObject {
             await focusService.stopFocus()
             await MissionLiveActivityService.end()
             await notificationScheduler.cancelMissionTimerEnded()
+            try? await AttentionAssistRuntimeService().clearStoredData()
             try FirebaseIntegration.signOut()
             try await repository.clearLocalSnapshot()
             apply(.empty)
@@ -1612,6 +1621,7 @@ final class AppViewModel: ObservableObject {
             await focusService.stopFocus()
             await MissionLiveActivityService.end()
             await notificationScheduler.cancelMissionTimerEnded()
+            try? await AttentionAssistRuntimeService().clearStoredData()
             try FirebaseIntegration.signOut()
             try await repository.clearLocalSnapshot()
             apply(.empty)
@@ -1632,6 +1642,7 @@ final class AppViewModel: ObservableObject {
             await focusService.stopFocus()
             await MissionLiveActivityService.end()
             await notificationScheduler.cancelMissionTimerEnded()
+            try? await AttentionAssistRuntimeService().clearStoredData()
             guard let userID = FirebaseIntegration.currentUserID else {
                 try await repository.clearLocalSnapshot()
                 apply(.empty)
@@ -1944,6 +1955,27 @@ final class AppViewModel: ObservableObject {
 
     private func endMissionMutation(_ missionID: String) {
         missionMutationsInFlight.remove(missionID)
+    }
+
+    private func recordProtectedMissionIfAvailable(
+        _ mission: Mission,
+        outcome: ProtectedTimeOutcome
+    ) {
+        guard mission.appBlockingEnabled,
+              focusState == .active,
+              let timing = ActiveFocusMissionTimerStore.timing(
+                for: mission.id
+              ) else {
+            return
+        }
+        try? FocusSessionRuntimeService().recordProtectedMission(
+            missionID: mission.id,
+            startedAt: timing.startedAt,
+            plannedEndAt: timing.plannedEndAt,
+            endedAt: min(Date(), timing.plannedEndAt),
+            outcome: outcome,
+            enforcementEvidence: .policyConfirmed
+        )
     }
 
     private func updateMission(_ id: String, mutation: (inout Mission) -> Void) {

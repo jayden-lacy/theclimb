@@ -37,6 +37,17 @@ extension FocusBlockingService {
 
 final class ScreenTimeFocusBlockingService: FocusBlockingService {
     private(set) var state: FocusModeState = .unavailable
+    private let authorizationProvider: ScreenTimeAuthorizationProviding
+    private let policyCoordinator: ScreenTimePolicyCoordinator
+
+    init(
+        authorizationProvider: ScreenTimeAuthorizationProviding = AppleScreenTimeAuthorizationProvider(),
+        policyCoordinator: ScreenTimePolicyCoordinator = ScreenTimePolicyCoordinator()
+    ) {
+        self.authorizationProvider = authorizationProvider
+        self.policyCoordinator = policyCoordinator
+    }
+
 #if canImport(FamilyControls) && os(iOS)
     @available(iOS 16.0, *)
     private var managedSettingsStore: ManagedSettingsStore {
@@ -45,40 +56,20 @@ final class ScreenTimeFocusBlockingService: FocusBlockingService {
 #endif
 
     func refreshAuthorizationStatus() async -> FocusModeState {
-#if canImport(FamilyControls) && os(iOS)
-        if #available(iOS 16.0, *) {
-            state = Self.focusState(for: AuthorizationCenter.shared.authorizationStatus)
-        } else {
-            state = .unavailable
-        }
-#else
-        state = .unavailable
-#endif
+        policyCoordinator.prepare()
+        state = Self.focusState(for: authorizationProvider.currentStatus())
         return state
     }
 
     func requestAuthorization() async -> FocusModeState {
-#if canImport(FamilyControls) && os(iOS)
-        guard #available(iOS 16.0, *) else {
-            state = .unavailable
-            return state
-        }
-
-        do {
-            try await AuthorizationCenter.shared.requestAuthorization(for: .individual)
-            state = Self.focusState(for: AuthorizationCenter.shared.authorizationStatus)
-        } catch {
-            let currentState = Self.focusState(for: AuthorizationCenter.shared.authorizationStatus)
-            state = currentState == .permissionRequired ? .denied : currentState
-        }
-#else
-        state = .simulated
-#endif
+        policyCoordinator.prepare()
+        state = Self.focusState(for: await authorizationProvider.requestAuthorization())
         return state
     }
 
     func startFocus(for mission: Mission, endsAt: Date) async -> FocusModeState {
         guard mission.appBlockingEnabled else {
+            policyCoordinator.deactivateMissionPolicies()
             MissionDeviceActivityMonitorScheduler.stop()
             state = .simulated
             return state
@@ -86,6 +77,7 @@ final class ScreenTimeFocusBlockingService: FocusBlockingService {
 
         let authorization = await requestAuthorization()
         guard authorization == .authorized else {
+            policyCoordinator.deactivateMissionPolicies()
             MissionDeviceActivityMonitorScheduler.stop()
             state = authorization
             return state
@@ -95,23 +87,33 @@ final class ScreenTimeFocusBlockingService: FocusBlockingService {
         if #available(iOS 16.0, *) {
             let selection = ScreenTimeActivitySelectionStore.loadSelection()
             guard selection.hasShieldableContent || FocusAdultContentFilterStore.isEnabled else {
+                policyCoordinator.deactivateMissionPolicies()
                 MissionDeviceActivityMonitorScheduler.stop()
                 state = .selectionRequired
                 return state
             }
 
             guard MissionDeviceActivityMonitorScheduler.start(until: endsAt) else {
+                policyCoordinator.deactivateMissionPolicies()
                 managedSettingsStore.clearAllSettings()
                 state = .simulated
                 return state
             }
 
             applyShield(for: selection)
+            policyCoordinator.activateMission(
+                missionID: mission.id,
+                endsAt: endsAt,
+                blocksAdultWebContent: FocusAdultContentFilterStore.isEnabled
+            )
+            ScreenTimeProtectionHealthStore.recordEnforcementHeartbeat()
             state = .active
             return state
         }
 #endif
 
+        policyCoordinator.deactivateMissionPolicies()
+        ScreenTimeProtectionHealthStore.recordEnforcementHeartbeat()
         MissionDeviceActivityMonitorScheduler.stop()
         state = .simulated
         return state
@@ -123,6 +125,7 @@ final class ScreenTimeFocusBlockingService: FocusBlockingService {
             managedSettingsStore.clearAllSettings()
         }
 #endif
+        policyCoordinator.deactivateMissionPolicies()
         MissionDeviceActivityMonitorScheduler.stop()
         if !preservingTimer {
             ActiveFocusMissionTimerStore.clear()
@@ -147,34 +150,22 @@ final class ScreenTimeFocusBlockingService: FocusBlockingService {
     private func selectedWebContentFilter(for selection: FamilyActivitySelection) -> WebContentSettings.FilterPolicy? {
         selection.webDomains.isEmpty ? nil : .specific(selection.webDomains)
     }
+#endif
 
-    @available(iOS 16.0, *)
-    private static func focusState(for authorizationStatus: AuthorizationStatus) -> FocusModeState {
-        if #available(iOS 26.4, *) {
-            switch authorizationStatus {
-            case .approved, .approvedWithDataAccess:
-                return .authorized
-            case .denied:
-                return .denied
-            case .notDetermined:
-                return .permissionRequired
-            @unknown default:
-                return .unavailable
-            }
-        }
-
+    private static func focusState(
+        for authorizationStatus: ScreenTimeAuthorizationState
+    ) -> FocusModeState {
         switch authorizationStatus {
-        case .approved:
+        case .approved, .approvedWithDataAccess:
             return .authorized
         case .denied:
             return .denied
         case .notDetermined:
             return .permissionRequired
-        default:
+        case .unsupported:
             return .unavailable
         }
     }
-#endif
 }
 
 #if canImport(DeviceActivity) && os(iOS)
@@ -234,6 +225,12 @@ struct ActiveFocusMissionEndHandoff: Equatable {
     let reason: String
 }
 
+struct ActiveFocusMissionTiming: Equatable {
+    let missionID: String
+    let startedAt: Date
+    let plannedEndAt: Date
+}
+
 enum ActiveFocusMissionTimerStore {
     private static let appGroupID = "group.com.jaydenlacy.theclimb"
     private static let missionIDKey = "the-climb.active-focus.mission-id.v1"
@@ -267,6 +264,22 @@ enum ActiveFocusMissionTimerStore {
         let timestamp = defaults.double(forKey: endsAtKey)
         guard timestamp > 0 else { return nil }
         return Date(timeIntervalSince1970: timestamp)
+    }
+
+    static func timing(for missionID: String) -> ActiveFocusMissionTiming? {
+        guard defaults.string(forKey: missionIDKey) == missionID else {
+            return nil
+        }
+        let startedTimestamp = defaults.double(forKey: startedAtKey)
+        let endsTimestamp = defaults.double(forKey: endsAtKey)
+        guard startedTimestamp > 0, endsTimestamp > startedTimestamp else {
+            return nil
+        }
+        return ActiveFocusMissionTiming(
+            missionID: missionID,
+            startedAt: Date(timeIntervalSince1970: startedTimestamp),
+            plannedEndAt: Date(timeIntervalSince1970: endsTimestamp)
+        )
     }
 
     static func consumeMonitorEndHandoff() -> ActiveFocusMissionEndHandoff? {

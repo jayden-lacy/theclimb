@@ -217,9 +217,11 @@ enum FirebaseIntegration {
 
     @MainActor
     static func signInWithApple() async throws -> FirebaseSignedInUser {
-        #if targetEnvironment(simulator)
-        if !ProcessInfo.processInfo.arguments.contains("-UseRealAppleSignIn") {
-            return try await signInWithAppleSimulatorAccount()
+        #if DEBUG && targetEnvironment(simulator)
+        if ProcessInfo.processInfo.environment[
+            "THE_CLIMB_SIMULATOR_APPLE_EMAIL"
+        ] != nil {
+            return try await signInWithAppleSimulatorCredentials()
         }
         #endif
 
@@ -269,18 +271,29 @@ enum FirebaseIntegration {
         )
     }
 
-    private static func signInWithAppleSimulatorAccount() async throws -> FirebaseSignedInUser {
-        let email = "apple.simulator@theclimb.local"
-        let displayName = "Apple Simulator"
+    private static func signInWithAppleSimulatorCredentials() async throws -> FirebaseSignedInUser {
+        let environment = ProcessInfo.processInfo.environment
+        guard let email = environment["THE_CLIMB_SIMULATOR_APPLE_EMAIL"],
+              let password = environment["THE_CLIMB_SIMULATOR_APPLE_PASSWORD"],
+              email.contains("@"),
+              password.count >= 6 else {
+            throw FirebaseIntegrationError.invalidAccountInfo
+        }
+        let displayName = environment[
+            "THE_CLIMB_SIMULATOR_APPLE_DISPLAY_NAME"
+        ] ?? "Apple Simulator"
         let user: FirebaseSignedInUser
         do {
             user = try await createUser(
                 email: email,
-                password: "AppleSimulator123!",
+                password: password,
                 displayName: displayName
             )
         } catch FirebaseIntegrationError.accountAlreadyExists {
-            user = try await signInExistingUser(email: email, password: "AppleSimulator123!")
+            user = try await signInExistingUser(
+                email: email,
+                password: password
+            )
         }
 
         return FirebaseSignedInUser(

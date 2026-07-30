@@ -7,19 +7,25 @@ import UIKit
 import UserNotifications
 
 final class AppDelegate: NSObject, UIApplicationDelegate {
-    func application(
-        _ application: UIApplication,
-        didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]? = nil
-    ) -> Bool {
+    private static var hasConfiguredFirebase = false
+
+    static func configureFirebaseIfNeeded() {
+        guard !hasConfiguredFirebase else { return }
+
         #if DEBUG
         AppCheck.setAppCheckProviderFactory(AppCheckDebugProviderFactory())
         #else
         AppCheck.setAppCheckProviderFactory(DeviceCheckProviderFactory())
         #endif
+        FirebaseApp.configure()
+        hasConfiguredFirebase = true
+    }
 
-        if FirebaseApp.app() == nil {
-            FirebaseApp.configure()
-        }
+    func application(
+        _ application: UIApplication,
+        didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]? = nil
+    ) -> Bool {
+        Self.configureFirebaseIfNeeded()
         AppAnalytics.record(.appLaunch)
         UNUserNotificationCenter.current().delegate = self
         return true
@@ -95,6 +101,10 @@ enum AppAnalytics {
 @main
 struct TheClimbApp: App {
     @UIApplicationDelegateAdaptor(AppDelegate.self) private var delegate
+
+    init() {
+        AppDelegate.configureFirebaseIfNeeded()
+    }
 
     var body: some Scene {
         WindowGroup {

@@ -14,12 +14,16 @@ struct GrowView: View {
     @State private var selectedPrayerMinutes = 5
     @State private var prayerRemainingSeconds = 5 * 60
     @State private var isPrayerRunning = false
+    @State private var isStartingProtectedFocus = false
+    @State private var focusErrorMessage: String?
+    @State private var showFocusSetup = false
     @AppStorage("climb.prayer.sessionsCompleted", store: GrowView.sharedPrayerDefaults) private var prayerSessionsCompleted = 0
     @AppStorage("climb.prayer.minutesCompleted", store: GrowView.sharedPrayerDefaults) private var prayerMinutesCompleted = 0
     @AppStorage("climb.dailyWordFeedbackDate") private var dailyWordFeedbackDate = ""
     @AppStorage("climb.dailyWordFeedbackValue") private var dailyWordFeedbackValue = ""
     @Namespace private var growNamespace
     private let prayerTimer = Timer.publish(every: 1, on: .main, in: .common).autoconnect()
+    private let focusRuntime = FocusSessionRuntimeService()
 
     var body: some View {
         ScreenContainer(title: "Grow") {
@@ -41,6 +45,23 @@ struct GrowView: View {
         .sheet(item: $selectedMemoryVerse) { verse in
             VerseMemoryReviewSheet(viewModel: viewModel, verse: verse)
                 .presentationDetents([.medium, .large])
+        }
+        .sheet(isPresented: $showFocusSetup) {
+            FocusControlCenterView(viewModel: viewModel)
+        }
+        .alert(
+            "Focus protection needs setup",
+            isPresented: Binding(
+                get: { focusErrorMessage != nil },
+                set: { if !$0 { focusErrorMessage = nil } }
+            )
+        ) {
+            Button("Open Focus Setup") {
+                showFocusSetup = true
+            }
+            Button("Not Now", role: .cancel) {}
+        } message: {
+            Text(focusErrorMessage ?? "")
         }
         .animation(ClimbMotion.focus, value: selectedSection)
         .onChange(of: selectedPrayerMinutes) { _, minutes in
@@ -166,6 +187,21 @@ struct GrowView: View {
             }
 
             Divider().overlay(Color.white.opacity(0.08))
+
+            PrimaryActionButton(
+                title: isStartingProtectedFocus
+                    ? "Starting protection"
+                    : "Protect 15 minutes",
+                systemImage: "shield.lefthalf.filled",
+                tint: .climbGreen,
+                isDisabled: isStartingProtectedFocus
+            ) {
+                startProtectedFocus(
+                    purpose: .bibleStudy,
+                    minutes: 15,
+                    beginPrayerTimer: false
+                )
+            }
 
             DailyWordFeedbackRow(
                 selected: dailyWordFeedback(for: devotional),
@@ -410,6 +446,23 @@ struct GrowView: View {
                     }
                 }
 
+                if !isPrayerRunning {
+                    SecondaryActionButton(
+                        title: isStartingProtectedFocus
+                            ? "Starting protection"
+                            : "Protect and Begin",
+                        systemImage: "shield.lefthalf.filled"
+                    ) {
+                        startProtectedFocus(
+                            purpose: .prayer,
+                            minutes: selectedPrayerMinutes,
+                            beginPrayerTimer: true
+                        )
+                    }
+                    .disabled(isStartingProtectedFocus)
+                    .opacity(isStartingProtectedFocus ? 0.55 : 1)
+                }
+
                 if isPrayerRunning || prayerRemainingSeconds < selectedPrayerMinutes * 60 {
                     SecondaryActionButton(title: "Finish Prayer", systemImage: "checkmark.circle") {
                         completePrayerSession()
@@ -602,6 +655,45 @@ struct GrowView: View {
         }
         clearSharedPrayerTimer()
         WidgetCenter.shared.reloadAllTimelines()
+    }
+
+    private func startProtectedFocus(
+        purpose: FocusPurpose,
+        minutes: Int,
+        beginPrayerTimer: Bool
+    ) {
+        guard !isStartingProtectedFocus else { return }
+        isStartingProtectedFocus = true
+        let request = FocusSessionRequest(
+            purpose: purpose,
+            customPurposeName: nil,
+            plannedDuration: TimeInterval(max(minutes, 1) * 60),
+            strictness: .intentional,
+            selectionReference: FocusSelectionReference(
+                rawValue: ScreenTimeSelectionReference.defaultSelection
+            ),
+            essentialAppsReference: nil,
+            blocksAdultWebContent: FocusAdultContentFilterStore.isEnabled
+        )
+
+        Task {
+            do {
+                _ = try await focusRuntime.start(request)
+                await MainActor.run {
+                    isStartingProtectedFocus = false
+                    if beginPrayerTimer, !isPrayerRunning {
+                        togglePrayerTimer()
+                    }
+                    HapticFeedback.success()
+                }
+            } catch {
+                await MainActor.run {
+                    isStartingProtectedFocus = false
+                    focusErrorMessage = error.localizedDescription
+                    HapticFeedback.impact(.medium)
+                }
+            }
+        }
     }
 
     private func dailyWordFeedback(for devotional: Devotional) -> DailyWordFeedbackOption? {
@@ -1518,6 +1610,8 @@ private struct HabitMetric: View {
 private struct HabitDetailSheet: View {
     @ObservedObject var viewModel: AppViewModel
     let habitID: String
+    @State private var isStartingFocus = false
+    @State private var focusErrorMessage: String?
 
     private var habit: GrowthHabit? {
         viewModel.habits.first { $0.id == habitID }
@@ -1573,6 +1667,17 @@ private struct HabitDetailSheet: View {
                         }
                     }
 
+                    SecondaryActionButton(
+                        title: isStartingFocus
+                            ? "Starting protection"
+                            : "Protect 15 Minutes",
+                        systemImage: "shield.lefthalf.filled"
+                    ) {
+                        startHabitFocus(habit)
+                    }
+                    .disabled(isStartingFocus || !habit.isEnabled)
+                    .opacity(isStartingFocus || !habit.isEnabled ? 0.55 : 1)
+
                     SecondaryActionButton(title: habit.isEnabled ? "Pause Habit" : "Resume Habit", systemImage: habit.isEnabled ? "pause.circle" : "play.circle") {
                         Task {
                             await viewModel.setHabitEnabled(habit.id, isEnabled: !habit.isEnabled)
@@ -1585,6 +1690,47 @@ private struct HabitDetailSheet: View {
             } else {
                 EmptyState(title: "Habit not found", detail: "This habit may have been removed from your plan.", systemImage: "checklist")
                     .padding(20)
+            }
+        }
+        .alert(
+            "Focus protection needs setup",
+            isPresented: Binding(
+                get: { focusErrorMessage != nil },
+                set: { if !$0 { focusErrorMessage = nil } }
+            )
+        ) {
+            Button("OK", role: .cancel) {}
+        } message: {
+            Text(focusErrorMessage ?? "")
+        }
+    }
+
+    private func startHabitFocus(_ habit: GrowthHabit) {
+        guard !isStartingFocus else { return }
+        isStartingFocus = true
+        let request = FocusSessionRequest(
+            purpose: .personalGrowth,
+            customPurposeName: habit.title,
+            plannedDuration: 15 * 60,
+            strictness: .intentional,
+            selectionReference: FocusSelectionReference(
+                rawValue: ScreenTimeSelectionReference.defaultSelection
+            ),
+            essentialAppsReference: nil,
+            blocksAdultWebContent: FocusAdultContentFilterStore.isEnabled
+        )
+        Task {
+            do {
+                _ = try await FocusSessionRuntimeService().start(request)
+                await MainActor.run {
+                    isStartingFocus = false
+                    HapticFeedback.success()
+                }
+            } catch {
+                await MainActor.run {
+                    isStartingFocus = false
+                    focusErrorMessage = error.localizedDescription
+                }
             }
         }
     }

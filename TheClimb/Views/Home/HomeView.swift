@@ -7,13 +7,12 @@ import FamilyControls
 #endif
 
 struct HomeView: View {
-    @Environment(\.openURL) private var openURL
     @ObservedObject var viewModel: AppViewModel
     @State private var isMissionPresented = false
     @State private var focusedDevotional: Devotional?
     @State private var isRegenerationDialogPresented = false
+    @State private var showFocusControlCenter = false
 #if canImport(FamilyControls) && os(iOS)
-    @State private var showActivityPicker = false
     @State private var activitySelection = FamilyActivitySelection()
     @State private var adultWebFilterEnabled = FocusAdultContentFilterStore.isEnabled
 #endif
@@ -50,22 +49,16 @@ struct HomeView: View {
                 MissionSessionView(viewModel: viewModel, mission: mission)
             }
         }
+        .sheet(isPresented: $showFocusControlCenter) {
+            FocusControlCenterView(viewModel: viewModel)
+        }
 #if canImport(FamilyControls) && os(iOS)
-        .familyActivityPicker(
-            headerText: "Choose the apps, categories, or websites The Climb should block during faith focus.",
-            footerText: "Your choices stay on this device and are reused for future protected focus blocks.",
-            isPresented: $showActivityPicker,
-            selection: $activitySelection
-        )
         .onAppear {
             activitySelection = ScreenTimeActivitySelectionStore.loadSelection()
             adultWebFilterEnabled = FocusAdultContentFilterStore.isEnabled
             Task {
                 await viewModel.refreshScreenTimeAuthorization()
             }
-        }
-        .onChange(of: activitySelection) { _, newSelection in
-            ScreenTimeActivitySelectionStore.saveSelection(newSelection)
         }
 #else
         .task {
@@ -190,7 +183,7 @@ struct HomeView: View {
                 isMissionPresented = true
             },
             onSetup: {
-                handleBlockingSetup()
+                showFocusControlCenter = true
             }
         )
     }
@@ -202,32 +195,6 @@ struct HomeView: View {
         }
 #endif
         return 0
-    }
-
-    private func handleBlockingSetup() {
-#if canImport(FamilyControls) && os(iOS)
-        if viewModel.focusState == .denied,
-           let settingsURL = URL(string: UIApplication.openSettingsURLString) {
-            openURL(settingsURL)
-            return
-        }
-
-        if viewModel.focusState == .permissionRequired || viewModel.focusState == .unavailable {
-            Task {
-                await viewModel.requestScreenTimeAuthorization()
-                await MainActor.run {
-                    activitySelection = ScreenTimeActivitySelectionStore.loadSelection()
-                    if viewModel.focusState == .authorized || viewModel.focusState == .active {
-                        showActivityPicker = true
-                    }
-                }
-            }
-            return
-        }
-
-        activitySelection = ScreenTimeActivitySelectionStore.loadSelection()
-        showActivityPicker = true
-#endif
     }
 
     private func missionCard(_ mission: Mission) -> some View {
@@ -605,6 +572,8 @@ private struct FaithFocusCommandCenter: View {
                         Text(protectionBadgeText)
                             .font(ClimbTypography.sans(12, weight: .semibold).monospacedDigit())
                             .foregroundStyle(hasProtection ? Color.climbMist : Color.climbGold)
+                            .lineLimit(1)
+                            .minimumScaleFactor(0.75)
                             .padding(.horizontal, 11)
                             .padding(.vertical, 7)
                             .background(Color.black.opacity(0.18), in: Capsule())
@@ -617,7 +586,7 @@ private struct FaithFocusCommandCenter: View {
                             .foregroundStyle(Color.climbMist)
                             .fixedSize(horizontal: false, vertical: true)
 
-                        Text("Protect scripture, prayer, and focused work. Adult websites are blocked by default, and you can add the apps or sites that usually steal the first yes of your day.")
+                        Text("Protect scripture, prayer, and focused work. During a protected focus block, The Climb restricts your selected distractions and can enable Apple’s adult website filter.")
                             .font(ClimbTypography.sans(15, weight: .medium))
                             .foregroundStyle(Color.climbTextSecondary)
                             .lineSpacing(4)
@@ -627,7 +596,11 @@ private struct FaithFocusCommandCenter: View {
                     HStack(spacing: 8) {
                         FocusMetricTile(value: "\(protectedMinutes)m", label: "today", tint: .climbGreen)
                         FocusMetricTile(value: "\(streak)", label: streak == 1 ? "day" : "days", tint: .climbGold)
-                        FocusMetricTile(value: adultWebFilterEnabled ? "18+" : (blockedItemCount > 0 ? "Ready" : "Pick"), label: adultWebFilterEnabled ? "web filter" : "apps", tint: hasProtection ? .climbSage : .climbGold)
+                        FocusMetricTile(
+                            value: adultWebFilterEnabled ? "18+" : (blockedItemCount > 0 ? "Ready" : "Pick"),
+                            label: adultWebFilterEnabled ? (focusState == .active ? "blocking" : "focus ready") : "apps",
+                            tint: hasProtection ? .climbSage : .climbGold
+                        )
                     }
                 }
                 .padding(.horizontal, 22)
@@ -682,36 +655,24 @@ private struct FaithFocusCommandCenter: View {
     }
 
     private var protectionBadgeText: String {
+        let isActive = focusState == .active
         if blockedItemCount > 0, adultWebFilterEnabled {
-            return "\(blockedItemCount) + 18+"
+            return isActive ? "\(blockedItemCount) + web on" : "\(blockedItemCount) + web ready"
         }
 
         if adultWebFilterEnabled {
-            return "18+ blocked"
+            return isActive ? "18+ blocking" : "18+ ready"
         }
 
         if blockedItemCount > 0 {
-            return "\(blockedItemCount) blocked"
+            return isActive ? "\(blockedItemCount) blocked" : "\(blockedItemCount) ready"
         }
 
         return "setup needed"
     }
 
     private var setupButtonTitle: String {
-        if blockedItemCount > 0 { return "Edit blocked apps" }
-        if adultWebFilterEnabled { return "Add apps or websites" }
-        return setupActionTitle
-    }
-
-    private var setupActionTitle: String {
-        switch focusState {
-        case .permissionRequired, .unavailable:
-            "Allow Screen Time access"
-        case .denied:
-            "Open Screen Time settings"
-        case .active, .authorized, .selectionRequired, .simulated:
-            "Choose apps to block"
-        }
+        "Open Focus controls"
     }
 
     private var statusTitle: String {

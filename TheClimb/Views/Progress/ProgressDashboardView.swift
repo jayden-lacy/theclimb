@@ -1,9 +1,44 @@
 import Charts
 import SwiftUI
+#if canImport(DeviceActivity) && os(iOS)
+import DeviceActivity
+#endif
+#if canImport(FamilyControls) && os(iOS)
+import FamilyControls
+#endif
+
+#if canImport(DeviceActivity) && os(iOS)
+private extension DeviceActivityReport.Context {
+    static let theClimbAttentionSummary = Self(
+        "the-climb.attention-summary"
+    )
+}
+#endif
+
+private enum AttentionReportRange: Int, CaseIterable, Identifiable {
+    case today = 1
+    case sevenDays = 7
+    case fourWeeks = 28
+    case threeMonths = 90
+
+    var id: Int { rawValue }
+
+    var label: String {
+        switch self {
+        case .today: "Today"
+        case .sevenDays: "7D"
+        case .fourWeeks: "4W"
+        case .threeMonths: "3M"
+        }
+    }
+}
 
 struct ProgressDashboardView: View {
     @ObservedObject var viewModel: AppViewModel
     @State private var isGeneratingLetter = false
+    @State private var focusDomain = FocusSessionDomainEnvelope()
+    @State private var attentionRange = AttentionReportRange.sevenDays
+    @State private var isShowingStewardshipDetails = false
 
     private var orderedProgress: [ProgressSnapshot] {
         viewModel.progress.sorted { $0.date < $1.date }
@@ -14,6 +49,8 @@ struct ProgressDashboardView: View {
             if let profile = viewModel.profile {
                 progressHeader(profile)
                 OVRScoreCard(score: profile.ovrScore, delta: latestDelta)
+                stewardshipCard
+                attentionUsageReport
                 achievementCard
                 ovrRulesCard
                 statsCards(profile)
@@ -23,6 +60,15 @@ struct ProgressDashboardView: View {
             reportCard
             monthlyLetterCard
             categoryCard
+        }
+        .task {
+            focusDomain = (try? FocusSessionRuntimeService().loadState())
+                ?? FocusSessionDomainEnvelope()
+        }
+        .sheet(isPresented: $isShowingStewardshipDetails) {
+            StewardshipScoreDetailView(result: currentStewardshipScore)
+                .presentationDetents([.medium, .large])
+                .presentationDragIndicator(.visible)
         }
     }
 
@@ -108,6 +154,200 @@ struct ProgressDashboardView: View {
                 .font(ClimbTypography.sans(13, weight: .semibold))
                 .foregroundStyle(Color.climbMuted)
         }
+    }
+
+    @ViewBuilder
+    private var attentionUsageReport: some View {
+#if canImport(DeviceActivity) && os(iOS)
+        VStack(alignment: .leading, spacing: 14) {
+            SectionTitle(
+                title: "Screen Time",
+                subtitle: "Apple provides this report privately on your device."
+            )
+
+            Picker("Report range", selection: $attentionRange) {
+                ForEach(AttentionReportRange.allCases) { range in
+                    Text(range.label).tag(range)
+                }
+            }
+            .pickerStyle(.segmented)
+            .accessibilityHint("Changes the date range of the Screen Time report")
+
+            DeviceActivityReport(
+                .theClimbAttentionSummary,
+                filter: attentionActivityFilter
+            )
+            .id(attentionRange)
+            .frame(minHeight: 470)
+            .background(
+                Color.climbSurfaceRaised,
+                in: RoundedRectangle(cornerRadius: 22, style: .continuous)
+            )
+            .clipShape(
+                RoundedRectangle(cornerRadius: 22, style: .continuous)
+            )
+            .overlay(
+                RoundedRectangle(cornerRadius: 22, style: .continuous)
+                    .stroke(Color.climbHairline, lineWidth: 0.7)
+            )
+        }
+#endif
+    }
+
+#if canImport(DeviceActivity) && os(iOS)
+    private var attentionActivityFilter: DeviceActivityFilter {
+        let end = Date()
+        let start: Date
+        if attentionRange == .today {
+            start = Calendar.current.startOfDay(for: end)
+        } else {
+            start = Calendar.current.date(
+                byAdding: .day,
+                value: -attentionRange.rawValue,
+                to: end
+            ) ?? end.addingTimeInterval(
+                -TimeInterval(attentionRange.rawValue) * 24 * 60 * 60
+            )
+        }
+#if canImport(FamilyControls)
+        let selection = ScreenTimeActivitySelectionStore.loadSelection()
+        return DeviceActivityFilter(
+            segment: .daily(
+                during: DateInterval(start: start, end: end)
+            ),
+            applications: selection.applicationTokens,
+            categories: selection.categoryTokens,
+            webDomains: selection.webDomainTokens
+        )
+#else
+        return DeviceActivityFilter(
+            segment: .daily(
+                during: DateInterval(start: start, end: end)
+            )
+        )
+#endif
+    }
+#endif
+
+    private var stewardshipCard: some View {
+        let result = currentStewardshipScore
+
+        return ClimbQuietPanel(
+            padding: 20,
+            cornerRadius: 22,
+            accent: .climbSage,
+            isProminent: true
+        ) {
+            HStack(alignment: .top, spacing: 18) {
+                VStack(alignment: .leading, spacing: 8) {
+                    Text("STEWARDSHIP")
+                        .font(ClimbTypography.sans(11, weight: .semibold))
+                        .tracking(1.2)
+                        .foregroundStyle(Color.climbMuted)
+                    Text(result.score.map(String.init) ?? "—")
+                        .font(
+                            ClimbTypography.sans(42, weight: .semibold)
+                                .monospacedDigit()
+                        )
+                        .foregroundStyle(Color.climbMist)
+                }
+
+                VStack(alignment: .leading, spacing: 7) {
+                    Text(
+                        result.state == .scored
+                            ? "Behavior you can verify"
+                            : "More real evidence needed"
+                    )
+                    .font(ClimbTypography.sans(16, weight: .semibold))
+                    .foregroundStyle(Color.climbMist)
+
+                    Text(
+                        result.state == .scored
+                            ? "Built from protected focus, completed missions, and reflections this week."
+                            : "Complete at least three actions across two measured areas to calculate a score."
+                    )
+                    .font(ClimbTypography.sans(13, weight: .medium))
+                    .foregroundStyle(Color.climbTextSecondary)
+                    .lineSpacing(3)
+
+                    Text("This measures stewardship habits, never spiritual worth.")
+                        .font(ClimbTypography.sans(11, weight: .medium))
+                        .foregroundStyle(Color.climbMuted)
+
+                    Button {
+                        isShowingStewardshipDetails = true
+                    } label: {
+                        Label("How this score works", systemImage: "info.circle")
+                            .font(ClimbTypography.sans(13, weight: .semibold))
+                            .foregroundStyle(Color.climbSage)
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityHint(
+                        "Shows the evidence and weighting behind your stewardship score"
+                    )
+                }
+            }
+        }
+    }
+
+    private var currentStewardshipScore: StewardshipScoreResult {
+        let calendar = Calendar.current
+        let now = Date()
+        let weekStart = calendar.dateInterval(of: .weekOfYear, for: now)?.start
+            ?? calendar.startOfDay(for: now)
+        let weekEnd = calendar.date(
+            byAdding: .day,
+            value: 7,
+            to: weekStart
+        ) ?? now.addingTimeInterval(7 * 24 * 60 * 60)
+        let interval = DateInterval(start: weekStart, end: weekEnd)
+
+        let missionEvidence = viewModel.missions.compactMap {
+            missionCompletionEvidence($0)
+        }
+        let reflectionEvidence = viewModel.journalEntries.map {
+            StewardshipCompletionRecord(
+                id: "reflection:\($0.id)",
+                kind: .reflection,
+                itemID: $0.id,
+                scheduledAt: $0.date,
+                completedAt: $0.date,
+                outcome: .completed
+            )
+        }
+        let evidence = StewardshipScoreEvidence(
+            protectedFocusRecords: focusDomain.history.records,
+            rhythmAdherenceRecords: [],
+            boundaryAdherenceRecords: [],
+            completionRecords: missionEvidence + reflectionEvidence
+        )
+        return StewardshipScoreEngine().score(
+            evidence: evidence,
+            within: interval,
+            evaluatedAt: now
+        )
+    }
+
+    private func missionCompletionEvidence(
+        _ mission: Mission
+    ) -> StewardshipCompletionRecord? {
+        let outcome: StewardshipCompletionOutcome
+        switch mission.status {
+        case .completed, .recovered:
+            outcome = .completed
+        case .failed:
+            outcome = .missed
+        case .pending, .active:
+            return nil
+        }
+        return StewardshipCompletionRecord(
+            id: "mission:\(mission.id)",
+            kind: .mission,
+            itemID: mission.id,
+            scheduledAt: mission.date,
+            completedAt: outcome == .completed ? mission.date : nil,
+            outcome: outcome
+        )
     }
 
     private var achievementCard: some View {
@@ -292,6 +532,180 @@ struct ProgressDashboardView: View {
         guard let latest = sorted.first else { return 0 }
         guard let previous = sorted.dropFirst().first else { return latest.ovrScore - 50 }
         return latest.ovrScore - previous.ovrScore
+    }
+}
+
+private struct StewardshipScoreDetailView: View {
+    @Environment(\.dismiss) private var dismiss
+    let result: StewardshipScoreResult
+
+    var body: some View {
+        NavigationStack {
+            ScrollView {
+                VStack(alignment: .leading, spacing: 22) {
+                    VStack(alignment: .leading, spacing: 8) {
+                        Text(result.score.map(String.init) ?? "Not scored")
+                            .font(
+                                ClimbTypography.sans(38, weight: .semibold)
+                                    .monospacedDigit()
+                            )
+                            .foregroundStyle(Color.climbMist)
+                        Text(scoreSummary)
+                            .font(ClimbTypography.sans(14, weight: .medium))
+                            .foregroundStyle(Color.climbTextSecondary)
+                            .lineSpacing(3)
+                    }
+
+                    VStack(spacing: 0) {
+                        ForEach(
+                            Array(result.factors.enumerated()),
+                            id: \.element.factor
+                        ) { index, factor in
+                            StewardshipFactorRow(breakdown: factor)
+                            if index < result.factors.count - 1 {
+                                Divider().overlay(Color.climbDivider)
+                            }
+                        }
+                    }
+                    .padding(.horizontal, 16)
+                    .background(
+                        Color.climbSurfaceRaised,
+                        in: RoundedRectangle(
+                            cornerRadius: 20,
+                            style: .continuous
+                        )
+                    )
+                    .overlay {
+                        RoundedRectangle(
+                            cornerRadius: 20,
+                            style: .continuous
+                        )
+                        .stroke(Color.climbHairline, lineWidth: 0.7)
+                    }
+
+                    VStack(alignment: .leading, spacing: 8) {
+                        Label(
+                            "A behavioral measure",
+                            systemImage: "checkmark.shield"
+                        )
+                        .font(ClimbTypography.sans(15, weight: .semibold))
+                        .foregroundStyle(Color.climbMist)
+
+                        Text(
+                            "Only measured factors count. Missing Screen Time data is excluded instead of guessed. Available weights are normalized to 100, and at least three records across two factors are required."
+                        )
+                        .font(ClimbTypography.sans(13, weight: .medium))
+                        .foregroundStyle(Color.climbTextSecondary)
+                        .lineSpacing(3)
+
+                        Text(
+                            "This score reflects consistency with your chosen commitments. It never measures faith, salvation, or spiritual worth."
+                        )
+                        .font(ClimbTypography.serif(16))
+                        .foregroundStyle(Color.climbMist.opacity(0.92))
+                        .lineSpacing(4)
+                    }
+                }
+                .padding(20)
+            }
+            .background(Color.climbBackground.ignoresSafeArea())
+            .navigationTitle("Stewardship")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .topBarTrailing) {
+                    Button {
+                        dismiss()
+                    } label: {
+                        Image(systemName: "xmark")
+                    }
+                    .accessibilityLabel("Close")
+                }
+            }
+        }
+        .preferredColorScheme(.dark)
+    }
+
+    private var scoreSummary: String {
+        if result.state == .scored {
+            return "\(result.evidenceCount) verified actions across \(result.measuredFactorCount) measured areas."
+        }
+        return "Complete more verified actions to calculate a fair score."
+    }
+}
+
+private struct StewardshipFactorRow: View {
+    let breakdown: StewardshipScoreFactorBreakdown
+
+    var body: some View {
+        HStack(alignment: .center, spacing: 14) {
+            Image(systemName: breakdown.factor.symbol)
+                .font(.system(size: 15, weight: .semibold))
+                .foregroundStyle(
+                    breakdown.availability == .measured
+                        ? Color.climbSage
+                        : Color.climbMuted
+                )
+                .frame(width: 26)
+
+            VStack(alignment: .leading, spacing: 3) {
+                Text(breakdown.factor.displayName)
+                    .font(ClimbTypography.sans(14, weight: .semibold))
+                    .foregroundStyle(Color.climbMist)
+                Text(factorDetail)
+                    .font(ClimbTypography.sans(11, weight: .medium))
+                    .foregroundStyle(Color.climbMuted)
+            }
+
+            Spacer(minLength: 12)
+
+            Text(factorValue)
+                .font(
+                    ClimbTypography.sans(15, weight: .semibold)
+                        .monospacedDigit()
+                )
+                .foregroundStyle(
+                    breakdown.availability == .measured
+                        ? Color.climbMist
+                        : Color.climbMuted
+                )
+        }
+        .padding(.vertical, 13)
+    }
+
+    private var factorDetail: String {
+        guard breakdown.availability == .measured else {
+            return "Not measured"
+        }
+        return "\(breakdown.evidenceCount) records · \(Int(breakdown.effectiveWeight.rounded()))% of score"
+    }
+
+    private var factorValue: String {
+        guard let score = breakdown.factorScore else { return "—" }
+        return "\(Int(score.rounded()))"
+    }
+}
+
+private extension StewardshipScoreFactor {
+    var displayName: String {
+        switch self {
+        case .protectedFocus: "Protected focus"
+        case .rhythmAdherence: "Rhythms"
+        case .boundaryAdherence: "Boundaries"
+        case .missionCompletion: "Missions"
+        case .habitCompletion: "Habits"
+        case .reflectionCompletion: "Reflections"
+        }
+    }
+
+    var symbol: String {
+        switch self {
+        case .protectedFocus: "hourglass"
+        case .rhythmAdherence: "repeat"
+        case .boundaryAdherence: "gauge.with.dots.needle.50percent"
+        case .missionCompletion: "scope"
+        case .habitCompletion: "checkmark.circle"
+        case .reflectionCompletion: "text.book.closed"
+        }
     }
 }
 

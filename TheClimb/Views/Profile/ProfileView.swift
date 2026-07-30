@@ -21,6 +21,12 @@ struct ProfileView: View {
     @State private var showDeletePasswordSheet = false
     @State private var deletionPassword = ""
     @State private var showSupportSheet = false
+    @State private var attentionFrequency: AttentionAssistFrequency = .off
+    @State private var attentionQuietHoursEnabled = true
+    @State private var attentionQuietStart = Date()
+    @State private var attentionQuietEnd = Date()
+    @State private var attentionAssistStatus = "Off"
+    @State private var isSavingAttentionAssist = false
 #if canImport(FamilyControls) && os(iOS)
     @State private var showActivityPicker = false
     @State private var activitySelection = FamilyActivitySelection()
@@ -34,6 +40,7 @@ struct ProfileView: View {
                 profileHeader(profile)
                 badgeCaseCard
                 settingsCard
+                attentionAssistCard
 #if canImport(FamilyControls) && os(iOS)
                 focusTemplatesCard
 #endif
@@ -283,6 +290,77 @@ struct ProfileView: View {
         .padding(.vertical, 10)
     }
 
+    private var attentionAssistCard: some View {
+        ClimbQuietPanel(cornerRadius: 22) {
+            HStack(alignment: .firstTextBaseline, spacing: 12) {
+                SectionTitle(
+                    title: "Attention Assist",
+                    subtitle: "A few evidence-based nudges, never another noisy feed."
+                )
+                Spacer(minLength: 0)
+                StatusBadge(
+                    text: attentionAssistStatus,
+                    color: attentionFrequency == .off
+                        ? .climbMuted
+                        : .climbGreen
+                )
+            }
+
+            Picker("Frequency", selection: $attentionFrequency) {
+                Text("Off").tag(AttentionAssistFrequency.off)
+                Text("Minimal").tag(AttentionAssistFrequency.minimal)
+                Text("Balanced").tag(AttentionAssistFrequency.balanced)
+                Text("Frequent").tag(AttentionAssistFrequency.frequent)
+            }
+            .pickerStyle(.segmented)
+
+            if attentionFrequency != .off {
+                Toggle(
+                    "Quiet hours",
+                    isOn: $attentionQuietHoursEnabled
+                )
+                .font(ClimbTypography.sans(15, weight: .medium))
+                .tint(.climbSage)
+                .foregroundStyle(Color.climbMist)
+
+                if attentionQuietHoursEnabled {
+                    HStack(spacing: 12) {
+                        DatePicker(
+                            "From",
+                            selection: $attentionQuietStart,
+                            displayedComponents: .hourAndMinute
+                        )
+                        DatePicker(
+                            "Until",
+                            selection: $attentionQuietEnd,
+                            displayedComponents: .hourAndMinute
+                        )
+                    }
+                    .font(ClimbTypography.sans(13, weight: .medium))
+                    .foregroundStyle(Color.climbTextSecondary)
+                }
+
+                Text("Uses upcoming rhythms and protection health. Screen-time comparisons appear only when Apple supplies measured usage.")
+                    .font(ClimbTypography.sans(12, weight: .medium))
+                    .foregroundStyle(Color.climbMuted)
+                    .lineSpacing(2)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+
+            SecondaryActionButton(
+                title: isSavingAttentionAssist
+                    ? "Saving Attention Assist"
+                    : "Save Attention Assist",
+                systemImage: "bell.and.waves.left.and.right"
+            ) {
+                saveAttentionAssist()
+            }
+            .disabled(isSavingAttentionAssist)
+        }
+        .animation(ClimbMotion.standard, value: attentionFrequency)
+        .animation(ClimbMotion.standard, value: attentionQuietHoursEnabled)
+    }
+
 #if canImport(FamilyControls) && os(iOS)
     private var focusTemplatesCard: some View {
         ClimbQuietPanel(cornerRadius: 22, isProminent: true) {
@@ -446,7 +524,108 @@ struct ProfileView: View {
         Task {
             await viewModel.refreshScreenTimeAuthorization()
             await viewModel.refreshNotificationAuthorization()
+            await loadAttentionAssist()
         }
+    }
+
+    private func loadAttentionAssist() async {
+        do {
+            let preferences = try await AttentionAssistRuntimeService()
+                .preferences()
+            await MainActor.run {
+                attentionFrequency = preferences.frequency
+                attentionAssistStatus = preferences.isEnabled
+                    ? preferences.frequency.title
+                    : "Off"
+                if let quietHours = preferences.quietHours {
+                    attentionQuietHoursEnabled = true
+                    attentionQuietStart = date(
+                        forMinuteOfDay: quietHours.startMinuteOfDay
+                    )
+                    attentionQuietEnd = date(
+                        forMinuteOfDay: quietHours.endMinuteOfDay
+                    )
+                } else {
+                    attentionQuietHoursEnabled = false
+                    attentionQuietStart = date(forMinuteOfDay: 22 * 60)
+                    attentionQuietEnd = date(forMinuteOfDay: 7 * 60)
+                }
+            }
+        } catch {
+            await MainActor.run {
+                viewModel.errorMessage = error.localizedDescription
+            }
+        }
+    }
+
+    private func saveAttentionAssist() {
+        guard !isSavingAttentionAssist else { return }
+        isSavingAttentionAssist = true
+
+        Task {
+            do {
+                let runtime = AttentionAssistRuntimeService()
+                if attentionFrequency == .off {
+                    try await runtime.disable()
+                } else {
+                    let permission = try await runtime
+                        .requestNotificationPermission()
+                    guard permission == .authorized else {
+                        throw permission == .denied
+                            ? AttentionAssistRuntimeError.notificationPermissionDenied
+                            : AttentionAssistRuntimeError.notificationPermissionUnavailable
+                    }
+
+                    let quietHours = attentionQuietHoursEnabled
+                        ? AttentionAssistQuietHours(
+                            startMinuteOfDay: minuteOfDay(
+                                for: attentionQuietStart
+                            ),
+                            endMinuteOfDay: minuteOfDay(
+                                for: attentionQuietEnd
+                            )
+                        )
+                        : nil
+                    let preferences = AttentionAssistPreferences.recommended(
+                        frequency: attentionFrequency,
+                        quietHours: quietHours
+                    )
+                    try await runtime.savePreferences(preferences)
+                    _ = try await runtime.reconcile(
+                        signals: AttentionAssistSignalSource().currentSignals()
+                    )
+                }
+
+                await MainActor.run {
+                    attentionAssistStatus = attentionFrequency.title
+                    isSavingAttentionAssist = false
+                    HapticFeedback.success()
+                }
+            } catch {
+                await MainActor.run {
+                    isSavingAttentionAssist = false
+                    viewModel.errorMessage = error.localizedDescription
+                    HapticFeedback.impact(.medium)
+                }
+            }
+        }
+    }
+
+    private func minuteOfDay(for date: Date) -> Int {
+        let components = Calendar.current.dateComponents(
+            [.hour, .minute],
+            from: date
+        )
+        return (components.hour ?? 0) * 60 + (components.minute ?? 0)
+    }
+
+    private func date(forMinuteOfDay minuteOfDay: Int) -> Date {
+        Calendar.current.date(
+            bySettingHour: minuteOfDay / 60,
+            minute: minuteOfDay % 60,
+            second: 0,
+            of: Date()
+        ) ?? Date()
     }
 
     private var appBlockingToggleBinding: Binding<Bool> {
@@ -594,6 +773,23 @@ private enum SupportEmail {
     }
 }
 
+private extension AttentionAssistFrequency {
+    var title: String {
+        switch self {
+        case .off:
+            "Off"
+        case .minimal:
+            "Minimal"
+        case .balanced:
+            "Balanced"
+        case .frequent:
+            "Frequent"
+        case .custom:
+            "Custom"
+        }
+    }
+}
+
 #if canImport(FamilyControls) && os(iOS)
 private struct FocusTemplateMetric: View {
     let value: String
@@ -694,6 +890,7 @@ private struct ProfileFocusTemplateRow: View {
                     .background(Color.climbGreen, in: Circle())
             }
             .buttonStyle(ScaleButtonStyle())
+            .accessibilityLabel("Apply \(template.name)")
 
             Button(role: .destructive) {
                 onDelete()
@@ -705,6 +902,7 @@ private struct ProfileFocusTemplateRow: View {
                     .background(Color.climbRed.opacity(0.10), in: Circle())
             }
             .buttonStyle(ScaleButtonStyle())
+            .accessibilityLabel("Delete \(template.name)")
         }
         .padding(12)
         .background(Color.climbSurface.opacity(0.70), in: RoundedRectangle(cornerRadius: 18, style: .continuous))
