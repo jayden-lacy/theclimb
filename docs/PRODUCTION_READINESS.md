@@ -19,7 +19,7 @@ Verified on July 27, 2026:
 - The current codebase uses local World English Bible text, authenticated AI generation, bounded retries/timeouts, same-day caching, per-user rate limits, and deterministic fallback plans.
 - `https://theclimbapp.org`, `/privacy`, `/terms`, `/download`, and `/.well-known/apple-app-site-association` were deployed through Cloudflare and returned HTTP 200.
 - A signed arm64 archive succeeds and contains valid signatures, all four extensions, expected privacy manifests, and app/extension dSYMs.
-- iPhone build `1.0 (14)` was accepted by App Store Connect for processing on July 27, 2026. The current source is build `15` because the production app icon changed on July 29; upload build 15 before selecting a build for review. Firebase binary dSYM upload warnings remain non-blocking.
+- iPhone build `1.0 (15)`, containing the current cross logo, was uploaded successfully and entered App Store Connect processing on July 29, 2026. Firebase binary dSYM upload warnings remain non-blocking.
 - Three current iPhone screenshots were regenerated from the release candidate at exactly 1284 x 2778 in `App Store Previews - 1284x2778`.
 
 ## Apple Configuration
@@ -118,7 +118,7 @@ Verified on July 27, 2026:
 - The DeviceActivity monitor bundle ID `com.jaydenlacy.theclimb.deviceactivitymonitor` must be registered and entitled with the rest of the Screen Time bundle set.
 - Server-side daily pregeneration is not required for launch; the app currently generates the next plan when the user opens the app on a new day.
 - Website `/download` redirects to the App Store when the Cloudflare Worker `APP_STORE_URL` environment variable is set to a valid Apple URL. Without that variable, it serves a public fallback download page instead of an internal setup error.
-- Archive and upload build 15 so the App Store binary contains the current cross logo. If App Store Connect rejects the processed build, increment `CURRENT_PROJECT_VERSION`, archive again, and upload a new build.
+- Build 15 must finish App Store Connect processing before it can be selected for TestFlight or review. If App Store Connect rejects the processed build, increment `CURRENT_PROJECT_VERSION`, archive again, and upload a new build.
 - The remaining launch gate is a real-device pass for Family Controls, DeviceActivity, custom shields, notifications, widgets, release App Check, Google/Apple sign-in, and account deletion. Simulator evidence is not sufficient for these platform integrations.
 - App Store Connect privacy, age-rating, encryption, content-rights, support URL, review notes, and build-selection fields still require final confirmation before pressing Submit for Review.
 - Firebase's current Google Cloud dependency chain reports seven moderate transitive `uuid` advisories and no high or critical advisories. The project is on current stable Firebase Admin/Functions releases; do not use npm's suggested forced downgrade.
