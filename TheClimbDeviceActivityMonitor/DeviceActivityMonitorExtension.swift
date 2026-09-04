@@ -18,6 +18,8 @@ private enum MissionFocusMonitorConstants {
     static let essentialSelectionKey = "the-climb.essential-apps-selection.v1"
     static let activityConfigurationPrefix = "the-climb.scheduled-activity."
     static let adultContentKey = "the-climb.adult-web-content-filter.v1"
+    static let purityProtectionEnabledKey = "the-climb.purity-protection.enabled.v1"
+    static let purityProtectionDomainsKey = "the-climb.purity-protection.domains.v1"
     static let heartbeatKey = "the-climb.screen-time.enforcement-heartbeat.v1"
     static let missionIDKey = "the-climb.active-focus.mission-id.v1"
     static let titleKey = "the-climb.active-focus.title.v1"
@@ -44,6 +46,12 @@ private struct ExtensionScheduledActivityConfiguration: Codable {
 final class DeviceActivityMonitorExtension: DeviceActivityMonitor {
     override func intervalDidStart(for activity: DeviceActivityName) {
         super.intervalDidStart(for: activity)
+
+        if activity.rawValue == ClimbTimeMonitorShared.activityName {
+            reconcileClimbTimeShield(for: activity)
+            recordHeartbeat()
+            return
+        }
 
         if activity == MissionFocusMonitorConstants.generalFocusActivityName {
             applySavedProtection(
@@ -80,6 +88,16 @@ final class DeviceActivityMonitorExtension: DeviceActivityMonitor {
 
     override func intervalDidEnd(for activity: DeviceActivityName) {
         super.intervalDidEnd(for: activity)
+
+        if activity.rawValue == ClimbTimeMonitorShared.activityName {
+            ManagedSettingsStore(
+                named: ManagedSettingsStore.Name(
+                    ClimbTimeMonitorShared.managedStoreName
+                )
+            ).clearAllSettings()
+            recordHeartbeat()
+            return
+        }
 
         if activity == MissionFocusMonitorConstants.activityName {
             recordMissionEndHandoff(reason: "interval-ended")
@@ -144,6 +162,12 @@ final class DeviceActivityMonitorExtension: DeviceActivityMonitor {
 
     override func eventDidReachThreshold(_ event: DeviceActivityEvent.Name, activity: DeviceActivityName) {
         super.eventDidReachThreshold(event, activity: activity)
+        if activity.rawValue == ClimbTimeMonitorShared.activityName {
+            handleClimbTimeThreshold(event, activity: activity)
+            recordHeartbeat()
+            return
+        }
+
         if let boundaryID = boundaryID(for: activity) {
             applySavedProtection(
                 for: activity,
@@ -171,6 +195,122 @@ final class DeviceActivityMonitorExtension: DeviceActivityMonitor {
         clearMissionShield()
         DeviceActivityCenter().stopMonitoring([activity])
         recordHeartbeat()
+    }
+
+    private func reconcileClimbTimeShield(for activity: DeviceActivityName) {
+        let sharedStore = AppGroupClimbTimeMonitorStore()
+        guard let configuration = try? sharedStore.loadConfiguration() else {
+            clearClimbTimeShield()
+            return
+        }
+
+        let date = Date()
+        let currentDayKey = ClimbTimeMonitorShared.dayKey(for: date)
+        let evidence: ClimbTimeUsageEvidence
+        if let stored = try? sharedStore.loadEvidence(),
+           stored.ownerUserID == configuration.ownerUserID,
+           stored.dayKey == currentDayKey {
+            evidence = stored
+        } else if let transition = try? sharedStore.recordThreshold(
+            ownerUserID: configuration.ownerUserID,
+            dayKey: currentDayKey,
+            thresholdSeconds: 0,
+            callbackID: "interval-start:\(currentDayKey)",
+            at: date
+        ) {
+            evidence = transition.evidence
+        } else {
+            clearClimbTimeShield()
+            return
+        }
+
+        let allowance = configuration.effectiveAllowance(for: currentDayKey)
+        if allowance == 0 || evidence.observedSeconds >= allowance {
+            applyClimbTimeShield(for: activity)
+        } else {
+            clearClimbTimeShield()
+        }
+    }
+
+    private func handleClimbTimeThreshold(
+        _ event: DeviceActivityEvent.Name,
+        activity: DeviceActivityName
+    ) {
+        guard let thresholdSeconds = ClimbTimeMonitorShared.thresholdSeconds(
+            from: event.rawValue
+        ) else {
+            return
+        }
+
+        let sharedStore = AppGroupClimbTimeMonitorStore()
+        guard let configuration = try? sharedStore.loadConfiguration() else {
+            clearClimbTimeShield()
+            return
+        }
+
+        let date = Date()
+        let currentDayKey = ClimbTimeMonitorShared.dayKey(for: date)
+        guard let transition = try? sharedStore.recordThreshold(
+            ownerUserID: configuration.ownerUserID,
+            dayKey: currentDayKey,
+            thresholdSeconds: thresholdSeconds,
+            callbackID: "\(currentDayKey):\(event.rawValue)",
+            at: date
+        ) else {
+            return
+        }
+
+        let allowance = configuration.effectiveAllowance(for: currentDayKey)
+        guard allowance == 0 || transition.evidence.observedSeconds >= allowance else {
+            return
+        }
+
+        applyClimbTimeShield(for: activity)
+        if transition.previousObservedSeconds < allowance {
+            postNotification(
+                id: "climb-time-used-\(currentDayKey)",
+                title: "Climb Time complete",
+                body: "Your selected distractions are protected for the rest of this allowance."
+            )
+        }
+    }
+
+    private func applyClimbTimeShield(for activity: DeviceActivityName) {
+        guard let defaults = UserDefaults(
+            suiteName: ClimbTimeMonitorShared.appGroupID
+        ),
+        let data = defaults.data(forKey: ClimbTimeMonitorShared.selectionKey),
+        let selection = try? JSONDecoder().decode(
+            FamilyActivitySelection.self,
+            from: data
+        ) else {
+            clearClimbTimeShield()
+            return
+        }
+
+        let store = ManagedSettingsStore(
+            named: ManagedSettingsStore.Name(
+                ClimbTimeMonitorShared.managedStoreName
+            )
+        )
+        store.clearAllSettings()
+        store.shield.applications = selection.applicationTokens.isEmpty
+            ? nil
+            : selection.applicationTokens
+        store.shield.applicationCategories = selection.categoryTokens.isEmpty
+            ? nil
+            : .specific(selection.categoryTokens)
+        store.shield.webDomains = selection.webDomainTokens.isEmpty
+            ? nil
+            : selection.webDomainTokens
+    }
+
+    private func clearClimbTimeShield() {
+        ManagedSettingsStore(
+            named: ManagedSettingsStore.Name(
+                ClimbTimeMonitorShared.managedStoreName
+            )
+        ).clearAllSettings()
     }
 
     private func clearMissionShield() {
@@ -204,12 +344,25 @@ final class DeviceActivityMonitorExtension: DeviceActivityMonitor {
             ?? (defaults.object(forKey: MissionFocusMonitorConstants.adultContentKey) == nil
                 ? true
                 : defaults.bool(forKey: MissionFocusMonitorConstants.adultContentKey))
+        let purityDomains: Set<WebDomain>
+        if defaults.bool(forKey: MissionFocusMonitorConstants.purityProtectionEnabledKey) {
+            purityDomains = Set(
+                (defaults.stringArray(
+                    forKey: MissionFocusMonitorConstants.purityProtectionDomainsKey
+                ) ?? []).map { WebDomain(domain: $0) }
+            )
+        } else {
+            purityDomains = []
+        }
 
         store.clearAllSettings()
         if configuration?.selectionMode == .allowEssentialApps {
             store.shield.applicationCategories = .all(except: selection.applicationTokens)
-            store.webContent.blockedByFilter = blocksAdultContent ? .auto() : nil
+            store.webContent.blockedByFilter = blocksAdultContent
+                ? .auto(purityDomains)
+                : (purityDomains.isEmpty ? nil : .specific(purityDomains))
         } else {
+            let protectedWebDomains = selection.webDomains.union(purityDomains)
             store.shield.applications = selection.applicationTokens.isEmpty
                 ? nil
                 : selection.applicationTokens
@@ -220,8 +373,8 @@ final class DeviceActivityMonitorExtension: DeviceActivityMonitor {
                 ? nil
                 : .specific(selection.categoryTokens)
             store.webContent.blockedByFilter = blocksAdultContent
-                ? .auto(selection.webDomains)
-                : (selection.webDomains.isEmpty ? nil : .specific(selection.webDomains))
+                ? .auto(protectedWebDomains)
+                : (protectedWebDomains.isEmpty ? nil : .specific(protectedWebDomains))
         }
     }
 

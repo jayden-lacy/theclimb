@@ -38,15 +38,15 @@ final class ShieldConfigurationExtension: ShieldConfigurationDataSource {
             icon: Self.icon,
             title: ShieldConfiguration.Label(text: title, color: Palette.primaryText),
             subtitle: ShieldConfiguration.Label(text: FocusShieldTimerStore.subtitle(fallback: subtitle), color: Palette.secondaryText),
-            primaryButtonLabel: ShieldConfiguration.Label(text: "Stay Focused", color: .white),
-            primaryButtonBackgroundColor: Palette.green
+            primaryButtonLabel: ShieldConfiguration.Label(text: "Stay Focused", color: Palette.buttonText),
+            primaryButtonBackgroundColor: Palette.periwinkle
         )
     }
 
     private static var icon: UIImage? {
         let configuration = UIImage.SymbolConfiguration(pointSize: 64, weight: .semibold)
         return UIImage(systemName: "mountain.2.fill", withConfiguration: configuration)?
-            .withTintColor(Palette.green, renderingMode: .alwaysOriginal)
+            .withTintColor(Palette.periwinkle, renderingMode: .alwaysOriginal)
     }
 }
 
@@ -101,8 +101,9 @@ private enum FocusShieldTimerStore {
 }
 
 private enum Palette {
-    static let background = UIColor(red: 0.043, green: 0.043, blue: 0.059, alpha: 1.0)
-    static let primaryText = UIColor.white
-    static let secondaryText = UIColor(red: 0.631, green: 0.631, blue: 0.667, alpha: 1.0)
-    static let green = UIColor(red: 0.133, green: 0.773, blue: 0.369, alpha: 1.0)
+    static let background = UIColor(red: 7 / 255, green: 11 / 255, blue: 22 / 255, alpha: 1)
+    static let primaryText = UIColor(red: 247 / 255, green: 247 / 255, blue: 245 / 255, alpha: 1)
+    static let secondaryText = UIColor(red: 156 / 255, green: 166 / 255, blue: 181 / 255, alpha: 1)
+    static let periwinkle = UIColor(red: 169 / 255, green: 203 / 255, blue: 255 / 255, alpha: 1)
+    static let buttonText = UIColor(red: 7 / 255, green: 11 / 255, blue: 22 / 255, alpha: 1)
 }

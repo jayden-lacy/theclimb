@@ -111,6 +111,140 @@ enum Struggle: String, CaseIterable, Codable, Identifiable {
     }
 }
 
+enum SpiritualStartingPoint: String, CaseIterable, Codable, Identifiable {
+    case base
+    case growing
+    case climbing
+    case strong
+
+    var id: String { rawValue }
+
+    var title: String {
+        switch self {
+        case .base: "Base"
+        case .growing: "Growing"
+        case .climbing: "Climbing"
+        case .strong: "Strong"
+        }
+    }
+
+    var detail: String {
+        switch self {
+        case .base: "I feel far from God"
+        case .growing: "I know God, but I’m inconsistent"
+        case .climbing: "I’m growing, but I want to go deeper"
+        case .strong: "I’m consistent and want to be challenged"
+        }
+    }
+}
+
+enum DailyClimbWindow: String, CaseIterable, Codable, Identifiable {
+    case morning
+    case afterSchoolOrWork
+    case evening
+    case beforeBed
+    case custom
+
+    var id: String { rawValue }
+
+    var title: String {
+        switch self {
+        case .morning: "Morning"
+        case .afterSchoolOrWork: "After school or work"
+        case .evening: "Evening"
+        case .beforeBed: "Before bed"
+        case .custom: "Custom"
+        }
+    }
+
+    var defaultHour: Int {
+        switch self {
+        case .morning: 7
+        case .afterSchoolOrWork: 17
+        case .evening: 20
+        case .beforeBed: 22
+        case .custom: 20
+        }
+    }
+}
+
+struct FirstWeekCheckpoint: Identifiable, Equatable {
+    let day: Int
+    let title: String
+
+    var id: Int { day }
+}
+
+struct OnboardingPersonalization: Codable, Equatable {
+    var spiritualStartingPoint: SpiritualStartingPoint
+    var dailyCommitmentMinutes: Int
+    var preferredTimeWindow: DailyClimbWindow
+    var primaryObstacle: String
+    var whyStarted: String
+    var firstStepCompletedAt: Date?
+    var initialMilestoneDays: Int
+
+    var completedFirstStep: Bool {
+        firstStepCompletedAt != nil
+    }
+
+    func firstWeekPath(goals: [String], struggle: Struggle) -> [FirstWeekCheckpoint] {
+        Self.firstWeekPath(goals: goals, struggle: struggle)
+    }
+
+    static func firstWeekPath(goals: [String], struggle: Struggle) -> [FirstWeekCheckpoint] {
+        let normalizedGoals = goals.map { $0.lowercased() }
+        let wantsPrayer = normalizedGoals.contains { $0.contains("prayer") }
+        let wantsScripture = normalizedGoals.contains { $0.contains("scripture") }
+        let wantsPeace = normalizedGoals.contains { $0.contains("peace") || $0.contains("direction") }
+
+        let dayTwo: String
+        let dayFour: String
+        let dayFive: String
+
+        switch struggle {
+        case .purity:
+            dayTwo = "Remove the Trigger"
+            dayFour = "Renew Your Mind"
+            dayFive = "Win the Private Battle"
+        case .focus:
+            dayTwo = "Silence the Noise"
+            dayFour = "Guard Your Attention"
+            dayFive = "Choose What Leads You"
+        case .prayer:
+            dayTwo = "Return to Prayer"
+            dayFour = "Pray Before Pressure"
+            dayFive = "Stay in the Conversation"
+        case .scripture:
+            dayTwo = "Open the Word"
+            dayFour = "Renew Your Mind"
+            dayFive = "Carry the Verse"
+        case .consistency:
+            dayTwo = "Keep the Appointment"
+            dayFour = "Obedience Over Mood"
+            dayFive = "Show Up Again"
+        case .socialPressure:
+            dayTwo = "Name What Matters"
+            dayFour = "Stand in Truth"
+            dayFive = "Choose Courage"
+        case .discipline:
+            dayTwo = "Remove the Excuse"
+            dayFour = "Obedience Over Motivation"
+            dayFive = "Finish the Private Work"
+        }
+
+        return [
+            FirstWeekCheckpoint(day: 1, title: "Show Up"),
+            FirstWeekCheckpoint(day: 2, title: dayTwo),
+            FirstWeekCheckpoint(day: 3, title: wantsPrayer ? "Pray Before You React" : "Obedience Over Motivation"),
+            FirstWeekCheckpoint(day: 4, title: wantsScripture ? "Renew Your Mind" : dayFour),
+            FirstWeekCheckpoint(day: 5, title: wantsPeace ? "Release What You Carry" : dayFive),
+            FirstWeekCheckpoint(day: 6, title: "Build the Rhythm"),
+            FirstWeekCheckpoint(day: 7, title: "Look How Far You’ve Climbed")
+        ]
+    }
+}
+
 enum MissionCategory: String, CaseIterable, Codable, Identifiable {
     case focus = "Focus"
     case faith = "Faith"
@@ -162,6 +296,7 @@ struct UserProfile: Identifiable, Codable, Equatable {
     var recoveryStreak: Int
     var appBlockingEnabled: Bool
     var joinedAt: Date
+    var onboarding: OnboardingPersonalization? = nil
 }
 
 struct GrowthPathPersonalization: Equatable {

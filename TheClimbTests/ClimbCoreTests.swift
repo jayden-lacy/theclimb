@@ -2,11 +2,487 @@ import XCTest
 @testable import The_Climb__Daily_Faith
 
 final class ClimbCoreTests: XCTestCase {
+    func testLoadingScriptureDoesNotRepeatImmediately() throws {
+        let suiteName = "LoadingScriptureProviderTests.\(UUID().uuidString)"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suiteName))
+        defer { defaults.removePersistentDomain(forName: suiteName) }
+
+        let first = LoadingScriptureProvider.next(defaults: defaults)
+        let second = LoadingScriptureProvider.next(defaults: defaults)
+
+        XCTAssertNotEqual(first.id, second.id)
+        XCTAssertTrue(first.reference.hasSuffix("(WEB)"))
+        XCTAssertTrue(second.reference.hasSuffix("(WEB)"))
+    }
+
+    func testFirebaseKeychainFailureUsesActionableMessage() {
+        let keychainError = NSError(
+            domain: "FIRAuthErrorDomain",
+            code: 17_995
+        )
+
+        let mappedError = FirebaseIntegration.mappedAuthError(keychainError)
+
+        guard case FirebaseIntegrationError.secureCredentialStorageUnavailable = mappedError else {
+            return XCTFail("Expected a secure credential storage error.")
+        }
+        XCTAssertEqual(
+            mappedError.localizedDescription,
+            "Secure sign-in storage is unavailable. Restart your device and try again."
+        )
+    }
+
+    func testClimbTimeRewardsAreTieredCappedAndIdempotent() {
+        let policy = RewardPolicy.balanced
+        let now = Date(timeIntervalSince1970: 1_800_000_000)
+        var wallet = ClimbTimeWallet.fresh(
+            dayKey: "2027-01-15@UTC",
+            policy: policy,
+            at: now
+        )
+        let service = ClimbTimeService()
+
+        wallet = service.recordActiveScriptureReading(
+            totalActiveSeconds: 5 * 60,
+            in: wallet,
+            policy: policy,
+            at: now
+        )
+        XCTAssertEqual(wallet.earnedSeconds, 5 * 60)
+
+        wallet = service.recordActiveScriptureReading(
+            totalActiveSeconds: 10 * 60,
+            in: wallet,
+            policy: policy,
+            at: now
+        )
+        XCTAssertEqual(wallet.earnedSeconds, 8 * 60)
+
+        wallet = service.recordActiveScriptureReading(
+            totalActiveSeconds: 15 * 60,
+            in: wallet,
+            policy: policy,
+            at: now
+        )
+        XCTAssertEqual(wallet.earnedSeconds, 10 * 60)
+
+        wallet = service.awardMission(
+            missionID: "mission-1",
+            difficulty: 5,
+            to: wallet,
+            policy: policy,
+            at: now
+        )
+        let afterFirstMissionAward = wallet
+        wallet = service.awardMission(
+            missionID: "mission-1",
+            difficulty: 5,
+            to: wallet,
+            policy: policy,
+            at: now
+        )
+
+        XCTAssertEqual(wallet, afterFirstMissionAward)
+        XCTAssertEqual(wallet.earnedSeconds, 15 * 60)
+
+        for index in 0..<20 {
+            wallet = service.awardPrayer(
+                sessionID: "prayer-\(index)",
+                to: wallet,
+                policy: policy,
+                at: now
+            )
+        }
+        XCTAssertEqual(wallet.earnedSeconds, policy.maximumEarnedSecondsPerDay)
+        XCTAssertLessThanOrEqual(
+            wallet.baseAllowanceSeconds + wallet.earnedSeconds,
+            wallet.hardStopSeconds
+        )
+    }
+
+    func testHardStopConsumptionIsMonotonicAndBounded() {
+        let policy = RewardPolicy.balanced
+        let now = Date(timeIntervalSince1970: 1_800_000_000)
+        let service = ClimbTimeService()
+        var wallet = ClimbTimeWallet.fresh(
+            dayKey: "2027-01-15@UTC",
+            policy: policy,
+            at: now
+        )
+
+        wallet = service.recordEligibleUsage(
+            totalSeconds: 45 * 60,
+            in: wallet,
+            at: now
+        )
+        wallet = service.recordEligibleUsage(
+            totalSeconds: 20 * 60,
+            in: wallet,
+            at: now
+        )
+        XCTAssertEqual(wallet.consumedSeconds, 45 * 60)
+
+        wallet = service.recordEligibleUsage(
+            totalSeconds: 90 * 60,
+            in: wallet,
+            at: now
+        )
+        XCTAssertEqual(wallet.consumedSeconds, 60 * 60)
+        XCTAssertTrue(wallet.isHardStopReached)
+        XCTAssertEqual(wallet.availableSeconds, 0)
+    }
+
+    func testDailyResetUsesCalendarDaysAcrossDSTAndIsIdempotent() throws {
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.timeZone = try XCTUnwrap(TimeZone(identifier: "America/Chicago"))
+        let beforeMidnight = try XCTUnwrap(
+            calendar.date(
+                from: DateComponents(
+                    year: 2026,
+                    month: 3,
+                    day: 8,
+                    hour: 23,
+                    minute: 30
+                )
+            )
+        )
+        let afterMidnight = try XCTUnwrap(
+            calendar.date(
+                from: DateComponents(
+                    year: 2026,
+                    month: 3,
+                    day: 9,
+                    hour: 0,
+                    minute: 30
+                )
+            )
+        )
+        let policy = RewardPolicy.balanced
+        var envelope = ClimbControlStateEnvelope.fresh(
+            ownerUserID: "user-1",
+            policy: policy,
+            at: beforeMidnight,
+            calendar: calendar
+        )
+        envelope.wallet.earnedSeconds = 8 * 60
+        envelope.wallet.consumedSeconds = 12 * 60
+
+        let reset = DailyResetService().reconcile(
+            envelope,
+            policy: policy,
+            at: afterMidnight,
+            calendar: calendar
+        )
+        let duplicate = DailyResetService().reconcile(
+            reset,
+            policy: policy,
+            at: afterMidnight,
+            calendar: calendar
+        )
+
+        XCTAssertNotEqual(reset.wallet.dayKey, envelope.wallet.dayKey)
+        XCTAssertEqual(reset.wallet.earnedSeconds, 0)
+        XCTAssertEqual(reset.wallet.consumedSeconds, 0)
+        XCTAssertEqual(reset, duplicate)
+    }
+
+    func testEffectiveRestrictionPolicyUsesExplicitPrecedence() {
+        let service = EffectiveRestrictionPolicyService()
+        let base = EffectiveRestrictionInput(
+            isEssential: false,
+            emergencyOverrideActive: false,
+            committedModeActive: true,
+            activeModeBlocksSelection: true,
+            scheduledModeBlocksSelection: true,
+            sleepModeBlocksSelection: true,
+            scriptureBeforeScrollRequired: true,
+            hardStopReached: true,
+            hasClimbTimeAvailable: false,
+            intentionalUnlockActive: false
+        )
+
+        XCTAssertEqual(service.resolve(base).reason, .committedMode)
+
+        var emergency = base
+        emergency.emergencyOverrideActive = true
+        XCTAssertEqual(service.resolve(emergency).reason, .emergencyOverride)
+
+        var essential = base
+        essential.isEssential = true
+        XCTAssertEqual(service.resolve(essential).disposition, .essentialAlwaysAllowed)
+
+        var scripture = base
+        scripture.committedModeActive = false
+        scripture.activeModeBlocksSelection = false
+        scripture.scheduledModeBlocksSelection = false
+        scripture.sleepModeBlocksSelection = false
+        XCTAssertEqual(service.resolve(scripture).reason, .scriptureBeforeScroll)
+    }
+
+    func testClimbControlRuntimeResetsWhenAccountOwnerChanges() throws {
+        let now = Date(timeIntervalSince1970: 1_800_000_000)
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.timeZone = TimeZone(secondsFromGMT: 0) ?? .current
+        let policy = RewardPolicy.balanced
+        var existing = ClimbControlStateEnvelope.fresh(
+            ownerUserID: "old-user",
+            policy: policy,
+            at: now,
+            calendar: calendar
+        )
+        existing.wallet.earnedSeconds = 15 * 60
+        let store = InMemoryClimbControlStateStore(envelope: existing)
+        let evidenceStore = InMemoryClimbTimeUsageEvidenceStore(
+            evidence: .fresh(
+                ownerUserID: "old-user",
+                dayKey: existing.wallet.dayKey,
+                at: now
+            )
+        )
+        let runtime = ClimbControlRuntimeService(
+            store: store,
+            usageEvidenceStore: evidenceStore,
+            rewardPolicy: policy,
+            calendar: { calendar },
+            now: { now }
+        )
+
+        let state = try runtime.loadState(ownerUserID: "new-user")
+
+        XCTAssertEqual(state.ownerUserID, "new-user")
+        XCTAssertEqual(state.wallet.earnedSeconds, 0)
+        XCTAssertEqual(store.envelope, Optional(state))
+        XCTAssertNil(evidenceStore.evidence)
+    }
+
+    func testClimbTimeThresholdPlanIsBoundedAndIncludesPolicyBoundaries() {
+        let defaultPlan = ClimbTimeThresholdPlan().thresholds(
+            allowanceSeconds: 30 * 60,
+            hardStopSeconds: 60 * 60
+        )
+
+        XCTAssertEqual(defaultPlan.first, 60)
+        XCTAssertTrue(defaultPlan.contains(30 * 60))
+        XCTAssertEqual(defaultPlan.last, 60 * 60)
+        XCTAssertEqual(defaultPlan.count, Set(defaultPlan).count)
+
+        let fullDayPlan = ClimbTimeThresholdPlan().thresholds(
+            allowanceSeconds: 37 * 60,
+            hardStopSeconds: 24 * 60 * 60
+        )
+        XCTAssertLessThanOrEqual(fullDayPlan.count, 120)
+        XCTAssertTrue(fullDayPlan.contains(37 * 60))
+        XCTAssertEqual(fullDayPlan.last, 24 * 60 * 60)
+    }
+
+    func testClimbTimeUsageEvidenceIsMonotonicAndDuplicateSafe() throws {
+        let suiteName = "ClimbTimeUsageEvidenceTests.\(UUID().uuidString)"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suiteName))
+        defer { defaults.removePersistentDomain(forName: suiteName) }
+        let store = AppGroupClimbTimeMonitorStore(defaults: defaults)
+        let now = Date(timeIntervalSince1970: 1_800_000_000)
+
+        let first = try store.recordThreshold(
+            ownerUserID: "user-1",
+            dayKey: "2027-01-15@UTC",
+            thresholdSeconds: 120,
+            callbackID: "two-minutes",
+            at: now
+        )
+        let duplicate = try store.recordThreshold(
+            ownerUserID: "user-1",
+            dayKey: "2027-01-15@UTC",
+            thresholdSeconds: 120,
+            callbackID: "two-minutes",
+            at: now.addingTimeInterval(2)
+        )
+        let outOfOrder = try store.recordThreshold(
+            ownerUserID: "user-1",
+            dayKey: "2027-01-15@UTC",
+            thresholdSeconds: 60,
+            callbackID: "one-minute",
+            at: now.addingTimeInterval(3)
+        )
+
+        XCTAssertEqual(first.evidence.observedSeconds, 120)
+        XCTAssertFalse(duplicate.didAdvance)
+        XCTAssertEqual(duplicate.evidence.callbackIDs, ["two-minutes"])
+        XCTAssertEqual(outOfOrder.evidence.observedSeconds, 120)
+
+        let nextDay = try store.recordThreshold(
+            ownerUserID: "user-1",
+            dayKey: "2027-01-16@UTC",
+            thresholdSeconds: 60,
+            callbackID: "next-day-one-minute",
+            at: now.addingTimeInterval(86_400)
+        )
+        XCTAssertEqual(nextDay.previousObservedSeconds, 0)
+        XCTAssertEqual(nextDay.evidence.observedSeconds, 60)
+        XCTAssertEqual(nextDay.evidence.callbackIDs, ["next-day-one-minute"])
+    }
+
+    func testClimbControlRuntimeReconcilesExtensionEvidenceAfterRelaunch() throws {
+        let now = Date(timeIntervalSince1970: 1_800_000_000)
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.timeZone = TimeZone(secondsFromGMT: 0) ?? .current
+        let policy = RewardPolicy.balanced
+        let envelope = ClimbControlStateEnvelope.fresh(
+            ownerUserID: "user-1",
+            policy: policy,
+            at: now,
+            calendar: calendar
+        )
+        let stateStore = InMemoryClimbControlStateStore(envelope: envelope)
+        let evidenceStore = InMemoryClimbTimeUsageEvidenceStore(
+            evidence: ClimbTimeUsageEvidence(
+                schemaVersion: ClimbTimeUsageEvidence.currentSchemaVersion,
+                ownerUserID: "user-1",
+                dayKey: envelope.wallet.dayKey,
+                observedSeconds: 17 * 60,
+                callbackIDs: ["seventeen-minutes"],
+                updatedAt: now
+            )
+        )
+        let runtime = ClimbControlRuntimeService(
+            store: stateStore,
+            usageEvidenceStore: evidenceStore,
+            rewardPolicy: policy,
+            calendar: { calendar },
+            now: { now }
+        )
+
+        let firstLoad = try runtime.loadState(ownerUserID: "user-1")
+        let secondLoad = try runtime.loadState(ownerUserID: "user-1")
+
+        XCTAssertEqual(firstLoad.wallet.consumedSeconds, 17 * 60)
+        XCTAssertEqual(secondLoad.wallet.consumedSeconds, 17 * 60)
+        XCTAssertEqual(firstLoad, secondLoad)
+        XCTAssertEqual(stateStore.saveCount, 1)
+    }
+
     func testAgeGroupsIncreaseMissionMaturity() {
         XCTAssertEqual(AgeGroup.earlyTeen.baseMissionMinutes, 15)
         XCTAssertEqual(AgeGroup.youngAdult.baseMissionMinutes, 30)
         XCTAssertLessThan(AgeGroup.earlyTeen.difficultyAdjustment, AgeGroup.youngAdult.difficultyAdjustment)
         XCTAssertNotEqual(AgeGroup.earlyTeen.lessonMaturityLine, AgeGroup.youngAdult.lessonMaturityLine)
+    }
+
+    func testLegacyProfileDecodesWithoutOnboardingPersonalization() throws {
+        let profile = makeProfile(ageGroup: .college, ovr: 50, longestStreak: 0)
+        let encoded = try JSONEncoder().encode(profile)
+        var object = try XCTUnwrap(JSONSerialization.jsonObject(with: encoded) as? [String: Any])
+        object.removeValue(forKey: "onboarding")
+
+        let legacyData = try JSONSerialization.data(withJSONObject: object)
+        let decoded = try JSONDecoder().decode(UserProfile.self, from: legacyData)
+
+        XCTAssertNil(decoded.onboarding)
+        XCTAssertEqual(decoded.id, profile.id)
+        XCTAssertEqual(decoded.mainStruggle, profile.mainStruggle)
+    }
+
+    func testOnboardingPersonalizationRoundTrips() throws {
+        var profile = makeProfile(ageGroup: .lateTeen, ovr: 50, longestStreak: 0)
+        profile.onboarding = OnboardingPersonalization(
+            spiritualStartingPoint: .growing,
+            dailyCommitmentMinutes: 10,
+            preferredTimeWindow: .evening,
+            primaryObstacle: "My phone pulls me away",
+            whyStarted: "I want to become more disciplined",
+            firstStepCompletedAt: Date(timeIntervalSince1970: 1_800_000_000),
+            initialMilestoneDays: 3
+        )
+
+        let decoded = try JSONDecoder().decode(
+            UserProfile.self,
+            from: JSONEncoder().encode(profile)
+        )
+
+        XCTAssertEqual(decoded.onboarding, profile.onboarding)
+        XCTAssertTrue(decoded.onboarding?.completedFirstStep == true)
+    }
+
+    func testOnboardingCommitmentSetsMissionDurationFloor() {
+        var profile = makeProfile(ageGroup: .youngAdult, ovr: 50, longestStreak: 0)
+        profile.onboarding = OnboardingPersonalization(
+            spiritualStartingPoint: .base,
+            dailyCommitmentMinutes: 10,
+            preferredTimeWindow: .morning,
+            primaryObstacle: "I keep putting it off",
+            whyStarted: "I want to follow through",
+            firstStepCompletedAt: nil,
+            initialMilestoneDays: 3
+        )
+
+        XCTAssertEqual(OVRScoring.minimumMissionMinutes(for: 1, profile: profile), 10)
+        XCTAssertEqual(OVRScoring.minimumMissionMinutes(for: 3, profile: profile), 20)
+    }
+
+    func testFirstWeekPathRespondsToGoalsAndObstacle() {
+        let path = OnboardingPersonalization.firstWeekPath(
+            goals: ["Build a prayer habit", "Read Scripture"],
+            struggle: .focus
+        )
+
+        XCTAssertEqual(path.count, 7)
+        XCTAssertEqual(path.first?.title, "Show Up")
+        XCTAssertEqual(path[1].title, "Silence the Noise")
+        XCTAssertEqual(path[2].title, "Pray Before You React")
+        XCTAssertEqual(path[3].title, "Renew Your Mind")
+    }
+
+    func testPurityProtectionCatalogContainsRequestedDomains() {
+        XCTAssertEqual(
+            Set(PurityProtectionDomainCatalog.protectedDomainStrings),
+            Set([
+                "x.com",
+                "twitter.com",
+                "reddit.com",
+                "redd.it",
+                "erome.com",
+                "leakshaven.com",
+                "theporndude.com"
+            ])
+        )
+    }
+
+    func testPurityProtectionBundledRulesAreDeterministic() {
+        let enabled = PurityProtectionDomainCatalog.applyingBundledRules(
+            to: [],
+            enabled: true
+        )
+        let reapplied = PurityProtectionDomainCatalog.applyingBundledRules(
+            to: enabled,
+            enabled: true
+        )
+        let disabled = PurityProtectionDomainCatalog.applyingBundledRules(
+            to: enabled,
+            enabled: false
+        )
+
+        XCTAssertEqual(enabled, reapplied)
+        XCTAssertEqual(enabled.count, 7)
+        XCTAssertTrue(enabled.allSatisfy { $0.source == .bundled })
+        XCTAssertTrue(enabled.allSatisfy { $0.matchScope == .domainAndSubdomains })
+        XCTAssertTrue(disabled.isEmpty)
+    }
+
+    func testAdultRuntimeSeedsPurityDomainsWhenEnabled() throws {
+        let runtimeStore = InMemoryAdultProtectionRuntimeStore(
+            envelope: .empty(at: Date(timeIntervalSince1970: 1_800_000_000))
+        )
+        let runtime = AdultProtectionRuntimeService(
+            authorizationProvider: StubScreenTimeAuthorizationProvider(.approved),
+            runtimeStore: runtimeStore,
+            purityProtectionEnabled: { true }
+        )
+
+        let state = try runtime.loadState()
+
+        XCTAssertEqual(
+            Set(state.rules.map(\.domain.rawValue)),
+            Set(PurityProtectionDomainCatalog.protectedDomainStrings)
+        )
     }
 
     func testPhoneGoalCreatesFocusFirstGrowthPath() {
@@ -555,6 +1031,7 @@ final class ClimbCoreTests: XCTestCase {
             authorizationProvider: StubScreenTimeAuthorizationProvider(.approved),
             runtimeStore: runtimeStore,
             policyCoordinator: coordinator,
+            purityProtectionEnabled: { false },
             now: { now }
         )
 
@@ -577,6 +1054,7 @@ final class ClimbCoreTests: XCTestCase {
         let runtime = AdultProtectionRuntimeService(
             authorizationProvider: StubScreenTimeAuthorizationProvider(.approved),
             runtimeStore: runtimeStore,
+            purityProtectionEnabled: { false },
             now: { now }
         )
 
@@ -602,6 +1080,7 @@ final class ClimbCoreTests: XCTestCase {
         let runtime = AdultProtectionRuntimeService(
             authorizationProvider: StubScreenTimeAuthorizationProvider(.approved),
             runtimeStore: runtimeStore,
+            purityProtectionEnabled: { false },
             now: { now }
         )
 
@@ -625,6 +1104,7 @@ final class ClimbCoreTests: XCTestCase {
         let runtime = AdultProtectionRuntimeService(
             authorizationProvider: StubScreenTimeAuthorizationProvider(.approved),
             runtimeStore: runtimeStore,
+            purityProtectionEnabled: { false },
             now: { now }
         )
 
@@ -1103,6 +1583,77 @@ private final class InMemoryFocusSessionDomainStore: FocusSessionDomainStoring {
 
     func save(_ envelope: FocusSessionDomainEnvelope) throws {
         self.envelope = envelope
+    }
+}
+
+private final class InMemoryClimbControlStateStore: ClimbControlStateStoring {
+    var envelope: ClimbControlStateEnvelope?
+    private(set) var saveCount = 0
+
+    init(envelope: ClimbControlStateEnvelope? = nil) {
+        self.envelope = envelope
+    }
+
+    func load() throws -> ClimbControlStateEnvelope? {
+        envelope
+    }
+
+    func save(_ envelope: ClimbControlStateEnvelope) throws {
+        self.envelope = envelope
+        saveCount += 1
+    }
+
+    func clear() throws {
+        envelope = nil
+    }
+}
+
+private final class InMemoryClimbTimeUsageEvidenceStore:
+    ClimbTimeUsageEvidenceStoring {
+    var evidence: ClimbTimeUsageEvidence?
+
+    init(evidence: ClimbTimeUsageEvidence? = nil) {
+        self.evidence = evidence
+    }
+
+    func loadEvidence() throws -> ClimbTimeUsageEvidence? {
+        evidence
+    }
+
+    func recordThreshold(
+        ownerUserID: String,
+        dayKey: String,
+        thresholdSeconds: Int,
+        callbackID: String,
+        at date: Date
+    ) throws -> ClimbTimeUsageTransition {
+        let matchesCurrentOwnerAndDay = evidence?.ownerUserID == ownerUserID
+            && evidence?.dayKey == dayKey
+        let previousObserved = matchesCurrentOwnerAndDay
+            ? evidence?.observedSeconds ?? 0
+            : 0
+        var next = evidence
+        if next?.ownerUserID != ownerUserID || next?.dayKey != dayKey {
+            next = .fresh(ownerUserID: ownerUserID, dayKey: dayKey, at: date)
+        }
+        guard var updated = next else {
+            throw ClimbTimeMonitorStoreError.encodingFailed
+        }
+        updated.observedSeconds = max(updated.observedSeconds, thresholdSeconds)
+        if !callbackID.isEmpty,
+           !updated.callbackIDs.contains(callbackID) {
+            updated.callbackIDs.append(callbackID)
+        }
+        updated.updatedAt = date
+        evidence = updated
+        return ClimbTimeUsageTransition(
+            previousObservedSeconds: previousObserved,
+            evidence: updated
+        )
+    }
+
+    func clear() throws {
+        evidence = nil
     }
 }
 

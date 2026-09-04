@@ -9,6 +9,7 @@ struct ScreenTimeUpgradeView: View {
 
     let experienceVersion: Int
     let onFinished: () -> Void
+    private let persistsProgress: Bool
 
     @State private var progress: ScreenTimeUpgradeProgress
     @State private var errorMessage: String?
@@ -26,10 +27,12 @@ struct ScreenTimeUpgradeView: View {
         viewModel: AppViewModel,
         progress: ScreenTimeUpgradeProgress,
         experienceVersion: Int,
+        persistsProgress: Bool = true,
         onFinished: @escaping () -> Void
     ) {
         self.viewModel = viewModel
         self.experienceVersion = experienceVersion
+        self.persistsProgress = persistsProgress
         self.onFinished = onFinished
         _progress = State(initialValue: progress)
     }
@@ -78,7 +81,9 @@ struct ScreenTimeUpgradeView: View {
         }
 #if canImport(FamilyControls) && os(iOS)
         .familyActivityPicker(
-            headerText: "Choose apps, categories, and websites that pull you away.",
+            headerText: PurityProtectionPreferenceStore.isEnabled
+                ? "Select the X and Reddit apps, plus anything else that becomes a trigger."
+                : "Choose apps, categories, and websites that pull you away.",
             footerText: "Apple keeps these selections private on this device.",
             isPresented: $showActivityPicker,
             selection: $activitySelection
@@ -166,8 +171,12 @@ struct ScreenTimeUpgradeView: View {
             UpgradeHero(
                 symbol: "apps.iphone",
                 eyebrow: "Distractions",
-                title: "Choose what should go quiet",
-                detail: "Select the apps, categories, or websites you want available only when you decide."
+                title: PurityProtectionPreferenceStore.isEnabled
+                    ? "Close the common doors"
+                    : "Choose what should go quiet",
+                detail: PurityProtectionPreferenceStore.isEnabled
+                    ? "X, Reddit, and the requested explicit websites are blocked on the web. Select the X and Reddit apps here for app-level blocking too."
+                    : "Select the apps, categories, or websites you want available only when you decide."
             )
             selectionSummary
         case .firstFocusRhythmOffer:
@@ -334,6 +343,9 @@ struct ScreenTimeUpgradeView: View {
     private var selectionDetail: String {
 #if canImport(FamilyControls) && os(iOS)
         let count = activitySelection.shieldableContentCount
+        if PurityProtectionPreferenceStore.isEnabled, count == 0 {
+            return "Select the X and Reddit apps"
+        }
         return count == 0 ? "Nothing selected yet" : "\(count) selected"
 #else
         return "Unavailable on this device"
@@ -444,6 +456,7 @@ struct ScreenTimeUpgradeView: View {
     }
 
     private func markPresented() {
+        guard persistsProgress else { return }
         do {
             guard var state = try store.load() else { return }
             state = try progressService.markPresented(

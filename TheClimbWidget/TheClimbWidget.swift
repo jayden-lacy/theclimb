@@ -68,6 +68,7 @@ private enum WidgetActionStore {
         static let selectedMinutes = "climb.prayer.selectedMinutes"
         static let sessionsCompleted = "climb.prayer.sessionsCompleted"
         static let minutesCompleted = "climb.prayer.minutesCompleted"
+        static let lastCompletedAt = "climb.prayer.lastCompletedAt"
     }
 
     struct ActionResult {
@@ -148,6 +149,7 @@ private enum WidgetActionStore {
 
         defaults.set(defaults.integer(forKey: PrayerKeys.sessionsCompleted) + 1, forKey: PrayerKeys.sessionsCompleted)
         defaults.set(defaults.integer(forKey: PrayerKeys.minutesCompleted) + completedMinutes, forKey: PrayerKeys.minutesCompleted)
+        defaults.set(now.timeIntervalSince1970, forKey: PrayerKeys.lastCompletedAt)
         clearPrayerTimer(defaults: defaults)
         return ActionResult(didChange: true, message: "Prayer completed.")
     }
@@ -1206,22 +1208,22 @@ private struct WidgetPrayerState {
 }
 
 private enum WidgetTheme {
-    static let black = Color(red: 0.008, green: 0.012, blue: 0.008)
-    static let ink = Color(red: 0.018, green: 0.024, blue: 0.018)
-    static let surface = Color(red: 0.030, green: 0.041, blue: 0.030)
-    static let surfaceRaised = Color(red: 0.058, green: 0.076, blue: 0.056)
+    static let black = Color(red: 7 / 255, green: 11 / 255, blue: 22 / 255)
+    static let ink = Color(red: 9 / 255, green: 14 / 255, blue: 27 / 255)
+    static let surface = Color(red: 17 / 255, green: 24 / 255, blue: 39 / 255)
+    static let surfaceRaised = Color(red: 23 / 255, green: 33 / 255, blue: 54 / 255)
     static let glassSurface = Color.white.opacity(0.070)
     static let divider = Color.white.opacity(0.085)
     static let dividerStrong = Color.white.opacity(0.135)
-    static let primaryText = Color(red: 0.973, green: 0.969, blue: 0.949)
-    static let secondaryText = Color(red: 0.718, green: 0.694, blue: 0.655)
-    static let tertiaryText = Color(red: 0.471, green: 0.447, blue: 0.408)
-    static let warmText = Color(red: 0.910, green: 0.866, blue: 0.792)
-    static let green = Color(red: 0.220, green: 0.851, blue: 0.471)
-    static let sage = Color(red: 0.549, green: 0.859, blue: 0.635)
-    static let amber = Color(red: 0.863, green: 0.651, blue: 0.290)
-    static let blue = Color(red: 0.470, green: 0.650, blue: 0.910)
-    static let red = Color(red: 0.910, green: 0.357, blue: 0.357)
+    static let primaryText = Color(red: 247 / 255, green: 247 / 255, blue: 245 / 255)
+    static let secondaryText = Color(red: 156 / 255, green: 166 / 255, blue: 181 / 255)
+    static let tertiaryText = Color(red: 102 / 255, green: 113 / 255, blue: 133 / 255)
+    static let warmText = Color(red: 233 / 255, green: 221 / 255, blue: 199 / 255)
+    static let green = Color(red: 169 / 255, green: 203 / 255, blue: 255 / 255)
+    static let sage = Color(red: 140 / 255, green: 255 / 255, blue: 221 / 255)
+    static let amber = Color(red: 179 / 255, green: 154 / 255, blue: 255 / 255)
+    static let blue = Color(red: 169 / 255, green: 203 / 255, blue: 255 / 255)
+    static let red = Color(red: 255 / 255, green: 123 / 255, blue: 134 / 255)
 }
 
 private extension ClimbWidgetEntry {
@@ -1329,32 +1331,10 @@ private struct WidgetCornerBeam: View {
     let tint: Color
 
     var body: some View {
-        ZStack(alignment: .bottomTrailing) {
-            Circle()
-                .fill(
-                    RadialGradient(
-                        colors: [tint.opacity(0.28), tint.opacity(0.045), .clear],
-                        center: .center,
-                        startRadius: 4,
-                        endRadius: 120
-                    )
-                )
-                .frame(width: 185, height: 185)
-                .offset(x: 58, y: -78)
-
-            Capsule()
-                .fill(
-                    LinearGradient(
-                        colors: [tint.opacity(0.0), tint.opacity(0.40), tint.opacity(0.0)],
-                        startPoint: .top,
-                        endPoint: .bottom
-                    )
-                )
-                .frame(width: 22, height: 190)
-                .rotationEffect(.degrees(26))
-                .offset(x: -16, y: 58)
-                .opacity(0.42)
-        }
+        Capsule()
+            .fill(tint.opacity(0.28))
+            .frame(width: 3, height: 46)
+            .offset(x: -8, y: -8)
         .allowsHitTesting(false)
     }
 }
@@ -1518,14 +1498,7 @@ private struct WidgetWordChip: View {
                 .allowsTightening(true)
         }
         .padding(10)
-        .background(
-            LinearGradient(
-                colors: [WidgetTheme.glassSurface, WidgetTheme.amber.opacity(0.055)],
-                startPoint: .topLeading,
-                endPoint: .bottomTrailing
-            ),
-            in: RoundedRectangle(cornerRadius: 18, style: .continuous)
-        )
+        .background(WidgetTheme.surfaceRaised.opacity(0.66), in: RoundedRectangle(cornerRadius: 18, style: .continuous))
         .overlay {
             RoundedRectangle(cornerRadius: 18, style: .continuous)
                 .stroke(WidgetTheme.divider, lineWidth: 1)
@@ -1815,14 +1788,7 @@ private struct WidgetDailyWordPanel: View {
                 .truncationMode(.tail)
         }
         .padding(11)
-        .background(
-            LinearGradient(
-                colors: [WidgetTheme.surfaceRaised.opacity(0.74), WidgetTheme.amber.opacity(0.035)],
-                startPoint: .topLeading,
-                endPoint: .bottomTrailing
-            ),
-            in: RoundedRectangle(cornerRadius: 18, style: .continuous)
-        )
+        .background(WidgetTheme.surfaceRaised.opacity(0.74), in: RoundedRectangle(cornerRadius: 18, style: .continuous))
         .overlay {
             RoundedRectangle(cornerRadius: 18, style: .continuous)
                 .stroke(WidgetTheme.divider, lineWidth: 1)
@@ -2041,38 +2007,12 @@ private struct PartnerStrip: View {
 private extension View {
     func widgetBackground(emphasis: Color = WidgetTheme.green) -> some View {
         containerBackground(for: .widget) {
-            ZStack {
-                WidgetTheme.black
-                RadialGradient(
-                    colors: [
-                        emphasis.opacity(0.20),
-                        WidgetTheme.surface.opacity(0.42),
-                        .clear
-                    ],
-                    center: .topTrailing,
-                    startRadius: 0,
-                    endRadius: 220
-                )
-                LinearGradient(
-                    colors: [
-                        WidgetTheme.green.opacity(0.030),
-                        WidgetTheme.surface.opacity(0.86),
-                        WidgetTheme.ink,
-                        WidgetTheme.black
-                    ],
-                    startPoint: .topTrailing,
-                    endPoint: .bottomLeading
-                )
-                LinearGradient(
-                    colors: [
-                        .white.opacity(0.045),
-                        .clear,
-                        .black.opacity(0.22)
-                    ],
-                    startPoint: .topLeading,
-                    endPoint: .bottomTrailing
-                )
-            }
+            WidgetTheme.black
+                .overlay(alignment: .top) {
+                    Rectangle()
+                        .fill(emphasis.opacity(0.16))
+                        .frame(height: 1)
+                }
         }
     }
 }

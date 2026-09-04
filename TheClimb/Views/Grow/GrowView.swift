@@ -19,6 +19,7 @@ struct GrowView: View {
     @State private var showFocusSetup = false
     @AppStorage("climb.prayer.sessionsCompleted", store: GrowView.sharedPrayerDefaults) private var prayerSessionsCompleted = 0
     @AppStorage("climb.prayer.minutesCompleted", store: GrowView.sharedPrayerDefaults) private var prayerMinutesCompleted = 0
+    @AppStorage("climb.prayer.lastCompletedAt", store: GrowView.sharedPrayerDefaults) private var prayerLastCompletedAt = 0.0
     @AppStorage("climb.dailyWordFeedbackDate") private var dailyWordFeedbackDate = ""
     @AppStorage("climb.dailyWordFeedbackValue") private var dailyWordFeedbackValue = ""
     @Namespace private var growNamespace
@@ -642,6 +643,7 @@ struct GrowView: View {
         let completedMinutes = max(1, Int((Double(completedSeconds) / 60).rounded()))
         prayerSessionsCompleted += 1
         prayerMinutesCompleted += completedMinutes
+        prayerLastCompletedAt = Date().timeIntervalSince1970
         AppAnalytics.record(
             .prayerSessionCompleted,
             properties: [

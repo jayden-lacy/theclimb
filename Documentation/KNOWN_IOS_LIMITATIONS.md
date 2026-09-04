@@ -19,6 +19,13 @@ These limitations must be reflected in product copy and App Review notes.
 - Public Screen Time APIs do not provide an exact, universal open count for every third-party app.
 - DeviceActivity events can approximate some threshold behavior but must not be labeled as exact when they are not.
 
+## Climb Time accounting
+
+- Climb Time usage is inferred from cumulative DeviceActivity threshold callbacks for the user's authorized selection. It is a monotonic lower-bound estimate, not a continuously readable second-by-second counter.
+- Threshold delivery is system-managed. The UI may update after the next checkpoint or app foreground reconciliation rather than instantly.
+- The Climb does not use the newer direct Device Activity data-fetch API as a general solution because availability and entitlement constraints do not cover ordinary worldwide consumer distribution.
+- If authorization, selection, App Group access, or scheduling is unavailable, the app must report that state and must not claim Climb Time enforcement is active.
+
 ## Websites
 
 - Managed Settings can shield selected web domains and apply Apple's automatic web-content filtering.

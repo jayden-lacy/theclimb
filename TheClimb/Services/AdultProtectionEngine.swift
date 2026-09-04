@@ -269,6 +269,106 @@ struct AdultProtectionDomainRule: Identifiable, Codable, Hashable {
     }
 }
 
+enum PurityProtectionDomainCatalog {
+    static let protectedDomainStrings = [
+        "x.com",
+        "twitter.com",
+        "reddit.com",
+        "redd.it",
+        "erome.com",
+        "leakshaven.com",
+        "theporndude.com"
+    ]
+
+    private static let ruleIDPrefix = "purity-bundled-block:"
+
+    static var bundledRules: [AdultProtectionDomainRule] {
+        protectedDomainStrings.compactMap { rawDomain in
+            guard let domain = AdultProtectionDomain(rawValue: rawDomain) else {
+                return nil
+            }
+            return AdultProtectionDomainRule(
+                id: ruleIDPrefix + rawDomain,
+                domain: domain,
+                action: .block,
+                matchScope: .domainAndSubdomains,
+                source: .bundled,
+                effectiveFrom: nil,
+                expiresAt: nil
+            )
+        }
+    }
+
+    static func applyingBundledRules(
+        to rules: [AdultProtectionDomainRule],
+        enabled: Bool
+    ) -> [AdultProtectionDomainRule] {
+        var merged = rules.filter { !$0.id.hasPrefix(ruleIDPrefix) }
+        if enabled {
+            merged.append(contentsOf: bundledRules)
+        }
+        return merged
+    }
+}
+
+enum PurityProtectionPreferenceStore {
+    static let appGroupID = "group.com.jaydenlacy.theclimb"
+    static let enabledKey = "the-climb.purity-protection.enabled.v1"
+    static let personalizationEnabledKey =
+        "the-climb.purity-protection.personalization-enabled.v1"
+    static let focusFilterEnabledKey =
+        "the-climb.purity-protection.focus-filter-enabled.v1"
+    static let permanentProtectionEnabledKey =
+        "the-climb.purity-protection.permanent-enabled.v1"
+    static let domainsKey = "the-climb.purity-protection.domains.v1"
+
+    private static var defaults: UserDefaults {
+        UserDefaults(suiteName: appGroupID) ?? .standard
+    }
+
+    static var isEnabled: Bool {
+        let sourceKeys = [
+            personalizationEnabledKey,
+            focusFilterEnabledKey,
+            permanentProtectionEnabledKey
+        ]
+        if sourceKeys.contains(where: { defaults.object(forKey: $0) != nil }) {
+            return sourceKeys.contains { defaults.bool(forKey: $0) }
+        }
+        return defaults.bool(forKey: enabledKey)
+    }
+
+    static var protectedDomainStrings: [String] {
+        guard isEnabled else { return [] }
+        let stored = defaults.stringArray(forKey: domainsKey) ?? []
+        return stored.isEmpty
+            ? PurityProtectionDomainCatalog.protectedDomainStrings
+            : stored
+    }
+
+    static func setPersonalizationEnabled(_ isEnabled: Bool) {
+        setSource(isEnabled, key: personalizationEnabledKey)
+    }
+
+    static func setFocusFilterEnabled(_ isEnabled: Bool) {
+        setSource(isEnabled, key: focusFilterEnabledKey)
+    }
+
+    static func setPermanentProtectionEnabled(_ isEnabled: Bool) {
+        setSource(isEnabled, key: permanentProtectionEnabledKey)
+    }
+
+    private static func setSource(_ isEnabled: Bool, key: String) {
+        defaults.set(isEnabled, forKey: key)
+        defaults.removeObject(forKey: enabledKey)
+        defaults.set(
+            PurityProtectionDomainCatalog.protectedDomainStrings,
+            forKey: domainsKey
+        )
+        defaults.synchronize()
+    }
+}
+
 enum AdultProtectionRuleDisposition: String, Codable, Equatable {
     case allow
     case block

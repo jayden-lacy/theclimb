@@ -114,6 +114,7 @@ struct ProfileView: View {
         .onChange(of: activitySelection) { _, newSelection in
             ScreenTimeActivitySelectionStore.saveSelection(newSelection)
             reloadFocusTemplates()
+            viewModel.refreshClimbControlState()
         }
 #endif
     }

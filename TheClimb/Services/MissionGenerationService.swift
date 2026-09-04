@@ -143,6 +143,10 @@ final class TemplateMissionGenerationService: MissionGenerationService {
     }
 
     private func duration(for profile: UserProfile, difficulty: Int) -> Int {
+        if profile.onboarding != nil {
+            return OVRScoring.minimumMissionMinutes(for: difficulty, profile: profile)
+        }
+
         let personalization = GrowthPathPersonalization.resolve(for: profile)
         let growthMinutes: Int = switch profile.ovrScore {
         case ..<55:
@@ -165,7 +169,7 @@ final class TemplateMissionGenerationService: MissionGenerationService {
             0
         }
         return max(
-            OVRScoring.minimumMissionMinutes(for: difficulty, ageGroup: profile.ageGroup),
+            OVRScoring.minimumMissionMinutes(for: difficulty, profile: profile),
             base + streakAdjustment + categoryAdjustment
         )
     }

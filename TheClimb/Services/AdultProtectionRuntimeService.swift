@@ -225,6 +225,7 @@ final class AdultProtectionRuntimeService {
     private let policyCoordinator: ScreenTimePolicyCoordinator
     private let disableService: AdultProtectionDisableRequestService
     private let allowService: AdultProtectionAllowRequestService
+    private let purityProtectionEnabled: () -> Bool
     private let now: () -> Date
 
     init(
@@ -237,6 +238,9 @@ final class AdultProtectionRuntimeService {
             AdultProtectionDisableRequestService(),
         allowService: AdultProtectionAllowRequestService =
             AdultProtectionAllowRequestService(),
+        purityProtectionEnabled: @escaping () -> Bool = {
+            PurityProtectionPreferenceStore.isEnabled
+        },
         now: @escaping () -> Date = Date.init
     ) {
         self.authorizationProvider = authorizationProvider
@@ -244,11 +248,22 @@ final class AdultProtectionRuntimeService {
         self.policyCoordinator = policyCoordinator
         self.disableService = disableService
         self.allowService = allowService
+        self.purityProtectionEnabled = purityProtectionEnabled
         self.now = now
     }
 
     func loadState() throws -> AdultProtectionRuntimeEnvelope {
-        try runtimeStore.load()
+        var envelope = try runtimeStore.load()
+        let mergedRules = PurityProtectionDomainCatalog.applyingBundledRules(
+            to: envelope.rules,
+            enabled: purityProtectionEnabled()
+        )
+        if mergedRules != envelope.rules {
+            envelope.rules = mergedRules
+            envelope.updatedAt = now()
+            try save(envelope)
+        }
+        return envelope
     }
 
     @discardableResult
@@ -260,6 +275,7 @@ final class AdultProtectionRuntimeService {
         }
         let authorization = await authorizationProvider.requestAuthorization()
         try validateAuthorization(authorization)
+        PurityProtectionPreferenceStore.setPermanentProtectionEnabled(true)
 
         let date = now()
         var envelope = try loadState()
@@ -401,6 +417,7 @@ final class AdultProtectionRuntimeService {
         envelope.updatedAt = now()
         try save(envelope)
         clearScreenTimeProtection()
+        PurityProtectionPreferenceStore.setPermanentProtectionEnabled(false)
         ScreenTimeProtectionHealthStore.recordEnforcementHeartbeat(at: now())
         return envelope
     }

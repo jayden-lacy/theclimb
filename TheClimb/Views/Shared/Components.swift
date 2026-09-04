@@ -14,26 +14,27 @@ extension Color {
         )
     }
 
-    static let climbBackgroundDeep = Color(hex: 0x010201)
-    static let climbBackground = Color(hex: 0x040604)
-    static let climbBackgroundLifted = Color(hex: 0x080C08)
-    static let climbSurface = Color(hex: 0x0B100B)
-    static let climbSurfaceRaised = Color(hex: 0x111711)
-    static let climbSurfaceGlass = Color(hex: 0x0E140E, alpha: 0.88)
-    static let climbDivider = Color(hex: 0x222B22)
-    static let climbTextSecondary = Color(hex: 0xB7B1A7)
-    static let climbMuted = Color(hex: 0x777269)
-    static let climbGreen = Color(hex: 0x38D978)
-    static let climbGold = Color(hex: 0xDCA64A)
-    static let climbRed = Color(hex: 0xE85B5B)
-    static let climbBlue = Color(hex: 0x78A6E8)
-    static let climbInk = Color(hex: 0x070807)
-    static let climbMist = Color(hex: 0xF8F7F2)
-    static let climbSage = Color(hex: 0x8CDBA2)
-    static let climbWarm = Color(hex: 0xE8DDCA)
-    static let climbAction = Color(hex: 0x38D978)
-    static let climbHairline = Color.white.opacity(0.070)
-    static let climbSurfaceLine = Color(hex: 0x253125)
+    static let climbBackgroundDeep = Color(hex: 0x070B16)
+    static let climbBackground = Color(hex: 0x090E1B)
+    static let climbBackgroundLifted = Color(hex: 0x0D1424)
+    static let climbSurface = Color(hex: 0x111827)
+    static let climbSurfaceRaised = Color(hex: 0x172136)
+    static let climbSurfaceGlass = Color(hex: 0x111827, alpha: 0.90)
+    static let climbDivider = Color(hex: 0x273247)
+    static let climbTextSecondary = Color(hex: 0x9CA6B5)
+    static let climbMuted = Color(hex: 0x667185)
+    static let climbGreen = Color(hex: 0xA9CBFF)
+    static let climbViolet = Color(hex: 0xB39AFF)
+    static let climbGold = Color(hex: 0xB39AFF)
+    static let climbRed = Color(hex: 0xFF7B86)
+    static let climbBlue = Color(hex: 0xA9CBFF)
+    static let climbInk = Color(hex: 0x070B16)
+    static let climbMist = Color(hex: 0xF7F7F5)
+    static let climbSage = Color(hex: 0x8CFFDD)
+    static let climbWarm = Color(hex: 0xE9DDC7)
+    static let climbAction = Color(hex: 0xA9CBFF)
+    static let climbHairline = Color.white.opacity(0.080)
+    static let climbSurfaceLine = Color(hex: 0x2A3650)
 }
 
 enum ClimbTypography {
@@ -177,34 +178,6 @@ struct ClimbScreenBackground: View {
     var body: some View {
         ZStack {
             Color.climbBackgroundDeep
-            LinearGradient(
-                colors: [
-                    Color(hex: 0x071109),
-                    Color.climbBackgroundDeep,
-                    Color.black.opacity(0.96)
-                ],
-                startPoint: .topLeading,
-                endPoint: .bottomTrailing
-            )
-            RadialGradient(
-                colors: [
-                    Color.climbAction.opacity(0.055),
-                    Color.climbBackgroundLifted.opacity(0.16),
-                    Color.clear
-                ],
-                center: .top,
-                startRadius: 72,
-                endRadius: 620
-            )
-            LinearGradient(
-                colors: [
-                    Color.white.opacity(0.018),
-                    Color.clear,
-                    Color.black.opacity(0.36)
-                ],
-                startPoint: .top,
-                endPoint: .bottom
-            )
             AmbientCanvasBackground()
         }
         .ignoresSafeArea()
@@ -226,24 +199,13 @@ struct ClimbCard<Content: View>: View {
         .background {
             RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
                 .fill(isProminent ? Color.climbSurfaceRaised.opacity(0.94) : Color.climbSurfaceGlass)
-                .overlay(alignment: .topLeading) {
-                    LinearGradient(
-                        colors: [
-                            Color.white.opacity(isProminent ? 0.055 : 0.035),
-                            Color.clear
-                        ],
-                        startPoint: .topLeading,
-                        endPoint: .bottomTrailing
-                    )
-                    .clipShape(RoundedRectangle(cornerRadius: cornerRadius, style: .continuous))
-                }
         }
         .clipShape(RoundedRectangle(cornerRadius: cornerRadius, style: .continuous))
         .overlay {
             RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
-                .stroke(Color.white.opacity(isProminent ? 0.115 : 0.075), lineWidth: 0.8)
+                .stroke(isProminent ? Color.climbSurfaceLine.opacity(0.90) : Color.climbHairline, lineWidth: 0.8)
         }
-        .shadow(color: .black.opacity(isProminent ? 0.26 : 0.14), radius: isProminent ? 16 : 9, x: 0, y: isProminent ? 12 : 6)
+        .shadow(color: .black.opacity(isProminent ? 0.24 : 0.10), radius: isProminent ? 14 : 7, x: 0, y: isProminent ? 10 : 5)
         .climbEntrance()
     }
 }
@@ -367,19 +329,7 @@ struct ClimbQuietPanel<Content: View>: View {
         .padding(padding)
         .background {
             RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
-                .fill(Color.climbBackgroundLifted.opacity(isProminent ? 0.58 : 0.42))
-                .overlay(alignment: .topLeading) {
-                    LinearGradient(
-                        colors: [
-                            Color.white.opacity(isProminent ? 0.034 : 0.022),
-                            accent.opacity(isProminent ? 0.026 : 0.012),
-                            Color.clear
-                        ],
-                        startPoint: .topLeading,
-                        endPoint: .bottomTrailing
-                    )
-                    .clipShape(RoundedRectangle(cornerRadius: cornerRadius, style: .continuous))
-                }
+                .fill(Color.climbSurface.opacity(isProminent ? 0.88 : 0.68))
         }
         .clipShape(RoundedRectangle(cornerRadius: cornerRadius, style: .continuous))
         .overlay {
@@ -658,7 +608,7 @@ struct ScriptureAttributionText: View {
 
     var body: some View {
         if reference.localizedCaseInsensitiveContains("(WEB)") {
-            Text("World English Bible (WEB) · Public Domain")
+            Text("World English Bible (WEB)")
                 .font(ClimbTypography.sans(10, weight: .semibold))
                 .tracking(0.9)
                 .foregroundStyle(Color.climbMuted)

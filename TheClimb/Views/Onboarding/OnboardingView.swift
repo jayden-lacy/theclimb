@@ -10,233 +10,261 @@ private enum OnboardingAccountMode {
     case login
 }
 
+private enum OnboardingAccountEntry {
+    case providers
+    case email
+}
+
 struct OnboardingView: View {
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Environment(\.openURL) private var openURL
+    @Environment(\.scenePhase) private var scenePhase
     @ObservedObject var viewModel: AppViewModel
 
-    @State private var step: OnboardingStep = .welcome
+    @State private var step: OnboardingStep = .opening
+    @State private var selectedGoals: Set<String> = []
+    @State private var obstacle: OnboardingObstacle?
+    @State private var spiritualStartingPoint: SpiritualStartingPoint?
+    @State private var ageChoice: AgeChoice?
+    @State private var dailyCommitmentMinutes = 10
+    @State private var preferredTimeWindow: DailyClimbWindow = .evening
+    @State private var reminderTime = Calendar.current.date(bySettingHour: 20, minute: 0, second: 0, of: Date()) ?? Date()
+    @State private var whyStarted = ""
+    @State private var customWhyStarted = ""
+    @State private var firstStepCompletedAt: Date?
+    @State private var timerSecondsRemaining = 60
+    @State private var missionAttemptState: OnboardingMissionAttemptState = .idle
+    @State private var missionAttemptID = 0
+    @State private var preparationLineIndex = 0
+    @State private var markDrawProgress: CGFloat = 0
+
     @State private var accountMode: OnboardingAccountMode = .create
+    @State private var accountEntry: OnboardingAccountEntry = .providers
     @State private var displayName = ""
     @State private var email = ""
     @State private var password = ""
-    @State private var ageChoice: AgeChoice = .teen16
-    @State private var selectedGoals: Set<String> = ["Control phone use", "Grow closer to God"]
-    @State private var struggle: Struggle = .focus
-    @State private var streakGoal = 30
-    @State private var reminderTime = Calendar.current.date(bySettingHour: 8, minute: 0, second: 0, of: Date()) ?? Date()
-    @State private var isSubmitting = false
-    @State private var preparationProgress = 0.08
     @State private var authenticatedUser: FirebaseSignedInUser?
     @State private var authenticatedProvider: OnboardingAuthProvider?
-    @State private var legalDocument: LegalDocument?
+    @State private var isSubmitting = false
 
-    private let goals = OnboardingGoal.defaultGoals
-    private let streakOptions = [7, 14, 30, 60, 90]
+    private let goals = OnboardingGoal.options
 
     var body: some View {
         ZStack {
-            background
+            ClimbScreenBackground()
+            OnboardingPathBackdrop(progress: step.pathProgress)
+
             VStack(spacing: 0) {
-                if step != .welcome {
+                if step.showsProgressHeader {
                     OnboardingProgressHeader(
-                        step: step,
-                        progress: step.progress,
+                        progress: step.pathProgress,
                         canGoBack: canGoBack,
                         onBack: goBack
                     )
                     .padding(.horizontal, 22)
-                    .padding(.top, 10)
+                    .padding(.top, 8)
                 }
 
                 GeometryReader { proxy in
                     ScrollView(showsIndicators: false) {
-                        VStack(alignment: .leading, spacing: 18) {
-                            content
-                                .id(step)
-                                .transition(.climbStep)
-                                .frame(maxWidth: .infinity, alignment: .leading)
-                                .frame(
-                                    minHeight: step == .welcome ? max(proxy.size.height - 36, 0) : nil,
-                                    alignment: .center
-                                )
-                        }
-                        .padding(.horizontal, 22)
-                        .padding(.top, step == .welcome ? 8 : 18)
-                        .padding(.bottom, scrollBottomPadding)
+                        content
+                            .id(step)
+                            .transition(.climbScreen)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .frame(
+                                minHeight: step == .opening ? max(proxy.size.height - 16, 0) : nil,
+                                alignment: .center
+                            )
+                            .padding(.horizontal, 22)
+                            .padding(.top, step == .opening ? 0 : 24)
+                            .padding(.bottom, contentBottomPadding)
                     }
+                    .scrollDismissesKeyboard(.interactively)
                 }
             }
         }
         .safeAreaInset(edge: .bottom) {
-            if showsPinnedCTA {
-                ctaButton
-                    .padding(.horizontal, 22)
-                    .padding(.top, 12)
-                    .padding(.bottom, 12)
-                    .background(
-                        Rectangle()
-                            .fill(.ultraThinMaterial)
-                            .ignoresSafeArea()
-                    )
+            if let action = pinnedAction {
+                OnboardingBottomAction(action: action)
             }
         }
         .preferredColorScheme(.dark)
-        .animation(ClimbMotion.standard, value: step)
-        .sheet(item: $legalDocument) { document in
-            NavigationStack {
-                LegalDocumentView(document: document)
+        .animation(reduceMotion ? nil : ClimbMotion.standard, value: step)
+        .task(id: stepTaskID) {
+            await runStepTask(for: step)
+        }
+        .onChange(of: scenePhase) { _, newPhase in
+            handleScenePhaseChange(newPhase)
+        }
+        .onAppear {
+            guard !reduceMotion else {
+                markDrawProgress = 1
+                return
+            }
+            withAnimation(.easeOut(duration: 1.4)) {
+                markDrawProgress = 1
             }
         }
-    }
-
-    private var background: some View {
-        ClimbScreenBackground()
     }
 
     @ViewBuilder
     private var content: some View {
         switch step {
-        case .welcome:
-            welcomeStep
-        case .account:
-            accountStep
-        case .age:
-            ageStep
+        case .opening:
+            openingStep
         case .goals:
             goalsStep
-        case .struggle:
-            struggleStep
-        case .streak:
-            streakStep
-        case .reminder:
-            reminderStep
-        case .review:
-            reviewStep
-        case .preparing:
-            preparingStep
-        case .ready:
-            readyStep
+        case .obstacle:
+            obstacleStep
+        case .spiritualStartingPoint:
+            spiritualStartingPointStep
+        case .age:
+            ageStep
+        case .commitment:
+            commitmentStep
+        case .schedule:
+            scheduleStep
+        case .building:
+            buildingStep
+        case .pathReveal:
+            pathRevealStep
+        case .missionIntro:
+            missionIntroStep
+        case .missionTimer:
+            missionTimerStep
+        case .reason:
+            reasonStep
+        case .milestone:
+            milestoneStep
+        case .notification:
+            notificationStep
+        case .account:
+            accountStep
         }
     }
 
-    private var welcomeStep: some View {
-        VStack(spacing: 28) {
-            Spacer(minLength: 10)
+    private var openingStep: some View {
+        VStack(spacing: 32) {
+            Spacer(minLength: 28)
 
-            BrandWelcomeLockup()
+            VStack(spacing: 28) {
+                Image("BrandLogo")
+                    .resizable()
+                    .scaledToFill()
+                    .frame(width: 154, height: 154)
+                    .clipShape(RoundedRectangle(cornerRadius: 40, style: .continuous))
+                    .overlay {
+                        RoundedRectangle(cornerRadius: 40, style: .continuous)
+                            .stroke(Color.climbSurfaceLine.opacity(0.90), lineWidth: 0.8)
+                    }
+                    .shadow(color: Color.climbBlue.opacity(0.14), radius: 28)
+                    .opacity(markDrawProgress)
+                    .scaleEffect(0.96 + (0.04 * markDrawProgress))
+                    .accessibilityHidden(true)
 
-            Spacer(minLength: 18)
+                VStack(spacing: 14) {
+                    Text("THE CLIMB")
+                        .font(ClimbTypography.sans(34, weight: .semibold))
+                        .foregroundStyle(Color.climbMist)
+
+                    VStack(spacing: 5) {
+                        Text("Faith isn’t built in one moment.")
+                        Text("It’s built one step at a time.")
+                    }
+                    .font(ClimbTypography.serif(23))
+                    .foregroundStyle(Color.climbWarm.opacity(0.92))
+                    .multilineTextAlignment(.center)
+                    .lineSpacing(3)
+                }
+            }
+
+            Spacer(minLength: 24)
 
             VStack(spacing: 14) {
-                OnboardingValueStrip()
-                ctaButton
-                welcomeLoginPrompt
-            }
-        }
-        .frame(maxWidth: .infinity)
-    }
+                PrimaryActionButton(title: "Begin the climb", systemImage: "arrow.up.right") {
+                    setStep(.goals)
+                }
 
-    private var welcomeLoginPrompt: some View {
-        HStack(spacing: 4) {
-            Text(viewModel.isReonboardingExistingAccount ? "Restarting setup for your existing account." : "Already have an account?")
-                .foregroundStyle(Color.climbTextSecondary)
-            if !viewModel.isReonboardingExistingAccount {
-                Button("Log in") {
+                Button("I already have an account") {
                     HapticFeedback.selection()
                     accountMode = .login
+                    accountEntry = .providers
                     setStep(.account)
                 }
                 .buttonStyle(.plain)
-                .foregroundStyle(Color.climbSage)
+                .font(ClimbTypography.sans(14, weight: .semibold))
+                .foregroundStyle(Color.climbTextSecondary)
+                .padding(.vertical, 8)
             }
         }
-        .font(ClimbTypography.sans(13, weight: .medium))
         .frame(maxWidth: .infinity)
     }
 
-    private var accountStep: some View {
-        VStack(alignment: .leading, spacing: 20) {
-            StepHeading(title: accountTitle, subtitle: accountSubtitle)
-            ClimbQuietPanel(padding: 20, cornerRadius: 22) {
-                if accountMode == .create {
-                    TextField("Name", text: $displayName)
-                        .textContentType(.name)
-                        .formFieldStyle()
-                }
-                TextField("Email", text: $email)
-                    .textInputAutocapitalization(.never)
-                    .keyboardType(.emailAddress)
-                    .textContentType(.emailAddress)
-                    .formFieldStyle()
-                SecureField("Password", text: $password)
-                    .textContentType(accountMode == .create ? .newPassword : .password)
-                    .formFieldStyle()
+    private var goalsStep: some View {
+        VStack(alignment: .leading, spacing: 24) {
+            OnboardingHeading(
+                title: "What do you want to change most right now?",
+                subtitle: "We’ll build your climb around it. Choose up to three."
+            )
 
-                if authenticatedUser == nil {
-                    AccountValidationNotice(message: accountValidationMessage)
-                }
-            }
-
-            DividerLabel("OR")
-
-            VStack(spacing: 12) {
-                SecondaryActionButton(
-                    title: authButtonTitle(for: .apple),
-                    systemImage: authButtonIcon(for: .apple)
-                ) {
-                    signInWithApple()
-                }
-                .disabled(isProviderDisabled(.apple))
-                .opacity(isProviderDisabled(.apple) ? 0.48 : 1)
-
-                SecondaryActionButton(
-                    title: authButtonTitle(for: .google),
-                    systemImage: authButtonIcon(for: .google)
-                ) {
-                    signInWithGoogle()
-                }
-                .disabled(isProviderDisabled(.google))
-                .opacity(isProviderDisabled(.google) ? 0.48 : 1)
-            }
-
-            VStack(spacing: 6) {
-                Text(accountMode == .create ? "By continuing, you agree to our" : "Your data stays tied to your account.")
-                    .foregroundStyle(Color.climbMuted)
-                HStack(spacing: 12) {
-                    Button("Terms of Service") {
-                        openURL(LegalDocument.termsOfService.onlineURL)
-                    }
-                    Button("Privacy Policy") {
-                        openURL(LegalDocument.privacyPolicy.onlineURL)
+            VStack(spacing: 10) {
+                ForEach(goals) { goal in
+                    OnboardingChoiceRow(
+                        title: goal.title,
+                        systemImage: goal.systemImage,
+                        isSelected: selectedGoals.contains(goal.title)
+                    ) {
+                        toggleGoal(goal.title)
                     }
                 }
-                .foregroundStyle(Color.climbSage)
             }
-                .font(ClimbTypography.sans(12, weight: .medium))
-                .frame(maxWidth: .infinity)
-                .padding(.top, 4)
+        }
+    }
 
-            if !viewModel.isReonboardingExistingAccount {
-                Button(accountMode == .create ? "Already have an account? Log in" : "Need an account? Create one") {
-                    HapticFeedback.selection()
-                    toggleAccountMode()
+    private var obstacleStep: some View {
+        VStack(alignment: .leading, spacing: 24) {
+            OnboardingHeading(
+                title: "What’s been getting in the way?",
+                subtitle: "Be honest. This stays between you and your climb."
+            )
+
+            VStack(spacing: 10) {
+                ForEach(OnboardingObstacle.options) { option in
+                    OnboardingChoiceRow(
+                        title: option.title,
+                        systemImage: option.systemImage,
+                        isSelected: obstacle == option
+                    ) {
+                        obstacle = option
+                    }
                 }
-                .buttonStyle(.plain)
-                .font(ClimbTypography.sans(13, weight: .semibold))
-                .foregroundStyle(Color.climbSage)
-                .frame(maxWidth: .infinity)
             }
+        }
+    }
+
+    private var spiritualStartingPointStep: some View {
+        VStack(alignment: .leading, spacing: 24) {
+            OnboardingHeading(
+                title: "Where would you say you are with God right now?",
+                subtitle: "This sets the pace. It is not a score of your faith."
+            )
+
+            SpiritualMountainSelector(selection: $spiritualStartingPoint)
         }
     }
 
     private var ageStep: some View {
-        VStack(alignment: .leading, spacing: 18) {
-            StepHeading(title: "What’s your age group?", subtitle: "The Climb is available for users 13 and older.")
-            VStack(spacing: 12) {
-                ForEach(AgeChoice.allCases) { choice in
-                    SelectableRow(
+        VStack(alignment: .leading, spacing: 24) {
+            OnboardingHeading(
+                title: "What season of life are you in?",
+                subtitle: "Lessons mature with you. The Climb is for ages 13 and older."
+            )
+
+            VStack(spacing: 10) {
+                ForEach(AgeChoice.options) { choice in
+                    OnboardingChoiceRow(
                         title: choice.title,
-                        subtitle: choice.subtitle,
+                        detail: choice.detail,
                         systemImage: choice.systemImage,
                         isSelected: ageChoice == choice
                     ) {
@@ -247,266 +275,618 @@ struct OnboardingView: View {
         }
     }
 
-    private var goalsStep: some View {
-        VStack(alignment: .leading, spacing: 18) {
-            StepHeading(title: "What should The Climb protect?", subtitle: "Your blocker, Daily Word, and AI plan will adapt around these goals.")
-            VStack(spacing: 10) {
-                ForEach(goals) { goal in
-                    SelectableRow(
-                        title: goal.title,
-                        subtitle: goalSubtitle(for: goal),
-                        systemImage: goal.systemImage,
-                        isSelected: selectedGoals.contains(goal.title)
+    private var commitmentStep: some View {
+        VStack(alignment: .leading, spacing: 24) {
+            OnboardingHeading(
+                title: "How much time can you give God every day—even on a bad day?",
+                subtitle: "Choose the commitment you can keep when motivation is low."
+            )
+
+            LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], spacing: 12) {
+                ForEach(DailyCommitment.options) { option in
+                    CommitmentChoice(
+                        option: option,
+                        isSelected: dailyCommitmentMinutes == option.minutes
                     ) {
-                        if selectedGoals.contains(goal.title) {
-                            selectedGoals.remove(goal.title)
-                        } else {
-                            selectedGoals.insert(goal.title)
+                        dailyCommitmentMinutes = option.minutes
+                    }
+                }
+            }
+        }
+    }
+
+    private var scheduleStep: some View {
+        VStack(alignment: .leading, spacing: 24) {
+            OnboardingHeading(
+                title: "When will you make time for God?",
+                subtitle: "Choose the moment you can protect most consistently."
+            )
+
+            VStack(spacing: 10) {
+                ForEach(DailyClimbWindow.allCases) { window in
+                    OnboardingChoiceRow(
+                        title: window.title,
+                        systemImage: scheduleIcon(for: window),
+                        isSelected: preferredTimeWindow == window
+                    ) {
+                        preferredTimeWindow = window
+                        if window != .custom {
+                            setReminderHour(window.defaultHour)
                         }
                     }
                 }
             }
+
+            DatePicker("Daily Climb time", selection: $reminderTime, displayedComponents: .hourAndMinute)
+                .datePickerStyle(.compact)
+                .font(ClimbTypography.sans(15, weight: .semibold))
+                .foregroundStyle(Color.climbMist)
+                .tint(.climbGreen)
+                .padding(.horizontal, 16)
+                .padding(.vertical, 14)
+                .background(Color.climbSurfaceRaised.opacity(0.72), in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+                .overlay(
+                    RoundedRectangle(cornerRadius: 16, style: .continuous)
+                        .stroke(Color.climbHairline, lineWidth: 0.8)
+                )
+
+            Text("\(reminderText) becomes your daily Climb time.")
+                .font(ClimbTypography.serif(20))
+                .foregroundStyle(Color.climbWarm)
+                .frame(maxWidth: .infinity, alignment: .center)
+                .padding(.top, 4)
         }
     }
 
-    private var struggleStep: some View {
-        VStack(alignment: .leading, spacing: 18) {
-            StepHeading(title: "What is your biggest struggle right now?", subtitle: "Be honest. This helps us guide you.")
-            VStack(spacing: 10) {
-                ForEach(Struggle.allCases) { option in
-                    SelectableRow(
-                        title: option.rawValue,
-                        subtitle: struggleSubtitle(for: option),
-                        systemImage: struggleIcon(for: option),
-                        isSelected: struggle == option
-                    ) {
-                        struggle = option
-                    }
-                }
+    private var buildingStep: some View {
+        VStack(spacing: 34) {
+            Spacer(minLength: 70)
+
+            BuildingPathMark(progress: min(1, CGFloat(preparationLineIndex + 1) / CGFloat(preparationLines.count)))
+                .frame(width: 170, height: 210)
+                .accessibilityHidden(true)
+
+            VStack(spacing: 14) {
+                Text("Building your climb...")
+                    .font(ClimbTypography.sans(26, weight: .semibold))
+                    .foregroundStyle(Color.climbMist)
+
+                Text(preparationLines[min(preparationLineIndex, preparationLines.count - 1)])
+                    .id(preparationLineIndex)
+                    .font(ClimbTypography.serif(21))
+                    .foregroundStyle(Color.climbWarm.opacity(0.92))
+                    .multilineTextAlignment(.center)
+                    .lineSpacing(4)
+                    .transition(.opacity)
+                    .frame(minHeight: 58)
             }
+
+            Spacer(minLength: 70)
         }
+        .frame(maxWidth: .infinity)
     }
 
-    private var streakStep: some View {
-        VStack(alignment: .leading, spacing: 18) {
-            StepHeading(title: "What’s your streak goal?", subtitle: "Choose a goal that keeps you consistent.")
+    private var pathRevealStep: some View {
+        VStack(alignment: .leading, spacing: 22) {
+            VStack(alignment: .leading, spacing: 8) {
+                Text("YOUR FIRST 7 DAYS")
+                    .font(ClimbTypography.sans(12, weight: .semibold))
+                    .foregroundStyle(Color.climbSage)
 
-            VStack(spacing: 10) {
-                ForEach(streakOptions, id: \.self) { option in
-                    SelectableRow(
-                        title: "\(option) days",
-                        subtitle: streakSubtitle(for: option),
-                        systemImage: "flame",
-                        isSelected: streakGoal == option
-                    ) {
-                        streakGoal = option
-                    }
-                }
-            }
-        }
-    }
+                Text("Your path is ready.")
+                    .font(ClimbTypography.serif(34))
+                    .foregroundStyle(Color.climbMist)
 
-    private var reminderStep: some View {
-        VStack(alignment: .leading, spacing: 18) {
-            StepHeading(title: "When should we remind you?", subtitle: "We’ll prompt your daily focus block at this time.")
-
-            ClimbQuietPanel(padding: 20, cornerRadius: 22) {
-                DatePicker("", selection: $reminderTime, displayedComponents: .hourAndMinute)
-                    .datePickerStyle(.wheel)
-                    .labelsHidden()
-                    .frame(maxWidth: .infinity)
-                    .clipped()
-                Text("Focus block reminders and streak alerts use this time.")
-                    .font(ClimbTypography.sans(13, weight: .semibold))
+                Text("A clear first week, built around the change you chose.")
+                    .font(ClimbTypography.sans(15, weight: .medium))
                     .foregroundStyle(Color.climbTextSecondary)
-                    .frame(maxWidth: .infinity, alignment: .center)
             }
 
-            SecondaryActionButton(title: notificationButtonTitle, systemImage: "bell") {
-                Task {
-                    await viewModel.requestNotificationAuthorization()
-                }
-            }
+            FirstWeekPathView(checkpoints: firstWeekPath)
+
+            Text("Your missions, Scripture, prayers, and reflections will adapt as you progress.")
+                .font(ClimbTypography.sans(14, weight: .medium))
+                .foregroundStyle(Color.climbTextSecondary)
+                .lineSpacing(4)
         }
     }
 
-    private var reviewStep: some View {
-        VStack(alignment: .leading, spacing: 18) {
-            StepHeading(title: "Almost there!", subtitle: "Here’s what you’ve set up.")
-            ClimbQuietPanel(padding: 20, cornerRadius: 22) {
-                SetupSummaryRow(systemImage: "person.2", title: "Age Group", value: ageChoice.title)
-                SetupSummaryRow(systemImage: "heart", title: "Goals", value: selectedGoalsSummary)
-                SetupSummaryRow(systemImage: "shield", title: "Main Struggle", value: struggle.rawValue)
-                SetupSummaryRow(systemImage: "flame", title: "Streak Goal", value: "\(streakGoal) days")
-                SetupSummaryRow(systemImage: "alarm", title: "Reminder Time", value: reminderText)
+    private var missionIntroStep: some View {
+        VStack(alignment: .leading, spacing: 26) {
+            OnboardingEyebrow(text: "DAY 1 · SHOW UP")
+
+            VStack(alignment: .leading, spacing: 12) {
+                Text("Before you improve your relationship with God, you have to make room for Him.")
+                    .font(ClimbTypography.serif(30))
+                    .foregroundStyle(Color.climbMist)
+                    .lineSpacing(5)
+
+                Text("Your first step")
+                    .font(ClimbTypography.sans(12, weight: .semibold))
+                    .foregroundStyle(Color.climbSage)
+                    .padding(.top, 8)
+
+                Text("Put your phone down for 60 seconds.")
+                    .font(ClimbTypography.sans(22, weight: .semibold))
+                    .foregroundStyle(Color.climbMist)
             }
 
-            PersonalizationPreviewCard(personalization: personalization)
+            VStack(alignment: .leading, spacing: 10) {
+                Text("PRAY")
+                    .font(ClimbTypography.sans(11, weight: .semibold))
+                    .foregroundStyle(Color.climbMuted)
+                Text("“God, I’m here. Help me become willing to obey You, even when I don’t feel like it.”")
+                    .font(ClimbTypography.serif(22))
+                    .foregroundStyle(Color.climbWarm)
+                    .lineSpacing(5)
+            }
+            .padding(.vertical, 18)
+            .overlay(alignment: .top) { Divider().overlay(Color.climbDivider) }
+            .overlay(alignment: .bottom) { Divider().overlay(Color.climbDivider) }
+
+            ScriptureMoment(scripture: firstScripture)
+
+            Button("Do this later") {
+                HapticFeedback.selection()
+                setStep(.reason)
+            }
+            .buttonStyle(.plain)
+            .font(ClimbTypography.sans(13, weight: .semibold))
+            .foregroundStyle(Color.climbMuted)
+            .frame(maxWidth: .infinity)
+            .padding(.vertical, 8)
         }
     }
 
-    private var preparingStep: some View {
-        VStack(spacing: 28) {
-            StepHeading(
-                title: "Your shield is being prepared.",
-                subtitle: "We’re creating your first protected focus block, Daily Word, and recovery plan."
-            )
-            .frame(maxWidth: .infinity, alignment: .leading)
+    private var missionTimerStep: some View {
+        VStack(spacing: 30) {
+            Spacer(minLength: 24)
+
+            OnboardingEyebrow(text: missionTimerEyebrow)
 
             ZStack {
                 Circle()
-                    .stroke(Color.climbDivider, lineWidth: 14)
-                Circle()
-                    .trim(from: 0, to: preparationProgress)
-                    .stroke(Color.climbSage, style: StrokeStyle(lineWidth: 14, lineCap: .round))
-                    .rotationEffect(.degrees(-90))
-                    .shadow(color: Color.climbSage.opacity(0.18), radius: 16, x: 0, y: 0)
-                MountainBadge()
-                    .frame(width: 130, height: 130)
-            }
-            .frame(width: 240, height: 240)
-            .frame(maxWidth: .infinity)
-            .padding(.vertical, 16)
-            .task {
-                await runPreparation()
-            }
+                    .stroke(missionAttemptFailed ? Color.climbRed.opacity(0.16) : Color.climbDivider, lineWidth: 7)
 
-            VStack(alignment: .leading, spacing: 14) {
-                ForEach(personalization.preparationChecklist, id: \.self) { item in
-                    FeatureLine(systemImage: "checkmark.circle.fill", title: item)
+                Circle()
+                    .trim(from: 0, to: timerProgress)
+                    .stroke(missionTimerTint, style: StrokeStyle(lineWidth: 7, lineCap: .round))
+                    .rotationEffect(.degrees(-90))
+                    .shadow(color: missionTimerTint.opacity(0.18), radius: 16)
+
+                if missionAttemptFailed {
+                    VStack(spacing: 12) {
+                        Image(systemName: "arrow.down.right")
+                            .font(ClimbTypography.sans(46, weight: .medium))
+                            .foregroundStyle(Color.climbRed)
+                        Text("FOCUS BROKEN")
+                            .font(ClimbTypography.sans(11, weight: .semibold))
+                            .foregroundStyle(Color.climbRed.opacity(0.9))
+                    }
+                    .transition(.scale(scale: 0.94).combined(with: .opacity))
+                } else if !missionAttemptCompleted {
+                    VStack(spacing: 4) {
+                        Text("\(timerSecondsRemaining)")
+                            .font(ClimbTypography.sans(58, weight: .semibold).monospacedDigit())
+                            .foregroundStyle(Color.climbMist)
+                            .contentTransition(.numericText())
+                        Text("SECONDS")
+                            .font(ClimbTypography.sans(11, weight: .semibold))
+                            .foregroundStyle(Color.climbMuted)
+                    }
+                } else {
+                    Image(systemName: "checkmark")
+                        .font(ClimbTypography.sans(48, weight: .semibold))
+                        .foregroundStyle(Color.climbSage)
+                        .transition(.scale(scale: 0.94).combined(with: .opacity))
                 }
             }
-            .frame(maxWidth: .infinity, alignment: .leading)
+            .frame(width: 238, height: 238)
+            .accessibilityElement(children: .ignore)
+            .accessibilityLabel(missionTimerAccessibilityLabel)
+
+            Text(missionTimerMessage)
+                .font(ClimbTypography.serif(22))
+                .foregroundStyle(missionAttemptFailed ? Color.climbMist : Color.climbWarm.opacity(0.92))
+                .multilineTextAlignment(.center)
+                .lineSpacing(4)
+                .frame(maxWidth: 310)
+
+            if missionAttemptCompleted {
+                PrimaryActionButton(title: "Keep climbing", systemImage: "arrow.up.right") {
+                    setStep(.reason)
+                }
+                .transition(.opacity.combined(with: .move(edge: .bottom)))
+            } else if missionAttemptFailed {
+                VStack(spacing: 10) {
+                    PrimaryActionButton(title: "Try the 60 seconds again", systemImage: "arrow.counterclockwise") {
+                        retryOnboardingMission()
+                    }
+
+                    Button("Continue without completing") {
+                        HapticFeedback.selection()
+                        setStep(.reason)
+                    }
+                    .buttonStyle(.plain)
+                    .font(ClimbTypography.sans(13, weight: .semibold))
+                    .foregroundStyle(Color.climbMuted)
+                    .padding(.vertical, 8)
+                }
+                .transition(.opacity.combined(with: .move(edge: .bottom)))
+            }
+
+            Spacer(minLength: 40)
         }
-        .padding(.top, 18)
+        .frame(maxWidth: .infinity)
     }
 
-    private var readyStep: some View {
-        VStack(alignment: .leading, spacing: 22) {
-            VStack(alignment: .center, spacing: 10) {
-                Text("Let’s climb.")
-                    .font(ClimbTypography.sans(26, weight: .semibold))
-                    .foregroundStyle(.white)
-                Text("Your transformation starts today.")
+    private var reasonStep: some View {
+        VStack(alignment: .leading, spacing: 24) {
+            OnboardingHeading(
+                title: "Before you keep climbing...",
+                subtitle: "Why does this matter to you? We’ll bring this back when showing up gets hard."
+            )
+
+            VStack(spacing: 10) {
+                ForEach(reasonOptions, id: \.self) { reason in
+                    OnboardingChoiceRow(
+                        title: reason,
+                        systemImage: "quote.opening",
+                        isSelected: whyStarted == reason
+                    ) {
+                        whyStarted = reason
+                        customWhyStarted = ""
+                    }
+                }
+
+                OnboardingChoiceRow(
+                    title: "Write my own",
+                    systemImage: "pencil.line",
+                    isSelected: whyStarted == customReasonMarker
+                ) {
+                    whyStarted = customReasonMarker
+                }
+            }
+
+            if whyStarted == customReasonMarker {
+                TextField("Why I’m starting...", text: $customWhyStarted, axis: .vertical)
+                    .lineLimit(3...5)
+                    .formFieldStyle()
+                    .transition(.opacity.combined(with: .move(edge: .top)))
+            }
+        }
+    }
+
+    private var milestoneStep: some View {
+        VStack(spacing: 30) {
+            Spacer(minLength: 30)
+
+            OnboardingEyebrow(text: "THE FIRST MILESTONE")
+
+            VStack(spacing: 10) {
+                Text(firstStepCompletedAt == nil ? "Your first step is waiting." : "You took the first step.")
+                    .font(ClimbTypography.serif(34))
+                    .foregroundStyle(Color.climbMist)
+                    .multilineTextAlignment(.center)
+
+                Text("Don’t worry about 30 days yet.")
                     .font(ClimbTypography.sans(15, weight: .medium))
                     .foregroundStyle(Color.climbTextSecondary)
-                MountainHeroCard(compact: true)
-                    .frame(height: 260)
             }
+
+            ThreeDayMilestoneView(firstDayComplete: firstStepCompletedAt != nil)
+
+            VStack(spacing: 6) {
+                Text("Let’s make it to Day 3.")
+                    .font(ClimbTypography.sans(24, weight: .semibold))
+                    .foregroundStyle(Color.climbMist)
+                Text("Then we’ll extend the path to 7, 14, and 30.")
+                    .font(ClimbTypography.sans(14, weight: .medium))
+                    .foregroundStyle(Color.climbTextSecondary)
+            }
+
+            Spacer(minLength: 50)
+        }
+        .frame(maxWidth: .infinity)
+    }
+
+    private var notificationStep: some View {
+        VStack(alignment: .leading, spacing: 28) {
+            OnboardingHeading(
+                title: "Protect your Climb",
+                subtitle: "You chose \(reminderText) as your time with God."
+            )
+
+            VStack(alignment: .leading, spacing: 12) {
+                Image(systemName: "bell.badge")
+                    .font(ClimbTypography.sans(26, weight: .semibold))
+                    .foregroundStyle(Color.climbSage)
+                    .accessibilityHidden(true)
+
+                Text("Want The Climb to remind you when it’s time?")
+                    .font(ClimbTypography.serif(26))
+                    .foregroundStyle(Color.climbWarm)
+                    .lineSpacing(4)
+            }
+            .padding(.vertical, 12)
+
+            VStack(spacing: 12) {
+                PrimaryActionButton(
+                    title: "Remind me at \(reminderText)",
+                    systemImage: "bell.fill"
+                ) {
+                    requestNotificationsAndContinue()
+                }
+
+                Button("Not now") {
+                    HapticFeedback.selection()
+                    setStep(.account)
+                }
+                .buttonStyle(.plain)
+                .font(ClimbTypography.sans(14, weight: .semibold))
+                .foregroundStyle(Color.climbTextSecondary)
+                .frame(maxWidth: .infinity)
+                .padding(.vertical, 10)
+            }
+        }
+    }
+
+    private var accountStep: some View {
+        VStack(alignment: .leading, spacing: 24) {
+            OnboardingHeading(
+                title: accountMode == .login ? "Welcome back" : "Save your progress",
+                subtitle: accountMode == .login ? "Sign in to return to your climb." : "You’ve already started. Save this path across your devices."
+            )
+
+            if accountMode == .create {
+                HStack(spacing: 0) {
+                    AccountProgressStat(value: firstStepCompletedAt == nil ? "0" : "1", label: "mission")
+                    AccountProgressStat(value: resolvedWhyStarted.isEmpty ? "0" : "1", label: "commitment")
+                    AccountProgressStat(value: firstStepCompletedAt == nil ? "0" : "1", label: "day climbing")
+                }
+                .padding(.vertical, 16)
+                .overlay(alignment: .top) { Divider().overlay(Color.climbDivider) }
+                .overlay(alignment: .bottom) { Divider().overlay(Color.climbDivider) }
+            }
+
+            if accountEntry == .providers {
+                VStack(spacing: 12) {
+                    SecondaryActionButton(title: providerTitle(.apple), systemImage: "apple.logo") {
+                        signInWithApple()
+                    }
+                    .disabled(isSubmitting)
+
+                    SecondaryActionButton(title: providerTitle(.google), systemImage: "g.circle") {
+                        signInWithGoogle()
+                    }
+                    .disabled(isSubmitting)
+
+                    SecondaryActionButton(
+                        title: accountMode == .login ? "Sign in with Email" : "Continue with Email",
+                        systemImage: "envelope"
+                    ) {
+                        accountEntry = .email
+                    }
+                    .disabled(isSubmitting)
+                }
+            } else {
+                VStack(spacing: 12) {
+                    if accountMode == .create {
+                        TextField("Name", text: $displayName)
+                            .textContentType(.name)
+                            .formFieldStyle()
+                    }
+
+                    TextField("Email", text: $email)
+                        .textInputAutocapitalization(.never)
+                        .keyboardType(.emailAddress)
+                        .textContentType(.emailAddress)
+                        .formFieldStyle()
+
+                    SecureField("Password", text: $password)
+                        .textContentType(accountMode == .create ? .newPassword : .password)
+                        .formFieldStyle()
+
+                    AccountValidationNotice(message: accountValidationMessage, isReady: isEmailAccountReady)
+                }
+            }
+
+            if !viewModel.isReonboardingExistingAccount {
+                Button(accountMode == .create ? "Already have an account? Log in" : "New here? Build my climb") {
+                    HapticFeedback.selection()
+                    accountMode = accountMode == .create ? .login : .create
+                    accountEntry = .providers
+                    authenticatedUser = nil
+                    authenticatedProvider = nil
+                    password = ""
+                }
+                .buttonStyle(.plain)
+                .font(ClimbTypography.sans(13, weight: .semibold))
+                .foregroundStyle(Color.climbSage)
+                .frame(maxWidth: .infinity)
+            }
+
+            VStack(spacing: 8) {
+                Text("By continuing, you agree to our Terms and Privacy Policy.")
+                    .foregroundStyle(Color.climbMuted)
+
+                HStack(spacing: 16) {
+                    Button("Terms") { openURL(LegalDocument.termsOfService.onlineURL) }
+                    Button("Privacy") { openURL(LegalDocument.privacyPolicy.onlineURL) }
+                }
+                .foregroundStyle(Color.climbTextSecondary)
+            }
+            .font(ClimbTypography.sans(11, weight: .medium))
             .frame(maxWidth: .infinity)
+        }
+    }
 
-            ClimbQuietPanel(padding: 20, cornerRadius: 22) {
-                Text("Day 1 is ready.")
-                    .font(ClimbTypography.sans(16, weight: .semibold))
-                    .foregroundStyle(.white)
-                SetupSummaryRow(systemImage: "shield.lefthalf.filled", title: "Your block", value: personalization.previewMissionTitle)
-                SetupSummaryRow(systemImage: "book.closed", title: "Your devotional", value: personalization.devotionalFocus.capitalized)
-                SetupSummaryRow(systemImage: "square.and.pencil", title: "Your reflection", value: personalization.primaryGoal)
+    private var pinnedAction: OnboardingAction? {
+        switch step {
+        case .opening, .building, .missionTimer, .notification, .account:
+            if step == .account, accountEntry == .email {
+                return OnboardingAction(
+                    title: isSubmitting ? "Saving..." : (accountMode == .login ? "Log in" : "Save my climb"),
+                    systemImage: accountMode == .login ? "arrow.right" : "checkmark",
+                    isDisabled: !isEmailAccountReady || isSubmitting,
+                    action: submitEmailAccount
+                )
             }
-        }
-    }
-
-    private var ctaButton: some View {
-        PrimaryActionButton(
-            title: ctaTitle,
-            systemImage: ctaIcon,
-            isDisabled: ctaDisabled
-        ) {
-            advance()
-        }
-    }
-
-    private var showsPinnedCTA: Bool {
-        step != .welcome && step != .preparing
-    }
-
-    private var scrollBottomPadding: CGFloat {
-        switch step {
-        case .welcome:
-            28
-        case .preparing:
-            32
-        default:
-            120
-        }
-    }
-
-    private var ctaTitle: String {
-        if isSubmitting {
-            if viewModel.isReonboardingExistingAccount {
-                return "Updating Path"
-            }
-            return accountMode == .login ? "Logging In" : "Creating Home"
-        }
-        switch step {
-        case .welcome:
-            return "Get Started"
-        case .account where accountMode == .login:
-            return "Log In"
-        case .account where viewModel.isReonboardingExistingAccount:
-            return "Confirm Account"
-        case .review:
-            return viewModel.isReonboardingExistingAccount ? "Update My Path" : "Build My Path"
-        case .ready:
-            return "Go to Home"
-        default:
-            return "Continue"
-        }
-    }
-
-    private var ctaIcon: String {
-        switch step {
-        case .ready:
-            "house.fill"
-        case .account where accountMode == .login:
-            "arrow.right.circle.fill"
-        case .review:
-            "sparkles"
-        default:
-            "arrow.right"
-        }
-    }
-
-    private var ctaDisabled: Bool {
-        switch step {
-        case .account:
-            return !isAccountReady
+            return nil
         case .goals:
-            return selectedGoals.isEmpty
-        case .ready:
-            return isSubmitting
-        default:
-            return false
+            return continueAction(disabled: selectedGoals.isEmpty)
+        case .obstacle:
+            return continueAction(disabled: obstacle == nil)
+        case .spiritualStartingPoint:
+            return continueAction(disabled: spiritualStartingPoint == nil)
+        case .age:
+            return continueAction(disabled: ageChoice == nil)
+        case .commitment:
+            return continueAction()
+        case .schedule:
+            return OnboardingAction(title: "Set my time", systemImage: "clock", action: advance)
+        case .pathReveal:
+            return OnboardingAction(title: "Start Day 1", systemImage: "arrow.up.right", action: advance)
+        case .missionIntro:
+            return OnboardingAction(
+                title: missionAttemptCompleted ? "Return to completion" : "I’m ready",
+                systemImage: missionAttemptCompleted ? "checkmark" : "play.fill",
+                action: advance
+            )
+        case .reason:
+            return continueAction(disabled: resolvedWhyStarted.isEmpty)
+        case .milestone:
+            return OnboardingAction(title: "Start my 3-day climb", systemImage: "flag.fill", action: advance)
         }
+    }
+
+    private func continueAction(disabled: Bool = false) -> OnboardingAction {
+        OnboardingAction(title: "Continue", systemImage: "arrow.right", isDisabled: disabled, action: advance)
     }
 
     private var canGoBack: Bool {
-        step != .welcome && step != .preparing && !isSubmitting
+        guard !isSubmitting, step != .opening, step != .building else { return false }
+        if step == .missionTimer {
+            return missionAttemptCompleted || missionAttemptFailed
+        }
+        return true
+    }
+
+    private var contentBottomPadding: CGFloat {
+        pinnedAction == nil ? 36 : 126
+    }
+
+    private var selectedGoalList: [String] {
+        goals.map(\.title).filter(selectedGoals.contains)
+    }
+
+    private var resolvedStruggle: Struggle {
+        obstacle?.struggle ?? .discipline
+    }
+
+    private var firstWeekPath: [FirstWeekCheckpoint] {
+        OnboardingPersonalization.firstWeekPath(goals: selectedGoalList, struggle: resolvedStruggle)
     }
 
     private var reminderText: String {
         reminderTime.formatted(date: .omitted, time: .shortened)
     }
 
-    private var selectedGoalList: [String] {
-        Array(selectedGoals).sorted()
+    private var preparationLines: [String] {
+        let primaryGoal = selectedGoalList.first ?? "a faithful daily rhythm"
+        return [
+            "Focusing on \(primaryGoal.lowercased())",
+            "Helping you face \((obstacle?.title ?? "inconsistency").lowercased())",
+            "Built around \(dailyCommitmentMinutes) minutes \(preferredTimeWindow.title.lowercased())",
+            "Starting at a pace you can sustain"
+        ]
     }
 
-    private var selectedGoalsSummary: String {
-        let goals = selectedGoalList
-        guard !goals.isEmpty else { return "None selected" }
-        let visible = goals.prefix(2).joined(separator: ", ")
-        let remaining = goals.count - min(goals.count, 2)
-        return remaining > 0 ? "\(visible) +\(remaining) more" : visible
+    private var reasonOptions: [String] {
+        var options = [
+            "I want a real relationship with God.",
+            "I’m tired of repeating the same habits."
+        ]
+
+        if selectedGoalList.contains(where: { $0.localizedCaseInsensitiveContains("disciplin") }) {
+            options.append("I want to become disciplined.")
+        } else if selectedGoalList.contains(where: { $0.localizedCaseInsensitiveContains("prayer") }) {
+            options.append("I want prayer to become part of who I am.")
+        } else if selectedGoalList.contains(where: { $0.localizedCaseInsensitiveContains("Scripture") }) {
+            options.append("I want God’s Word to shape my decisions.")
+        } else {
+            options.append("I want to become faithful with my attention.")
+        }
+
+        options.append("I want God to change who I’m becoming.")
+        return options
     }
 
-    private var personalization: GrowthPathPersonalization {
-        GrowthPathPersonalization.resolve(
-            goals: selectedGoalList,
-            struggle: struggle,
-            streakGoal: streakGoal,
-            ageGroup: ageChoice.ageGroup
-        )
+    private let customReasonMarker = "__custom__"
+
+    private var resolvedWhyStarted: String {
+        if whyStarted == customReasonMarker {
+            return customWhyStarted.trimmingCharacters(in: .whitespacesAndNewlines)
+        }
+        return whyStarted.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    private var firstScripture: OnboardingScripture {
+        if selectedGoalList.contains(where: { $0.localizedCaseInsensitiveContains("prayer") }) {
+            return OnboardingScripture(reference: "1 Thessalonians 5:17 (WEB)", text: "Pray without ceasing.")
+        }
+        if selectedGoalList.contains(where: { $0.localizedCaseInsensitiveContains("Scripture") }) {
+            return OnboardingScripture(reference: "Psalm 119:105 (WEB)", text: "Your word is a lamp to my feet, and a light for my path.")
+        }
+        if resolvedStruggle == .purity {
+            return OnboardingScripture(reference: "2 Timothy 1:7 (WEB)", text: "For God didn’t give us a spirit of fear, but of power, love, and self-control.")
+        }
+        if selectedGoalList.contains(where: { $0.localizedCaseInsensitiveContains("peace") }) {
+            return OnboardingScripture(reference: "Isaiah 26:3 (WEB)", text: "You will keep whoever’s mind is steadfast in perfect peace, because he trusts in you.")
+        }
+        return OnboardingScripture(reference: "James 4:8 (WEB)", text: "Draw near to God, and he will draw near to you.")
+    }
+
+    private var timerProgress: Double {
+        missionAttemptCompleted ? 1 : Double(60 - timerSecondsRemaining) / 60
+    }
+
+    private var missionAttemptCompleted: Bool {
+        firstStepCompletedAt != nil || missionAttemptState == .completed
+    }
+
+    private var missionAttemptFailed: Bool {
+        missionAttemptState == .failed
+    }
+
+    private var missionTimerEyebrow: String {
+        if missionAttemptFailed { return "MISSION INTERRUPTED" }
+        return missionAttemptCompleted ? "DAY 1 STARTED" : "BE STILL"
+    }
+
+    private var missionTimerMessage: String {
+        if missionAttemptFailed {
+            return "You left before the minute was finished. Come back, begin again, and keep the commitment."
+        }
+        if missionAttemptCompleted {
+            return "You made room for God before asking the app to do anything for you."
+        }
+        return "Stay here. Let the noise settle."
+    }
+
+    private var missionTimerAccessibilityLabel: String {
+        if missionAttemptFailed {
+            return "Mission interrupted with \(timerSecondsRemaining) seconds remaining"
+        }
+        return missionAttemptCompleted ? "Day 1 started" : "\(timerSecondsRemaining) seconds remaining"
+    }
+
+    private var missionTimerTint: Color {
+        missionAttemptFailed ? .climbRed : .climbSage
+    }
+
+    private var stepTaskID: OnboardingStepTaskID {
+        OnboardingStepTaskID(step: step, missionAttemptID: missionAttemptID)
     }
 
     private var normalizedEmail: String {
@@ -524,17 +904,19 @@ struct OnboardingView: View {
               !domain.hasSuffix(".") else {
             return false
         }
-
         return !normalizedEmail.contains(" ") && !normalizedEmail.contains("..")
     }
 
-    private var isAccountReady: Bool {
-        authenticatedUser != nil || (isEmailValid && password.count >= 6)
+    private var isEmailAccountReady: Bool {
+        isEmailValid && password.count >= 6 && (accountMode == .login || !displayName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
     }
 
     private var accountValidationMessage: String {
         if normalizedEmail.isEmpty && password.isEmpty {
             return "Enter a valid email and a password with at least 6 characters."
+        }
+        if accountMode == .create && displayName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            return "Enter your name before saving your climb."
         }
         if !isEmailValid {
             return "Enter a valid email address before continuing."
@@ -542,48 +924,43 @@ struct OnboardingView: View {
         if password.count < 6 {
             return "Password must be at least 6 characters."
         }
-        if viewModel.isReonboardingExistingAccount {
-            return "Ready to confirm this account and update your path."
-        }
-        return accountMode == .login ? "Ready to log in." : "Account details are ready."
+        return accountMode == .login ? "Ready to log in." : "Ready to save your climb."
     }
 
-    private var accountTitle: String {
-        if viewModel.isReonboardingExistingAccount {
-            return "Confirm Account"
+    private func toggleGoal(_ title: String) {
+        if selectedGoals.contains(title) {
+            selectedGoals.remove(title)
+        } else if selectedGoals.count < 3 {
+            selectedGoals.insert(title)
+        } else {
+            HapticFeedback.impact(.medium)
         }
-        return accountMode == .login ? "Log In" : "Create Account"
     }
 
-    private var accountSubtitle: String {
-        if viewModel.isReonboardingExistingAccount {
-            return "Use your existing account. Your new onboarding answers will rebuild your path."
-        }
-        return accountMode == .login ? "Welcome back. Enter your account details." : "Let’s get you started."
+    private func setReminderHour(_ hour: Int) {
+        reminderTime = Calendar.current.date(bySettingHour: hour, minute: 0, second: 0, of: reminderTime) ?? reminderTime
     }
 
-    private var notificationButtonTitle: String {
-        switch viewModel.notificationState {
-        case .authorized:
-            "Notifications Enabled"
-        case .denied:
-            "Notifications Are Off"
-        default:
-            "Enable Notifications"
+    private func scheduleIcon(for window: DailyClimbWindow) -> String {
+        switch window {
+        case .morning: "sunrise"
+        case .afterSchoolOrWork: "backpack"
+        case .evening: "sunset"
+        case .beforeBed: "moon.stars"
+        case .custom: "clock"
         }
     }
 
     private func advance() {
         switch step {
-        case .welcome:
-            accountMode = .create
-            setStep(step.next)
-        case .account where accountMode == .login:
-            logInWithEmail()
-        case .review:
-            beginPreparing()
-        case .ready:
-            submit()
+        case .schedule:
+            setStep(.building)
+        case .missionIntro:
+            if missionAttemptCompleted {
+                setStep(.missionTimer)
+            } else {
+                startOnboardingMission()
+            }
         default:
             setStep(step.next)
         }
@@ -591,79 +968,143 @@ struct OnboardingView: View {
 
     private func goBack() {
         guard canGoBack else { return }
-        if step == .account {
-            accountMode = .create
+        if step == .account && accountMode == .login {
+            setStep(.opening)
+            return
         }
         setStep(step.previous)
     }
 
-    private func toggleAccountMode() {
-        authenticatedUser = nil
-        authenticatedProvider = nil
-        password = ""
-        accountMode = accountMode == .create ? .login : .create
-    }
-
-    private func beginPreparing() {
-        preparationProgress = 0.08
-        setStep(.preparing)
-    }
-
-    private func runPreparation() async {
-        guard step == .preparing else { return }
-        withAnimation(.easeInOut(duration: 1.2)) {
-            preparationProgress = 1
-        }
-        try? await Task.sleep(nanoseconds: 1_350_000_000)
-        guard step == .preparing else { return }
-        await MainActor.run {
-            setStep(.ready)
+    private func setStep(_ newStep: OnboardingStep) {
+        if reduceMotion {
+            step = newStep
+        } else {
+            withAnimation(ClimbMotion.focus) {
+                step = newStep
+            }
         }
     }
 
-    private func submit() {
-        isSubmitting = true
-        let components = Calendar.current.dateComponents([.hour, .minute], from: reminderTime)
-        let name = displayName.isEmpty ? fallbackDisplayName : displayName
-        Task {
-            _ = await viewModel.completeOnboarding(
-                displayName: name,
-                email: email,
-                password: password,
-                authenticatedUser: authenticatedUser,
-                ageGroup: ageChoice.ageGroup,
-                goals: selectedGoalList,
-                struggle: struggle,
-                streakGoal: streakGoal,
-                notificationHour: components.hour ?? 8,
-                notificationMinute: components.minute ?? 0
-            )
-            isSubmitting = false
+    private func startOnboardingMission() {
+        timerSecondsRemaining = 60
+        firstStepCompletedAt = nil
+        missionAttemptState = .running
+        missionAttemptID += 1
+        setStep(.missionTimer)
+    }
+
+    private func retryOnboardingMission() {
+        HapticFeedback.impact(.medium)
+        if reduceMotion {
+            startOnboardingMission()
+        } else {
+            withAnimation(ClimbMotion.focus) {
+                startOnboardingMission()
+            }
         }
     }
 
-    private func logInWithEmail() {
+    private func handleScenePhaseChange(_ newPhase: ScenePhase) {
+        switch newPhase {
+        case .background:
+            guard step == .missionTimer,
+                  missionAttemptState == .running,
+                  firstStepCompletedAt == nil,
+                  timerSecondsRemaining > 0 else { return }
+            missionAttemptState = .interrupted
+        case .active:
+            guard step == .missionTimer, missionAttemptState == .interrupted else { return }
+            HapticFeedback.impact(.medium)
+            if reduceMotion {
+                missionAttemptState = .failed
+            } else {
+                withAnimation(ClimbMotion.focus) {
+                    missionAttemptState = .failed
+                }
+            }
+        case .inactive:
+            break
+        @unknown default:
+            break
+        }
+    }
+
+    @MainActor
+    private func runStepTask(for currentStep: OnboardingStep) async {
+        switch currentStep {
+        case .building:
+            preparationLineIndex = 0
+            for index in preparationLines.indices.dropFirst() {
+                try? await Task.sleep(for: .milliseconds(560))
+                guard !Task.isCancelled, step == .building else { return }
+                withAnimation(reduceMotion ? nil : .easeOut(duration: 0.22)) {
+                    preparationLineIndex = index
+                }
+            }
+            try? await Task.sleep(for: .milliseconds(650))
+            guard !Task.isCancelled, step == .building else { return }
+            setStep(.pathReveal)
+        case .missionTimer:
+            guard missionAttemptState == .running else { return }
+            while timerSecondsRemaining > 0, missionAttemptState == .running {
+                try? await Task.sleep(for: .seconds(1))
+                guard !Task.isCancelled,
+                      step == .missionTimer,
+                      missionAttemptState == .running else { return }
+                timerSecondsRemaining -= 1
+            }
+            guard firstStepCompletedAt == nil, missionAttemptState == .running else { return }
+            if reduceMotion {
+                missionAttemptState = .completed
+            } else {
+                withAnimation(ClimbMotion.focus) {
+                    missionAttemptState = .completed
+                }
+            }
+            firstStepCompletedAt = Date()
+            HapticFeedback.success()
+        default:
+            return
+        }
+    }
+
+    private func requestNotificationsAndContinue() {
         guard !isSubmitting else { return }
         isSubmitting = true
-
         Task { @MainActor in
-            defer { isSubmitting = false }
-            await viewModel.signInWithEmailForOnboarding(email: email, password: password)
+            await viewModel.requestNotificationAuthorization()
+            isSubmitting = false
+            setStep(.account)
+        }
+    }
+
+    private func submitEmailAccount() {
+        guard isEmailAccountReady, !isSubmitting else { return }
+        if accountMode == .login {
+            isSubmitting = true
+            Task { @MainActor in
+                defer { isSubmitting = false }
+                await viewModel.signInWithEmailForOnboarding(email: email, password: password)
+            }
+        } else {
+            Task { await finalizeOnboarding() }
         }
     }
 
     private func signInWithGoogle() {
         guard !isSubmitting else { return }
         isSubmitting = true
-
         Task { @MainActor in
             defer { isSubmitting = false }
-            if let user = await viewModel.signInWithGoogleForOnboarding() {
-                if accountMode == .login {
-                    await viewModel.loadSignedInAccountForOnboarding()
-                } else if await viewModel.shouldContinueNewProfileAfterSocialSignIn() {
-                    applyAuthenticatedUser(user, provider: .google)
-                }
+            guard let user = await viewModel.signInWithGoogleForOnboarding() else { return }
+            if accountMode == .login {
+                await viewModel.loadSignedInAccountForOnboarding()
+            } else if await viewModel.shouldContinueNewProfileAfterSocialSignIn() {
+                authenticatedUser = user
+                authenticatedProvider = .google
+                displayName = user.displayName
+                email = user.email
+                await finalizeOnboarding(manageSubmittingState: false)
             }
         }
     }
@@ -671,192 +1112,123 @@ struct OnboardingView: View {
     private func signInWithApple() {
         guard !isSubmitting else { return }
         isSubmitting = true
-
         Task { @MainActor in
             defer { isSubmitting = false }
-            if let user = await viewModel.signInWithAppleForOnboarding() {
-                if accountMode == .login {
-                    await viewModel.loadSignedInAccountForOnboarding()
-                } else if await viewModel.shouldContinueNewProfileAfterSocialSignIn() {
-                    applyAuthenticatedUser(user, provider: .apple)
-                }
+            guard let user = await viewModel.signInWithAppleForOnboarding() else { return }
+            if accountMode == .login {
+                await viewModel.loadSignedInAccountForOnboarding()
+            } else if await viewModel.shouldContinueNewProfileAfterSocialSignIn() {
+                authenticatedUser = user
+                authenticatedProvider = .apple
+                displayName = user.displayName
+                email = user.email
+                await finalizeOnboarding(manageSubmittingState: false)
             }
         }
     }
 
-    private func applyAuthenticatedUser(_ user: FirebaseSignedInUser, provider: OnboardingAuthProvider) {
-        authenticatedUser = user
-        authenticatedProvider = provider
-        if displayName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-            displayName = user.displayName
+    @MainActor
+    private func finalizeOnboarding(manageSubmittingState: Bool = true) async {
+        guard !isSubmitting || !manageSubmittingState else { return }
+        if manageSubmittingState {
+            isSubmitting = true
         }
-        if email.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-            email = user.email
+        defer {
+            if manageSubmittingState {
+                isSubmitting = false
+            }
         }
-        setStep(step.next)
+
+        let components = Calendar.current.dateComponents([.hour, .minute], from: reminderTime)
+        let onboarding = OnboardingPersonalization(
+            spiritualStartingPoint: spiritualStartingPoint ?? .growing,
+            dailyCommitmentMinutes: dailyCommitmentMinutes,
+            preferredTimeWindow: preferredTimeWindow,
+            primaryObstacle: obstacle?.title ?? "Inconsistency",
+            whyStarted: resolvedWhyStarted,
+            firstStepCompletedAt: firstStepCompletedAt,
+            initialMilestoneDays: 3
+        )
+
+        _ = await viewModel.completeOnboarding(
+            displayName: displayName.trimmingCharacters(in: .whitespacesAndNewlines),
+            email: email,
+            password: password,
+            authenticatedUser: authenticatedUser,
+            ageGroup: ageChoice?.ageGroup ?? .lateTeen,
+            goals: selectedGoalList,
+            struggle: resolvedStruggle,
+            streakGoal: 3,
+            notificationHour: components.hour ?? preferredTimeWindow.defaultHour,
+            notificationMinute: components.minute ?? 0,
+            onboarding: onboarding
+        )
     }
 
-    private func setStep(_ newStep: OnboardingStep) {
-        withAnimation(ClimbMotion.focus) {
-            step = newStep
-        }
-    }
-
-    private func authButtonTitle(for provider: OnboardingAuthProvider) -> String {
+    private func providerTitle(_ provider: OnboardingAuthProvider) -> String {
         if authenticatedProvider == provider {
-            return provider == .apple ? "Apple Connected" : "Google Connected"
+            return provider == .apple ? "Apple connected" : "Google connected"
         }
-
-        if let authenticatedProvider {
-            return authenticatedProvider == .apple ? "Connected with Apple" : "Connected with Google"
-        }
-
-        if accountMode == .login {
-            return provider == .apple ? "Sign in with Apple" : "Sign in with Google"
-        }
-
-        return provider == .apple ? "Continue with Apple" : "Continue with Google"
-    }
-
-    private func authButtonIcon(for provider: OnboardingAuthProvider) -> String {
-        authenticatedProvider == provider ? "checkmark.circle.fill" : (provider == .apple ? "apple.logo" : "g.circle")
-    }
-
-    private func isProviderDisabled(_ provider: OnboardingAuthProvider) -> Bool {
-        isSubmitting || (authenticatedProvider != nil && authenticatedProvider != provider)
-    }
-
-    private var fallbackDisplayName: String {
-        let prefix = email.split(separator: "@").first
-        return prefix.map(String.init) ?? "Climber"
-    }
-
-    private func goalSubtitle(for goal: OnboardingGoal) -> String {
-        switch goal.id {
-        case "discipline":
-            "Do what you said you would do"
-        case "faith":
-            "Build a steady daily walk"
-        case "procrastination":
-            "Start sooner and finish cleaner"
-        case "phone":
-            "Protect focus from distraction"
-        case "focus":
-            "Train attention for deep work"
-        case "confidence":
-            "Move with more courage"
-        case "habits":
-            "Replace weak patterns"
-        case "consistency":
-            "Show up when motivation drops"
-        case "prayer":
-            "Make prayer repeatable"
-        default:
-            "Strengthen your daily self-control"
-        }
-    }
-
-    private func struggleSubtitle(for struggle: Struggle) -> String {
-        switch struggle {
-        case .focus:
-            "Phone use, deep work, attention"
-        case .discipline:
-            "Doing what you said you would do"
-        case .consistency:
-            "Showing up when motivation drops"
-        case .purity:
-            "Self-control and clean choices"
-        case .prayer:
-            "Building a steady prayer life"
-        case .scripture:
-            "Getting rooted in the Word"
-        case .socialPressure:
-            "Standing firm around others"
-        }
-    }
-
-    private func struggleIcon(for struggle: Struggle) -> String {
-        switch struggle {
-        case .focus:
-            "iphone.slash"
-        case .discipline:
-            "checkmark.seal"
-        case .consistency:
-            "repeat"
-        case .purity:
-            "heart.shield"
-        case .prayer:
-            "hands.sparkles"
-        case .scripture:
-            "book.closed"
-        case .socialPressure:
-            "person.2"
-        }
-    }
-
-    private func streakSubtitle(for option: Int) -> String {
-        switch option {
-        case 7:
-            "A focused first week"
-        case 14:
-            "Two weeks of discipline"
-        case 30:
-            "A serious reset"
-        case 60:
-            "Build a durable rhythm"
-        default:
-            "Long-term transformation"
-        }
+        let prefix = accountMode == .login ? "Sign in with" : "Continue with"
+        return provider == .apple ? "\(prefix) Apple" : "\(prefix) Google"
     }
 }
 
 private enum OnboardingStep: Int, CaseIterable, Hashable {
-    case welcome
-    case account
-    case age
+    case opening
     case goals
-    case struggle
-    case streak
-    case reminder
-    case review
-    case preparing
-    case ready
-
-    var progress: Double {
-        switch self {
-        case .welcome:
-            return 0
-        case .preparing:
-            return 0.92
-        case .ready:
-            return 1
-        default:
-            return Double(rawValue) / Double(Self.allCases.count - 1)
-        }
-    }
+    case obstacle
+    case spiritualStartingPoint
+    case age
+    case commitment
+    case schedule
+    case building
+    case pathReveal
+    case missionIntro
+    case missionTimer
+    case reason
+    case milestone
+    case notification
+    case account
 
     var next: OnboardingStep {
-        Self(rawValue: min(rawValue + 1, Self.allCases.count - 1)) ?? .ready
+        Self(rawValue: min(rawValue + 1, Self.allCases.count - 1)) ?? .account
     }
 
     var previous: OnboardingStep {
-        Self(rawValue: max(rawValue - 1, 0)) ?? .welcome
+        Self(rawValue: max(rawValue - 1, 0)) ?? .opening
+    }
+
+    var pathProgress: Double {
+        switch self {
+        case .opening: 0
+        case .building: 0.46
+        case .pathReveal: 0.54
+        case .missionIntro, .missionTimer: 0.68
+        case .reason: 0.76
+        case .milestone: 0.84
+        case .notification: 0.92
+        case .account: 1
+        default: Double(rawValue) / Double(Self.allCases.count - 1)
+        }
+    }
+
+    var showsProgressHeader: Bool {
+        self != .opening && self != .building
     }
 }
 
-private struct AgeChoice: Identifiable, Equatable {
-    let id: String
-    let title: String
-    let subtitle: String
-    let systemImage: String
-    let ageGroup: AgeGroup
+private enum OnboardingMissionAttemptState: Hashable {
+    case idle
+    case running
+    case interrupted
+    case failed
+    case completed
+}
 
-    static let teen13 = AgeChoice(id: "13-15", title: "13 - 15", subtitle: "Start with simple wins", systemImage: "person", ageGroup: .earlyTeen)
-    static let teen16 = AgeChoice(id: "16-18", title: "16 - 18", subtitle: "Build discipline now", systemImage: "person.fill", ageGroup: .lateTeen)
-    static let young19 = AgeChoice(id: "19-24", title: "19 - 24", subtitle: "Own your daily system", systemImage: "graduationcap", ageGroup: .college)
-    static let adult25 = AgeChoice(id: "25+", title: "25+", subtitle: "Sustain a mature rhythm", systemImage: "briefcase", ageGroup: .youngAdult)
-
-    static let allCases: [AgeChoice] = [.teen13, .teen16, .young19, .adult25]
+private struct OnboardingStepTaskID: Hashable {
+    let step: OnboardingStep
+    let missionAttemptID: Int
 }
 
 private struct OnboardingGoal: Identifiable {
@@ -864,22 +1236,95 @@ private struct OnboardingGoal: Identifiable {
     let title: String
     let systemImage: String
 
-    static let defaultGoals = [
-        OnboardingGoal(id: "discipline", title: "Build discipline", systemImage: "checkmark.seal"),
-        OnboardingGoal(id: "faith", title: "Grow closer to God", systemImage: "cross"),
-        OnboardingGoal(id: "procrastination", title: "Stop procrastinating", systemImage: "timer"),
-        OnboardingGoal(id: "phone", title: "Control phone use", systemImage: "iphone.slash"),
-        OnboardingGoal(id: "focus", title: "Improve focus", systemImage: "scope"),
-        OnboardingGoal(id: "confidence", title: "Build confidence", systemImage: "figure.stand"),
-        OnboardingGoal(id: "habits", title: "Break bad habits", systemImage: "arrow.triangle.2.circlepath"),
-        OnboardingGoal(id: "consistency", title: "Become consistent", systemImage: "calendar.badge.checkmark"),
-        OnboardingGoal(id: "prayer", title: "Improve prayer life", systemImage: "hands.sparkles"),
-        OnboardingGoal(id: "self-control", title: "Strengthen self-control", systemImage: "shield")
+    static let options = [
+        OnboardingGoal(id: "god", title: "Grow closer to God", systemImage: "cross"),
+        OnboardingGoal(id: "discipline", title: "Become more disciplined", systemImage: "checkmark.seal"),
+        OnboardingGoal(id: "prayer", title: "Build a consistent prayer life", systemImage: "hands.sparkles"),
+        OnboardingGoal(id: "scripture", title: "Read Scripture consistently", systemImage: "book.closed"),
+        OnboardingGoal(id: "temptation", title: "Break a habit or temptation", systemImage: "shield.lefthalf.filled"),
+        OnboardingGoal(id: "peace", title: "Find peace and direction", systemImage: "sun.max")
     ]
 }
 
+private struct OnboardingObstacle: Identifiable, Equatable {
+    let id: String
+    let title: String
+    let systemImage: String
+    let struggle: Struggle
+
+    static let options = [
+        OnboardingObstacle(id: "procrastination", title: "Procrastination", systemImage: "timer", struggle: .discipline),
+        OnboardingObstacle(id: "temptation", title: "Lust and temptation", systemImage: "heart.slash", struggle: .purity),
+        OnboardingObstacle(id: "social-media", title: "Social media", systemImage: "iphone.slash", struggle: .focus),
+        OnboardingObstacle(id: "motivation", title: "Lack of motivation", systemImage: "battery.25", struggle: .consistency),
+        OnboardingObstacle(id: "doubt", title: "Doubt", systemImage: "questionmark.circle", struggle: .scripture),
+        OnboardingObstacle(id: "stress", title: "Stress or anxiety", systemImage: "waveform.path", struggle: .prayer),
+        OnboardingObstacle(id: "inconsistency", title: "Inconsistency", systemImage: "repeat", struggle: .consistency),
+        OnboardingObstacle(id: "unsure", title: "I don’t know where to start", systemImage: "signpost.right", struggle: .discipline)
+    ]
+}
+
+private struct AgeChoice: Identifiable, Equatable {
+    let id: String
+    let title: String
+    let detail: String
+    let systemImage: String
+    let ageGroup: AgeGroup
+
+    static let options = [
+        AgeChoice(id: "13-15", title: "13 - 15", detail: "Clear, grounded first steps", systemImage: "person", ageGroup: .earlyTeen),
+        AgeChoice(id: "16-18", title: "16 - 18", detail: "Identity, choices, and responsibility", systemImage: "person.fill", ageGroup: .lateTeen),
+        AgeChoice(id: "19-24", title: "19 - 24", detail: "Independence and ownership", systemImage: "graduationcap", ageGroup: .college),
+        AgeChoice(id: "25+", title: "25+", detail: "Stewardship, vocation, and leadership", systemImage: "briefcase", ageGroup: .youngAdult)
+    ]
+}
+
+private struct DailyCommitment: Identifiable {
+    let minutes: Int
+    let title: String
+    let detail: String
+    let recommended: Bool
+
+    var id: Int { minutes }
+
+    static let options = [
+        DailyCommitment(minutes: 5, title: "5 min", detail: "Start small", recommended: false),
+        DailyCommitment(minutes: 10, title: "10 min", detail: "Build consistency", recommended: true),
+        DailyCommitment(minutes: 15, title: "15 min", detail: "Go deeper", recommended: false),
+        DailyCommitment(minutes: 20, title: "20+ min", detail: "Challenge me", recommended: false)
+    ]
+}
+
+private struct OnboardingScripture {
+    let reference: String
+    let text: String
+}
+
+private struct OnboardingAction {
+    let title: String
+    let systemImage: String
+    var isDisabled = false
+    let action: () -> Void
+}
+
+private struct OnboardingBottomAction: View {
+    let action: OnboardingAction
+
+    var body: some View {
+        PrimaryActionButton(
+            title: action.title,
+            systemImage: action.systemImage,
+            isDisabled: action.isDisabled,
+            action: action.action
+        )
+        .padding(.horizontal, 22)
+        .padding(.top, 12)
+        .padding(.bottom, 10)
+        .background(.ultraThinMaterial)
+    }
+}
+
 private struct OnboardingProgressHeader: View {
-    let step: OnboardingStep
     let progress: Double
     let canGoBack: Bool
     let onBack: () -> Void
@@ -888,754 +1333,400 @@ private struct OnboardingProgressHeader: View {
         HStack(spacing: 14) {
             Button(action: onBack) {
                 Image(systemName: "chevron.left")
-                    .font(ClimbTypography.sans(17, weight: .semibold))
-                    .foregroundStyle(canGoBack ? .white : Color.climbMuted.opacity(0.45))
-                    .frame(width: 34, height: 34)
+                    .font(ClimbTypography.sans(16, weight: .semibold))
+                    .foregroundStyle(canGoBack ? Color.climbMist : Color.climbMuted.opacity(0.4))
+                    .frame(width: 36, height: 36)
             }
             .buttonStyle(ScaleButtonStyle())
             .disabled(!canGoBack)
+            .accessibilityLabel("Back")
 
-            ProgressBar(value: progress, height: 5, tint: .climbSage)
+            ProgressBar(value: progress, height: 4, tint: .climbSage)
 
-            Text("\(min(step.rawValue + 1, OnboardingStep.allCases.count))/\(OnboardingStep.allCases.count)")
-                .font(ClimbTypography.sans(11, weight: .semibold))
-                .foregroundStyle(Color.climbMuted)
-                .monospacedDigit()
+            Image(systemName: "flag.fill")
+                .font(ClimbTypography.sans(12, weight: .semibold))
+                .foregroundStyle(Color.climbSage.opacity(progress >= 1 ? 1 : 0.55))
+                .frame(width: 24)
+                .accessibilityHidden(true)
         }
     }
 }
 
-private struct StepHeading: View {
+private struct OnboardingHeading: View {
     let title: String
     let subtitle: String
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 8) {
+        VStack(alignment: .leading, spacing: 10) {
             Text(title)
-                .font(ClimbTypography.sans(28, weight: .semibold))
-                .foregroundStyle(.white)
+                .font(ClimbTypography.sans(30, weight: .semibold))
+                .foregroundStyle(Color.climbMist)
                 .fixedSize(horizontal: false, vertical: true)
+
             Text(subtitle)
-                .font(ClimbTypography.sans(14, weight: .semibold))
+                .font(ClimbTypography.sans(15, weight: .medium))
                 .foregroundStyle(Color.climbTextSecondary)
-                .lineSpacing(3)
+                .lineSpacing(4)
                 .fixedSize(horizontal: false, vertical: true)
         }
+    }
+}
+
+private struct OnboardingEyebrow: View {
+    let text: String
+
+    var body: some View {
+        Text(text)
+            .font(ClimbTypography.sans(12, weight: .semibold))
+            .foregroundStyle(Color.climbSage)
+    }
+}
+
+private struct OnboardingChoiceRow: View {
+    let title: String
+    var detail: String? = nil
+    let systemImage: String
+    let isSelected: Bool
+    let action: () -> Void
+
+    var body: some View {
+        Button {
+            HapticFeedback.selection()
+            action()
+        } label: {
+            HStack(spacing: 14) {
+                Image(systemName: systemImage)
+                    .font(ClimbTypography.sans(15, weight: .semibold))
+                    .foregroundStyle(isSelected ? Color.climbSage : Color.climbMuted)
+                    .frame(width: 24)
+                    .accessibilityHidden(true)
+
+                VStack(alignment: .leading, spacing: detail == nil ? 0 : 3) {
+                    Text(title)
+                        .font(ClimbTypography.sans(16, weight: .semibold))
+                        .foregroundStyle(Color.climbMist)
+                        .fixedSize(horizontal: false, vertical: true)
+                    if let detail {
+                        Text(detail)
+                            .font(ClimbTypography.sans(12, weight: .medium))
+                            .foregroundStyle(Color.climbTextSecondary)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+                }
+
+                Spacer(minLength: 12)
+
+                Image(systemName: isSelected ? "checkmark.circle.fill" : "circle")
+                    .font(ClimbTypography.sans(18, weight: .semibold))
+                    .foregroundStyle(isSelected ? Color.climbSage : Color.climbDivider)
+                    .accessibilityHidden(true)
+            }
+            .padding(.horizontal, 16)
+            .padding(.vertical, detail == nil ? 15 : 13)
+            .background(
+                isSelected ? Color.climbSage.opacity(0.075) : Color.climbSurfaceRaised.opacity(0.58),
+                in: RoundedRectangle(cornerRadius: 16, style: .continuous)
+            )
+            .overlay(
+                RoundedRectangle(cornerRadius: 16, style: .continuous)
+                    .stroke(isSelected ? Color.climbSage.opacity(0.32) : Color.climbHairline, lineWidth: 0.8)
+            )
+        }
+        .buttonStyle(ScaleButtonStyle())
+        .accessibilityLabel(title)
+        .accessibilityValue(isSelected ? "Selected" : "Not selected")
+        .accessibilityAddTraits(isSelected ? .isSelected : [])
+    }
+}
+
+private struct SpiritualMountainSelector: View {
+    @Binding var selection: SpiritualStartingPoint?
+
+    var body: some View {
+        ZStack(alignment: .leading) {
+            ClimbPathShape()
+                .stroke(Color.climbDivider, style: StrokeStyle(lineWidth: 2, lineCap: .round, lineJoin: .round))
+                .frame(width: 56)
+                .padding(.leading, 4)
+                .padding(.vertical, 26)
+
+            VStack(spacing: 12) {
+                ForEach(SpiritualStartingPoint.allCases.reversed()) { point in
+                    Button {
+                        HapticFeedback.selection()
+                        selection = point
+                    } label: {
+                        HStack(spacing: 16) {
+                            Circle()
+                                .fill(selection == point ? Color.climbSage : Color.climbSurfaceRaised)
+                                .frame(width: 18, height: 18)
+                                .overlay(Circle().stroke(Color.climbSage.opacity(selection == point ? 0.5 : 0.16), lineWidth: 2))
+                                .shadow(color: selection == point ? Color.climbSage.opacity(0.26) : .clear, radius: 8)
+
+                            VStack(alignment: .leading, spacing: 3) {
+                                Text(point.title)
+                                    .font(ClimbTypography.sans(16, weight: .semibold))
+                                    .foregroundStyle(Color.climbMist)
+                                Text(point.detail)
+                                    .font(ClimbTypography.sans(13, weight: .medium))
+                                    .foregroundStyle(Color.climbTextSecondary)
+                                    .fixedSize(horizontal: false, vertical: true)
+                            }
+
+                            Spacer(minLength: 0)
+                        }
+                        .padding(.horizontal, 14)
+                        .padding(.vertical, 14)
+                        .background(
+                            selection == point ? Color.climbSage.opacity(0.07) : Color.climbSurfaceRaised.opacity(0.50),
+                            in: RoundedRectangle(cornerRadius: 16, style: .continuous)
+                        )
+                        .overlay(
+                            RoundedRectangle(cornerRadius: 16, style: .continuous)
+                                .stroke(selection == point ? Color.climbSage.opacity(0.28) : Color.climbHairline, lineWidth: 0.8)
+                        )
+                    }
+                    .buttonStyle(ScaleButtonStyle())
+                    .accessibilityAddTraits(selection == point ? .isSelected : [])
+                }
+            }
+        }
+    }
+}
+
+private struct CommitmentChoice: View {
+    let option: DailyCommitment
+    let isSelected: Bool
+    let action: () -> Void
+
+    var body: some View {
+        Button {
+            HapticFeedback.selection()
+            action()
+        } label: {
+            VStack(alignment: .leading, spacing: 8) {
+                HStack {
+                    Text(option.title)
+                        .font(ClimbTypography.sans(25, weight: .semibold))
+                        .foregroundStyle(Color.climbMist)
+                    Spacer(minLength: 4)
+                    if isSelected {
+                        Image(systemName: "checkmark.circle.fill")
+                            .foregroundStyle(Color.climbSage)
+                    }
+                }
+
+                Text(option.detail)
+                    .font(ClimbTypography.sans(13, weight: .medium))
+                    .foregroundStyle(Color.climbTextSecondary)
+
+                if option.recommended {
+                    Text("RECOMMENDED")
+                        .font(ClimbTypography.sans(9, weight: .semibold))
+                        .foregroundStyle(Color.climbSage)
+                        .padding(.top, 3)
+                }
+            }
+            .frame(maxWidth: .infinity, minHeight: 104, alignment: .topLeading)
+            .padding(16)
+            .background(
+                isSelected ? Color.climbSage.opacity(0.075) : Color.climbSurfaceRaised.opacity(0.58),
+                in: RoundedRectangle(cornerRadius: 18, style: .continuous)
+            )
+            .overlay(
+                RoundedRectangle(cornerRadius: 18, style: .continuous)
+                    .stroke(isSelected ? Color.climbSage.opacity(0.34) : Color.climbHairline, lineWidth: 0.8)
+            )
+        }
+        .buttonStyle(ScaleButtonStyle())
+        .accessibilityAddTraits(isSelected ? .isSelected : [])
+    }
+}
+
+private struct FirstWeekPathView: View {
+    let checkpoints: [FirstWeekCheckpoint]
+
+    var body: some View {
+        VStack(spacing: 0) {
+            ForEach(Array(checkpoints.enumerated()), id: \.element.id) { index, checkpoint in
+                HStack(alignment: .top, spacing: 16) {
+                    VStack(spacing: 0) {
+                        Circle()
+                            .fill(index == 0 ? Color.climbSage : Color.climbSurfaceRaised)
+                            .frame(width: 14, height: 14)
+                            .overlay(Circle().stroke(Color.climbSage.opacity(index == 0 ? 0.5 : 0.18), lineWidth: 2))
+                        if index < checkpoints.count - 1 {
+                            Rectangle()
+                                .fill(Color.climbDivider)
+                                .frame(width: 2, height: 42)
+                        }
+                    }
+
+                    VStack(alignment: .leading, spacing: 3) {
+                        Text("DAY \(checkpoint.day)")
+                            .font(ClimbTypography.sans(10, weight: .semibold))
+                            .foregroundStyle(index == 0 ? Color.climbSage : Color.climbMuted)
+                        Text(checkpoint.title)
+                            .font(ClimbTypography.sans(17, weight: .semibold))
+                            .foregroundStyle(Color.climbMist)
+                    }
+                    .padding(.top, -3)
+
+                    Spacer(minLength: 0)
+                }
+                .accessibilityElement(children: .combine)
+            }
+        }
+        .padding(.vertical, 6)
+    }
+}
+
+private struct ScriptureMoment: View {
+    let scripture: OnboardingScripture
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Text(scripture.text)
+                .font(ClimbTypography.serif(23))
+                .foregroundStyle(Color.climbMist)
+                .lineSpacing(5)
+            Text(scripture.reference)
+                .font(ClimbTypography.sans(12, weight: .semibold))
+                .foregroundStyle(Color.climbGold)
+            ScriptureAttributionText(reference: scripture.reference)
+        }
+    }
+}
+
+private struct ThreeDayMilestoneView: View {
+    let firstDayComplete: Bool
+
+    var body: some View {
+        HStack(spacing: 22) {
+            ForEach(1...3, id: \.self) { day in
+                VStack(spacing: 8) {
+                    Circle()
+                        .fill(day == 1 && firstDayComplete ? Color.climbSage : Color.climbSurfaceRaised)
+                        .frame(width: 42, height: 42)
+                        .overlay(
+                            Circle()
+                                .stroke(day == 1 ? Color.climbSage.opacity(0.38) : Color.climbDivider, lineWidth: 1.5)
+                        )
+                        .overlay {
+                            if day == 1 && firstDayComplete {
+                                Image(systemName: "checkmark")
+                                    .font(ClimbTypography.sans(16, weight: .semibold))
+                                    .foregroundStyle(Color.climbInk)
+                            } else {
+                                Text("\(day)")
+                                    .font(ClimbTypography.sans(14, weight: .semibold))
+                                    .foregroundStyle(Color.climbMuted)
+                            }
+                        }
+                    Text("DAY \(day)")
+                        .font(ClimbTypography.sans(9, weight: .semibold))
+                        .foregroundStyle(Color.climbMuted)
+                }
+                .accessibilityElement(children: .ignore)
+                .accessibilityLabel(
+                    day == 1 && firstDayComplete ? "Day 1, complete" : "Day \(day), upcoming"
+                )
+            }
+        }
+        .frame(maxWidth: .infinity)
+    }
+}
+
+private struct AccountProgressStat: View {
+    let value: String
+    let label: String
+
+    var body: some View {
+        VStack(spacing: 4) {
+            Text(value)
+                .font(ClimbTypography.sans(25, weight: .semibold).monospacedDigit())
+                .foregroundStyle(Color.climbMist)
+            Text(label)
+                .font(ClimbTypography.sans(10, weight: .semibold))
+                .foregroundStyle(Color.climbMuted)
+        }
+        .frame(maxWidth: .infinity)
     }
 }
 
 private struct AccountValidationNotice: View {
     let message: String
-
-    private var isReady: Bool {
-        message == "Account details are ready." || message == "Ready to log in."
-    }
+    let isReady: Bool
 
     var body: some View {
-        HStack(alignment: .top, spacing: 10) {
-            Image(systemName: isReady ? "checkmark.circle.fill" : "exclamationmark.circle.fill")
-                .font(ClimbTypography.sans(14, weight: .semibold))
+        HStack(alignment: .top, spacing: 9) {
+            Image(systemName: isReady ? "checkmark.circle.fill" : "info.circle")
+                .font(ClimbTypography.sans(13, weight: .semibold))
                 .foregroundStyle(isReady ? Color.climbSage : Color.climbGold)
-                .padding(.top, 1)
-
             Text(message)
-                .font(ClimbTypography.sans(12, weight: .semibold))
-                .foregroundStyle(isReady ? Color.climbSage : Color.climbTextSecondary)
+                .font(ClimbTypography.sans(12, weight: .medium))
+                .foregroundStyle(Color.climbTextSecondary)
                 .fixedSize(horizontal: false, vertical: true)
         }
-        .padding(.horizontal, 14)
-        .padding(.vertical, 12)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background((isReady ? Color.climbSage : Color.climbGold).opacity(0.10), in: RoundedRectangle(cornerRadius: 16, style: .continuous))
-        .overlay(
-            RoundedRectangle(cornerRadius: 16, style: .continuous)
-                .stroke((isReady ? Color.climbSage : Color.climbGold).opacity(0.20), lineWidth: 0.8)
-        )
+        .padding(.horizontal, 4)
         .animation(ClimbMotion.quick, value: message)
     }
 }
 
-private struct SelectableRow: View {
-    let title: String
-    let subtitle: String
-    let systemImage: String
-    let isSelected: Bool
-    let action: () -> Void
+private struct BuildingPathMark: View {
+    let progress: CGFloat
 
     var body: some View {
-        Button(action: action) {
-            HStack(spacing: 14) {
-                Image(systemName: systemImage)
-                    .font(ClimbTypography.sans(16, weight: .semibold))
-                    .foregroundStyle(isSelected ? Color.climbSage : Color.climbMuted)
-                    .frame(width: 24)
+        ZStack {
+            ClimbPathShape()
+                .stroke(Color.climbDivider, style: StrokeStyle(lineWidth: 4, lineCap: .round, lineJoin: .round))
+            ClimbPathShape()
+                .trim(from: 0, to: progress)
+                .stroke(Color.climbSage, style: StrokeStyle(lineWidth: 4, lineCap: .round, lineJoin: .round))
+                .shadow(color: Color.climbSage.opacity(0.26), radius: 12)
 
-                VStack(alignment: .leading, spacing: 3) {
-                    Text(title)
-                        .font(ClimbTypography.sans(16, weight: .semibold))
-                        .foregroundStyle(.white)
-                    Text(subtitle)
-                        .font(ClimbTypography.sans(12, weight: .medium))
-                        .foregroundStyle(Color.climbTextSecondary)
-                        .lineLimit(1)
-                        .minimumScaleFactor(0.8)
-                }
-
-                Spacer()
-
-                Image(systemName: isSelected ? "checkmark.circle.fill" : "circle")
-                    .font(ClimbTypography.sans(18, weight: .semibold))
-                    .foregroundStyle(isSelected ? Color.climbSage : Color.climbMuted)
-            }
-            .padding(14)
-            .background(isSelected ? Color.climbSage.opacity(0.075) : Color.climbSurfaceRaised.opacity(0.88), in: RoundedRectangle(cornerRadius: 18, style: .continuous))
-            .overlay(
-                RoundedRectangle(cornerRadius: 18, style: .continuous)
-                    .stroke(isSelected ? Color.climbSage.opacity(0.32) : Color.white.opacity(0.07), lineWidth: 0.8)
-            )
-        }
-        .buttonStyle(ScaleButtonStyle())
-    }
-}
-
-private struct GoalOptionCard: View {
-    let goal: OnboardingGoal
-    let isSelected: Bool
-    let action: () -> Void
-
-    var body: some View {
-        Button(action: action) {
-            VStack(spacing: 10) {
-                ZStack {
-                    Circle()
-                        .fill(isSelected ? Color.climbSage.opacity(0.14) : Color.climbSurfaceGlass)
-                        .frame(width: 34, height: 34)
-                    Image(systemName: isSelected ? "checkmark" : goal.systemImage)
-                        .font(ClimbTypography.sans(14, weight: .semibold))
-                        .foregroundStyle(isSelected ? Color.climbSage : Color.climbMuted)
-                }
-
-                Text(goal.title)
-                    .font(ClimbTypography.sans(13, weight: .semibold))
-                    .foregroundStyle(.white)
-                    .multilineTextAlignment(.center)
-                    .lineLimit(2)
-                    .minimumScaleFactor(0.78)
-            }
-            .frame(maxWidth: .infinity)
-            .frame(height: 116)
-            .padding(10)
-            .background(isSelected ? Color.climbSage.opacity(0.10) : Color.climbSurfaceRaised, in: RoundedRectangle(cornerRadius: 18, style: .continuous))
-            .overlay(
-                RoundedRectangle(cornerRadius: 18, style: .continuous)
-                    .stroke(isSelected ? Color.climbSage.opacity(0.32) : Color.white.opacity(0.07), lineWidth: 0.8)
-            )
-        }
-        .buttonStyle(ScaleButtonStyle())
-    }
-}
-
-private struct OnboardingValueStrip: View {
-    var body: some View {
-        HStack(spacing: 10) {
-            WelcomeValueTile(systemImage: "shield.lefthalf.filled", title: "Block")
-            WelcomeValueTile(systemImage: "book.closed", title: "Word")
-            WelcomeValueTile(systemImage: "person.2", title: "Circle")
-        }
-        .padding(.horizontal, 4)
-    }
-}
-
-private struct BrandWelcomeLockup: View {
-    var body: some View {
-        VStack(spacing: 28) {
-            ZStack {
-                Circle()
-                    .fill(
-                        RadialGradient(
-                            colors: [
-                                Color.climbAction.opacity(0.11),
-                                Color.climbAction.opacity(0.030),
-                                Color.clear
-                            ],
-                            center: .center,
-                            startRadius: 10,
-                            endRadius: 152
-                        )
-                    )
-                    .frame(width: 276, height: 276)
-                    .blur(radius: 14)
-
-                Image("BrandLogo")
-                    .resizable()
-                    .interpolation(.high)
-                    .antialiased(true)
-                    .scaledToFit()
-                    .frame(width: 198, height: 198)
-                    .clipShape(RoundedRectangle(cornerRadius: 48, style: .continuous))
-                    .shadow(color: Color.climbAction.opacity(0.12), radius: 26, x: 0, y: 14)
-                    .shadow(color: .black.opacity(0.42), radius: 34, x: 0, y: 24)
-            }
-
-            VStack(spacing: 14) {
-                Text("The Climb")
-                    .font(ClimbTypography.sans(44, weight: .semibold))
-                    .foregroundStyle(Color.climbMist)
-                    .lineLimit(1)
-                    .minimumScaleFactor(0.78)
-
-                Text("A Christian Screen Time blocker for faith, focus, and self-control.")
-                    .font(ClimbTypography.sans(18, weight: .semibold))
-                    .foregroundStyle(Color.climbTextSecondary)
-                    .multilineTextAlignment(.center)
-                    .lineSpacing(4)
-                    .fixedSize(horizontal: false, vertical: true)
-
-                Text("Block the drift. Keep the promise.")
-                    .font(ClimbTypography.serif(24))
-                    .foregroundStyle(Color.climbWarm.opacity(0.92))
-                    .padding(.top, 4)
-            }
-            .frame(maxWidth: 340)
-        }
-        .frame(maxWidth: .infinity)
-        .climbEntrance()
-    }
-}
-
-private struct WelcomeHeroPanel: View {
-    var body: some View {
-        ZStack(alignment: .bottomLeading) {
-            MountainScene()
-
-            LinearGradient(
-                colors: [
-                    Color.black.opacity(0.18),
-                    Color.black.opacity(0.10),
-                    Color.black.opacity(0.82)
-                ],
-                startPoint: .top,
-                endPoint: .bottom
-            )
-
-            VStack(alignment: .leading, spacing: 0) {
-                HStack {
-                    Text("FAITH + DISCIPLINE")
-                        .font(ClimbTypography.sans(11, weight: .semibold))
-                        .tracking(1.5)
-                        .foregroundStyle(Color.climbSage)
-                        .padding(.horizontal, 12)
-                        .padding(.vertical, 8)
-                        .background(Color.climbSage.opacity(0.10), in: Capsule())
-                    Spacer()
-                    Image(systemName: "figure.hiking")
-                        .font(ClimbTypography.sans(19, weight: .semibold))
-                        .foregroundStyle(Color.climbMist.opacity(0.74))
-                        .frame(width: 38, height: 38)
-                        .background(.ultraThinMaterial, in: Circle())
-                }
-
-                Spacer(minLength: 0)
-
-                VStack(alignment: .leading, spacing: 12) {
-                    Text("The Climb")
-                        .font(ClimbTypography.sans(46, weight: .semibold))
-                        .foregroundStyle(Color.climbMist)
-                        .lineLimit(1)
-                        .minimumScaleFactor(0.78)
-
-                    Text("A quieter blocker for scripture, prayer, focus, and accountability.")
-                        .font(ClimbTypography.sans(16, weight: .semibold))
-                        .foregroundStyle(Color.climbTextSecondary)
-                        .lineSpacing(4)
-                        .fixedSize(horizontal: false, vertical: true)
-
-                    HStack(spacing: 8) {
-                        WelcomeMicroPill(text: "Daily Word")
-                        WelcomeMicroPill(text: "App Blocking")
-                        WelcomeMicroPill(text: "Streaks")
-                    }
-                    .padding(.top, 4)
-                }
-            }
-            .padding(22)
-        }
-        .clipShape(RoundedRectangle(cornerRadius: 30, style: .continuous))
-        .overlay(
-            RoundedRectangle(cornerRadius: 30, style: .continuous)
-                .stroke(
-                    LinearGradient(
-                        colors: [
-                            Color.white.opacity(0.15),
-                            Color.climbSage.opacity(0.12),
-                            Color.black.opacity(0.28)
-                        ],
-                        startPoint: .topLeading,
-                        endPoint: .bottomTrailing
-                    ),
-                    lineWidth: 0.9
-                )
-        )
-        .shadow(color: .black.opacity(0.38), radius: 26, x: 0, y: 18)
-        .climbEntrance()
-    }
-}
-
-private struct WelcomeMicroPill: View {
-    let text: String
-
-    var body: some View {
-        Text(text)
-            .font(ClimbTypography.sans(11, weight: .semibold))
-            .foregroundStyle(Color.climbWarm.opacity(0.92))
-            .lineLimit(1)
-            .minimumScaleFactor(0.72)
-            .padding(.horizontal, 10)
-            .padding(.vertical, 7)
-            .background(Color.white.opacity(0.065), in: Capsule())
-            .overlay(Capsule().stroke(Color.white.opacity(0.08), lineWidth: 0.7))
-    }
-}
-
-private struct WelcomeValueTile: View {
-    let systemImage: String
-    let title: String
-
-    var body: some View {
-        HStack(spacing: 8) {
-            Image(systemName: systemImage)
-                .font(ClimbTypography.sans(12, weight: .semibold))
+            Image(systemName: "flag.fill")
+                .font(ClimbTypography.sans(18, weight: .semibold))
                 .foregroundStyle(Color.climbSage)
-
-            Text(title)
-                .font(ClimbTypography.sans(12, weight: .semibold))
-                .foregroundStyle(Color.climbMist)
-                .lineLimit(1)
-                .minimumScaleFactor(0.76)
-        }
-        .frame(maxWidth: .infinity)
-        .padding(.vertical, 11)
-        .background(Color.climbBackgroundLifted.opacity(0.42), in: Capsule())
-        .overlay(
-            Capsule()
-                .stroke(Color.climbHairline.opacity(0.72), lineWidth: 0.7)
-        )
-    }
-}
-
-private struct FeatureLine: View {
-    let systemImage: String
-    let title: String
-
-    var body: some View {
-        HStack(spacing: 12) {
-            Image(systemName: systemImage)
-                .font(ClimbTypography.sans(13, weight: .semibold))
-                .foregroundStyle(Color.climbSage)
-                .frame(width: 20)
-            Text(title)
-                .font(ClimbTypography.sans(14, weight: .medium))
-                .foregroundStyle(.white)
-            Spacer()
+                .offset(x: 55, y: -88)
         }
     }
 }
 
-private struct SetupSummaryRow: View {
-    let systemImage: String
-    let title: String
-    let value: String
-
-    var body: some View {
-        HStack(spacing: 14) {
-            Image(systemName: systemImage)
-                .font(ClimbTypography.sans(15, weight: .semibold))
-                .foregroundStyle(Color.climbMuted)
-                .frame(width: 24)
-            VStack(alignment: .leading, spacing: 2) {
-                Text(title)
-                    .font(ClimbTypography.sans(12, weight: .medium))
-                    .foregroundStyle(Color.climbMuted)
-                Text(value)
-                    .font(ClimbTypography.sans(15, weight: .semibold))
-                    .foregroundStyle(.white)
-            }
-            Spacer()
-        }
-        .padding(.vertical, 4)
-    }
-}
-
-private struct PersonalizationPreviewCard: View {
-    let personalization: GrowthPathPersonalization
-
-    var body: some View {
-        ClimbCard(padding: 20, cornerRadius: 24, isProminent: true) {
-            VStack(alignment: .leading, spacing: 12) {
-                HStack(alignment: .center, spacing: 10) {
-                    Image(systemName: personalization.category.symbol)
-                        .font(ClimbTypography.sans(16, weight: .semibold))
-                        .foregroundStyle(Color.climbSage)
-                        .frame(width: 30, height: 30)
-                        .background(Color.climbSage.opacity(0.10), in: Circle())
-
-                    VStack(alignment: .leading, spacing: 3) {
-                        Text("YOUR PATH")
-                            .font(ClimbTypography.sans(11, weight: .semibold))
-                            .tracking(1.4)
-                            .foregroundStyle(Color.climbMuted)
-                        Text(personalization.headline)
-                            .font(ClimbTypography.sans(18, weight: .semibold))
-                            .foregroundStyle(.white)
-                    }
-                }
-
-                Text(personalization.planSummary)
-                    .font(ClimbTypography.sans(14, weight: .medium))
-                    .foregroundStyle(Color.climbTextSecondary)
-                    .lineSpacing(3)
-                    .fixedSize(horizontal: false, vertical: true)
-
-                Divider().overlay(Color.white.opacity(0.08))
-
-                FeatureLine(systemImage: "target", title: personalization.previewMissionTitle)
-                FeatureLine(systemImage: "checkmark.seal", title: personalization.habitTitle)
-            }
-        }
-    }
-}
-
-private struct DividerLabel: View {
-    let title: String
-
-    init(_ title: String) {
-        self.title = title
-    }
-
-    var body: some View {
-        HStack(spacing: 14) {
-            Rectangle()
-                .fill(Color.climbDivider)
-                .frame(height: 1)
-            Text(title)
-                .font(ClimbTypography.sans(12, weight: .semibold))
-                .foregroundStyle(Color.climbMuted)
-            Rectangle()
-                .fill(Color.climbDivider)
-                .frame(height: 1)
-        }
-    }
-}
-
-private struct MountainHeroCard: View {
-    var compact = false
-    var title: String?
-    var subtitle: String?
-
-    private var cornerRadius: CGFloat {
-        compact ? 24 : 28
-    }
-
-    var body: some View {
-        ZStack(alignment: .bottomLeading) {
-            MountainScene(compact: compact)
-
-            LinearGradient(
-                colors: [
-                    Color.clear,
-                    Color.black.opacity(compact ? 0.28 : 0.72)
-                ],
-                startPoint: .center,
-                endPoint: .bottom
-            )
-
-            if compact {
-                MountainBadge()
-                    .frame(width: 120, height: 120)
-                    .frame(maxWidth: .infinity, maxHeight: .infinity)
-            } else {
-                VStack(alignment: .leading, spacing: 8) {
-                    Spacer()
-                    Image(systemName: "figure.hiking")
-                        .font(ClimbTypography.sans(34, weight: .semibold))
-                        .foregroundStyle(.white.opacity(0.82))
-                    Text(title ?? "Begin with one honest step.")
-                        .font(title == nil ? ClimbTypography.serif(26) : ClimbTypography.sans(40, weight: .semibold))
-                        .foregroundStyle(.white)
-                        .lineLimit(2)
-                        .minimumScaleFactor(0.85)
-                    if let subtitle {
-                        Text(subtitle)
-                            .font(ClimbTypography.sans(15, weight: .semibold))
-                            .foregroundStyle(Color.climbSage)
-                            .lineLimit(2)
-                            .minimumScaleFactor(0.82)
-                    }
-                }
-                .padding(24)
-            }
-        }
-        .clipShape(RoundedRectangle(cornerRadius: cornerRadius, style: .continuous))
-        .overlay(
-            RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
-                .stroke(Color.climbDivider, lineWidth: 1)
-        )
-    }
-}
-
-private struct MountainScene: View {
-    var compact = false
+private struct OnboardingPathBackdrop: View {
+    let progress: Double
 
     var body: some View {
         GeometryReader { proxy in
-            let size = proxy.size
-
-            ZStack(alignment: .bottom) {
-                LinearGradient(
-                    colors: [
-                        Color(hex: 0x202127),
-                        Color.climbSurface,
-                        Color(hex: 0x090A0D)
-                    ],
-                    startPoint: .topLeading,
-                    endPoint: .bottomTrailing
+            ClimbPathShape()
+                .trim(from: 0, to: progress)
+                .stroke(
+                    Color.climbSage.opacity(0.055),
+                    style: StrokeStyle(lineWidth: 2, lineCap: .round, lineJoin: .round)
                 )
-
-                RidgeLine(points: [
-                    CGPoint(x: 0.00, y: 0.82),
-                    CGPoint(x: 0.18, y: 0.58),
-                    CGPoint(x: 0.34, y: 0.76),
-                    CGPoint(x: 0.52, y: 0.50),
-                    CGPoint(x: 0.73, y: 0.70),
-                    CGPoint(x: 1.00, y: 0.45)
-                ])
-                .fill(
-                    LinearGradient(
-                        colors: [
-                            Color(hex: 0x2D3038).opacity(0.78),
-                            Color(hex: 0x111217)
-                        ],
-                        startPoint: .top,
-                        endPoint: .bottom
-                    )
-                )
-                .offset(y: size.height * 0.04)
-
-                MountainPeak(
-                    leftBase: 0.10,
-                    rightBase: 0.98,
-                    peakX: 0.64,
-                    peakY: compact ? 0.24 : 0.20,
-                    leftShoulder: 0.46,
-                    rightShoulder: 0.78
-                )
-                .fill(
-                    LinearGradient(
-                        colors: [
-                            Color(hex: 0x5E626B),
-                            Color(hex: 0x23252C),
-                            Color(hex: 0x0D0E12)
-                        ],
-                        startPoint: .top,
-                        endPoint: .bottom
-                    )
-                )
-                .shadow(color: .black.opacity(0.35), radius: 18, x: 0, y: 18)
-
-                MountainFace(
-                    peakX: 0.64,
-                    peakY: compact ? 0.24 : 0.20,
-                    baseX: 0.98,
-                    midX: 0.72
-                )
-                .fill(
-                    LinearGradient(
-                        colors: [
-                            Color.white.opacity(0.22),
-                            Color.white.opacity(0.05),
-                            Color.black.opacity(0.18)
-                        ],
-                        startPoint: .topLeading,
-                        endPoint: .bottomTrailing
-                    )
-                )
-
-                SnowCap(
-                    peakX: 0.64,
-                    peakY: compact ? 0.24 : 0.20,
-                    width: compact ? 0.14 : 0.17,
-                    depth: compact ? 0.13 : 0.15
-                )
-                .fill(Color.white.opacity(0.72))
-
-                MountainPeak(
-                    leftBase: 0.02,
-                    rightBase: 0.42,
-                    peakX: 0.22,
-                    peakY: 0.49,
-                    leftShoulder: 0.13,
-                    rightShoulder: 0.31
-                )
-                .fill(
-                    LinearGradient(
-                        colors: [
-                            Color(hex: 0x444751),
-                            Color(hex: 0x16171D)
-                        ],
-                        startPoint: .top,
-                        endPoint: .bottom
-                    )
-                )
-                .opacity(0.9)
-
-                SummitFlag()
-                    .frame(width: compact ? 30 : 38, height: compact ? 32 : 40)
-                    .position(x: size.width * 0.64 + 10, y: size.height * (compact ? 0.23 : 0.19))
-
-                TrailPath()
-                    .stroke(
-                        Color.white.opacity(0.22),
-                        style: StrokeStyle(lineWidth: 2, lineCap: .round, dash: [4, 8])
-                    )
-                    .frame(width: size.width, height: size.height)
-
-                LinearGradient(
-                    colors: [
-                        Color.clear,
-                        Color.black.opacity(0.46)
-                    ],
-                    startPoint: .center,
-                    endPoint: .bottom
-                )
-            }
+                .frame(width: proxy.size.width * 0.40, height: proxy.size.height * 0.76)
+                .position(x: proxy.size.width * 0.86, y: proxy.size.height * 0.52)
+                .blur(radius: 0.4)
         }
+        .allowsHitTesting(false)
+        .accessibilityHidden(true)
     }
 }
 
-private struct MountainBadge: View {
-    var body: some View {
-        ZStack {
-            Circle()
-                .fill(Color.climbSurfaceRaised)
-                .overlay(Circle().stroke(Color.climbDivider, lineWidth: 1))
-            Image(systemName: "mountain.2.fill")
-                .font(ClimbTypography.sans(48, weight: .semibold))
-                .foregroundStyle(.white.opacity(0.72))
-                .offset(y: 8)
-            Image(systemName: "flag.fill")
-                .font(ClimbTypography.sans(22, weight: .semibold))
-                .foregroundStyle(Color.climbSage)
-                .offset(x: 18, y: -28)
-        }
-    }
-}
-
-private struct RidgeLine: Shape {
-    let points: [CGPoint]
-
+private struct ClimbPathShape: Shape {
     func path(in rect: CGRect) -> Path {
         var path = Path()
-
-        path.move(to: CGPoint(x: 0, y: rect.maxY))
-        for point in points {
-            path.addLine(to: CGPoint(x: rect.width * point.x, y: rect.height * point.y))
-        }
-        path.addLine(to: CGPoint(x: rect.maxX, y: rect.maxY))
-        path.closeSubpath()
-        return path
-    }
-}
-
-private struct MountainPeak: Shape {
-    let leftBase: CGFloat
-    let rightBase: CGFloat
-    let peakX: CGFloat
-    let peakY: CGFloat
-    let leftShoulder: CGFloat
-    let rightShoulder: CGFloat
-
-    func path(in rect: CGRect) -> Path {
-        var path = Path()
-        path.move(to: CGPoint(x: rect.width * leftBase, y: rect.maxY))
-        path.addLine(to: CGPoint(x: rect.width * leftShoulder, y: rect.height * 0.64))
-        path.addLine(to: CGPoint(x: rect.width * peakX, y: rect.height * peakY))
-        path.addLine(to: CGPoint(x: rect.width * rightShoulder, y: rect.height * 0.62))
-        path.addLine(to: CGPoint(x: rect.width * rightBase, y: rect.maxY))
-        path.closeSubpath()
-        return path
-    }
-}
-
-private struct MountainFace: Shape {
-    let peakX: CGFloat
-    let peakY: CGFloat
-    let baseX: CGFloat
-    let midX: CGFloat
-
-    func path(in rect: CGRect) -> Path {
-        var path = Path()
-        path.move(to: CGPoint(x: rect.width * peakX, y: rect.height * peakY))
-        path.addLine(to: CGPoint(x: rect.width * midX, y: rect.height * 0.68))
-        path.addLine(to: CGPoint(x: rect.width * baseX, y: rect.maxY))
-        path.addLine(to: CGPoint(x: rect.width * 0.70, y: rect.maxY))
-        path.closeSubpath()
-        return path
-    }
-}
-
-private struct SnowCap: Shape {
-    let peakX: CGFloat
-    let peakY: CGFloat
-    let width: CGFloat
-    let depth: CGFloat
-
-    func path(in rect: CGRect) -> Path {
-        let peak = CGPoint(x: rect.width * peakX, y: rect.height * peakY)
-        var path = Path()
-
-        path.move(to: peak)
-        path.addLine(to: CGPoint(x: rect.width * (peakX - width * 0.48), y: rect.height * (peakY + depth)))
-        path.addLine(to: CGPoint(x: rect.width * (peakX - width * 0.14), y: rect.height * (peakY + depth * 0.72)))
-        path.addLine(to: CGPoint(x: rect.width * peakX, y: rect.height * (peakY + depth * 1.12)))
-        path.addLine(to: CGPoint(x: rect.width * (peakX + width * 0.17), y: rect.height * (peakY + depth * 0.68)))
-        path.addLine(to: CGPoint(x: rect.width * (peakX + width * 0.52), y: rect.height * (peakY + depth * 1.02)))
-        path.closeSubpath()
-        return path
-    }
-}
-
-private struct SummitFlag: View {
-    var body: some View {
-        ZStack(alignment: .topLeading) {
-            Capsule()
-                .fill(Color.white.opacity(0.76))
-                .frame(width: 2, height: 34)
-                .offset(x: 6, y: 6)
-            Path { path in
-                path.move(to: CGPoint(x: 8, y: 6))
-                path.addLine(to: CGPoint(x: 31, y: 10))
-                path.addLine(to: CGPoint(x: 8, y: 18))
-                path.closeSubpath()
-            }
-            .fill(Color.climbSage)
-            .shadow(color: Color.climbSage.opacity(0.26), radius: 7, x: 0, y: 0)
-        }
-    }
-}
-
-private struct TrailPath: Shape {
-    func path(in rect: CGRect) -> Path {
-        var path = Path()
-        path.move(to: CGPoint(x: rect.width * 0.30, y: rect.height * 0.94))
+        path.move(to: CGPoint(x: rect.minX + rect.width * 0.18, y: rect.maxY))
         path.addCurve(
-            to: CGPoint(x: rect.width * 0.51, y: rect.height * 0.71),
-            control1: CGPoint(x: rect.width * 0.38, y: rect.height * 0.86),
-            control2: CGPoint(x: rect.width * 0.43, y: rect.height * 0.75)
+            to: CGPoint(x: rect.minX + rect.width * 0.60, y: rect.minY + rect.height * 0.55),
+            control1: CGPoint(x: rect.minX + rect.width * 0.05, y: rect.minY + rect.height * 0.78),
+            control2: CGPoint(x: rect.minX + rect.width * 0.82, y: rect.minY + rect.height * 0.76)
         )
         path.addCurve(
-            to: CGPoint(x: rect.width * 0.62, y: rect.height * 0.42),
-            control1: CGPoint(x: rect.width * 0.56, y: rect.height * 0.64),
-            control2: CGPoint(x: rect.width * 0.59, y: rect.height * 0.52)
+            to: CGPoint(x: rect.maxX - rect.width * 0.10, y: rect.minY),
+            control1: CGPoint(x: rect.minX + rect.width * 0.34, y: rect.minY + rect.height * 0.35),
+            control2: CGPoint(x: rect.maxX, y: rect.minY + rect.height * 0.24)
         )
         return path
     }

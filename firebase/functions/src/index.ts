@@ -16,7 +16,7 @@ const defaultMaxOutputTokens = 1300;
 const defaultOpenAITimeoutMs = 20000;
 const defaultOpenAIRetryCount = 1;
 const minimumMaxOutputTokens = 800;
-const dailyPlanCacheVersion = "first-week-heavy-v1";
+const dailyPlanCacheVersion = "commitment-onboarding-v2";
 const maxRecentHistory = 8;
 const maxRecentPlanMemory = 10;
 const maxGoals = 5;
@@ -37,6 +37,7 @@ type DailyPlanRequest = {
     notificationHour?: number;
     notificationMinute?: number;
     joinedAt?: string;
+    onboarding?: DailyPlanOnboardingContext;
   };
   recentHistory?: Array<{
     hardestPart?: string;
@@ -55,6 +56,16 @@ type DailyPlanRequest = {
   generatedAt?: string;
   forceRegenerate?: boolean;
   regenerationReason?: string;
+};
+
+type DailyPlanOnboardingContext = {
+  spiritualStartingPoint?: string;
+  dailyCommitmentMinutes?: number;
+  preferredTimeWindow?: string;
+  primaryObstacle?: string;
+  whyStarted?: string;
+  firstStepCompletedAt?: string;
+  initialMilestoneDays?: number;
 };
 
 type DailyPlanResponse = {
@@ -165,6 +176,7 @@ type StoredUserProfile = {
   recoveryStreak?: number;
   appBlockingEnabled?: boolean;
   joinedAt?: string;
+  onboarding?: DailyPlanOnboardingContext;
 };
 
 type StoredReflectionEntry = {
@@ -1450,13 +1462,14 @@ function storedAppSnapshotFromPayload(payload: unknown): StoredAppSnapshot {
 }
 
 function storedProfileFromDocument(data: Record<string, unknown>): StoredUserProfile {
+  const onboarding = cleanOnboardingContext(data.onboarding);
   return {
     id: cleanText(data.id) || cleanText(data.userID),
     displayName: cleanText(data.displayName),
     ageGroup: cleanText(data.ageGroup),
     goals: Array.isArray(data.goals) ? data.goals.map(cleanText).filter(Boolean) : [],
     mainStruggle: cleanText(data.mainStruggle),
-    streakGoal: cleanNumber(data.streakGoal, 7, 365),
+    streakGoal: cleanNumber(data.streakGoal, 3, 365),
     notificationHour: cleanNumber(data.notificationHour, 0, 23),
     notificationMinute: cleanNumber(data.notificationMinute, 0, 59),
     ovrScore: cleanNumber(data.ovrScore, 0, 100),
@@ -1464,7 +1477,8 @@ function storedProfileFromDocument(data: Record<string, unknown>): StoredUserPro
     longestStreak: cleanNumber(data.longestStreak, 0, 3650),
     recoveryStreak: cleanNumber(data.recoveryStreak, 0, 3650),
     appBlockingEnabled: data.appBlockingEnabled === true,
-    joinedAt: cleanText(data.joinedAt)
+    joinedAt: cleanText(data.joinedAt),
+    onboarding
   };
 }
 
@@ -2273,10 +2287,11 @@ function sanitizedDailyPlanRequest(request: DailyPlanRequest): DailyPlanRequest 
       longestStreak: cleanNumber(profile.longestStreak, 0, 3650),
       recoveryStreak: cleanNumber(profile.recoveryStreak, 0, 3650),
       ovrScore: cleanNumber(profile.ovrScore, 0, 100),
-      streakGoal: profile.streakGoal === undefined ? 30 : cleanNumber(profile.streakGoal, 7, 365),
+      streakGoal: profile.streakGoal === undefined ? 30 : cleanNumber(profile.streakGoal, 3, 365),
       notificationHour: profile.notificationHour === undefined ? 8 : cleanNumber(profile.notificationHour, 0, 23),
       notificationMinute: profile.notificationMinute === undefined ? 0 : cleanNumber(profile.notificationMinute, 0, 59),
-      joinedAt: cleanText(profile.joinedAt)
+      joinedAt: cleanText(profile.joinedAt),
+      onboarding: cleanOnboardingContext(profile.onboarding)
     },
     recentHistory: (request.recentHistory ?? []).slice(0, maxRecentHistory).map((entry) => ({
       hardestPart: cleanText(entry.hardestPart),
@@ -2295,6 +2310,23 @@ function sanitizedDailyPlanRequest(request: DailyPlanRequest): DailyPlanRequest 
     generatedAt: cleanText(request.generatedAt),
     forceRegenerate: request.forceRegenerate === true,
     regenerationReason: cleanText(request.regenerationReason)
+  };
+}
+
+function cleanOnboardingContext(value: unknown): DailyPlanOnboardingContext | undefined {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    return undefined;
+  }
+
+  const context = value as Record<string, unknown>;
+  return {
+    spiritualStartingPoint: cleanText(context.spiritualStartingPoint),
+    dailyCommitmentMinutes: cleanNumber(context.dailyCommitmentMinutes, 5, 120),
+    preferredTimeWindow: cleanText(context.preferredTimeWindow),
+    primaryObstacle: cleanText(context.primaryObstacle),
+    whyStarted: cleanText(context.whyStarted),
+    firstStepCompletedAt: cleanText(context.firstStepCompletedAt),
+    initialMilestoneDays: cleanNumber(context.initialMilestoneDays, 3, 100)
   };
 }
 
@@ -2324,7 +2356,7 @@ function progressionPlan(profile: DailyPlanRequest["profile"]): {
   const ovr = cleanNumber(profile?.ovrScore, 0, 100);
   const streak = cleanNumber(profile?.currentStreak, 0, 3650);
   const recoveryStreak = cleanNumber(profile?.recoveryStreak, 0, 3650);
-  const streakGoal = cleanNumber(profile?.streakGoal, 7, 365);
+  const streakGoal = cleanNumber(profile?.streakGoal, 3, 365);
   const ageGroup = cleanText(profile?.ageGroup);
   const ageMaturity = ageMaturityContext(ageGroup);
   const ovrLevel = ovrDifficultyStep(ovr);
@@ -2336,11 +2368,14 @@ function progressionPlan(profile: DailyPlanRequest["profile"]): {
     5,
     Math.max(1, ovrLevel + streakStep + ambitionStep + ageMaturity.difficultyAdjustment + starterAdjustment + recoveryAdjustment)
   );
+  const commitmentMinutes = profile?.onboarding?.dailyCommitmentMinutes;
 
   return {
     targetDifficulty,
     targetChallengeCompletions: requiredChallengeCompletions(targetDifficulty),
-    minimumDurationMinutes: minimumMissionMinutes(targetDifficulty, ageGroup),
+    minimumDurationMinutes: commitmentMinutes === undefined ?
+      minimumMissionMinutes(targetDifficulty, ageGroup) :
+      Math.min(90, cleanNumber(commitmentMinutes, 5, 120) + Math.max(0, targetDifficulty - 1) * 5),
     missionPressure: missionPressureLine(targetDifficulty),
     growthBand: ovr >= 90 ? "mastery" : ovr >= 75 ? "advanced" : ovr >= 60 ? "building" : "foundation",
     ageMaturity
@@ -2483,6 +2518,7 @@ function personalizationContext(
   recentPlanMemory: RecentPlanMemory
 ) {
   const profile = request.profile ?? {};
+  const onboarding = profile.onboarding ?? {};
   const history = request.recentHistory ?? [];
   const feedback = request.contentFeedback ?? [];
   const recentFailures = history.filter((entry) => cleanText(entry.failureReason).length > 0);
@@ -2536,6 +2572,12 @@ function personalizationContext(
       ovrState,
       ovrScore: ovr,
       reminderTime: intent.reminderTime,
+      spiritualStartingPoint: onboarding.spiritualStartingPoint ?? "",
+      dailyCommitmentMinutes: cleanNumber(onboarding.dailyCommitmentMinutes, 5, 120),
+      preferredTimeWindow: onboarding.preferredTimeWindow ?? "",
+      primaryObstacle: onboarding.primaryObstacle ?? "",
+      whyStarted: onboarding.whyStarted ?? "",
+      completedOnboardingFirstStep: Boolean(onboarding.firstStepCompletedAt),
       appBlockingShouldBeConsidered: intent.category === "Focus" || intent.category === "Self-control"
     },
     firstWeek: ramp.active ? ramp : null,
@@ -2567,6 +2609,10 @@ function personalizationContext(
       commonFailureReason ? `Counter the recent failure reason: ${commonFailureReason}.` : "",
       commonHardestPart ? `Address the hardest part the user reports: ${commonHardestPart}.` : "",
       latestImprovementPlan ? `Respect the user's own improvement plan: ${latestImprovementPlan}.` : "",
+      onboarding.primaryObstacle ? `Directly address the onboarding obstacle: ${cleanText(onboarding.primaryObstacle)}.` : "",
+      onboarding.dailyCommitmentMinutes ? `Keep the essential daily plan achievable inside the user's ${cleanNumber(onboarding.dailyCommitmentMinutes, 5, 120)}-minute baseline commitment unless progression clearly requires more.` : "",
+      onboarding.spiritualStartingPoint ? `Match spiritual framing to the user's stated starting point: ${cleanText(onboarding.spiritualStartingPoint)}. Never turn that answer into a spiritual score.` : "",
+      onboarding.whyStarted ? `Make the action meaningfully connect to why the user started: ${cleanText(onboarding.whyStarted)}. Do not repeat the statement mechanically.` : "",
       feedbackDirective
     ])
   };
@@ -2712,7 +2758,7 @@ function onboardingIntent(profile: DailyPlanRequest["profile"]): OnboardingInten
   const goals = (profile?.goals ?? []).map(cleanText).filter(Boolean);
   const struggle = cleanText(profile?.mainStruggle) || "Discipline";
   const primaryGoal = prioritizedGoal(goals, struggle);
-  const streakGoal = cleanNumber(profile?.streakGoal, 7, 365);
+  const streakGoal = cleanNumber(profile?.streakGoal, 3, 365);
   const notificationHour = profile?.notificationHour === undefined ? 8 : cleanNumber(profile.notificationHour, 0, 23);
   const notificationMinute = profile?.notificationMinute === undefined ? 0 : cleanNumber(profile.notificationMinute, 0, 59);
   const reminderTime = `${String(notificationHour).padStart(2, "0")}:${String(notificationMinute).padStart(2, "0")}`;

@@ -130,7 +130,7 @@ private struct AIDailyPlanResponse: Decodable {
         let recentFailureCount = recentHistory.prefix(5).filter { $0.failureReason != nil }.count
         let targetDifficulty = OVRScoring.targetMissionDifficulty(for: profile, recentFailureCount: recentFailureCount)
         let missionDifficulty = targetDifficulty
-        let minimumDuration = OVRScoring.minimumMissionMinutes(for: missionDifficulty, ageGroup: profile.ageGroup)
+        let minimumDuration = OVRScoring.minimumMissionMinutes(for: missionDifficulty, profile: profile)
 
         return DailyPlan(
             devotional: Devotional(

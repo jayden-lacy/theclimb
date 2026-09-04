@@ -471,7 +471,7 @@ enum FirebaseIntegration {
             nsError.code == AuthErrorCode.emailAlreadyInUse.rawValue
     }
 
-    fileprivate static func mappedAuthError(_ error: Error) -> Error {
+    static func mappedAuthError(_ error: Error) -> Error {
         let nsError = error as NSError
         guard nsError.domain == AuthErrors.domain,
               let authCode = AuthErrorCode(rawValue: nsError.code) else {
@@ -487,6 +487,8 @@ enum FirebaseIntegration {
             return FirebaseIntegrationError.invalidLoginCredentials
         case .requiresRecentLogin:
             return FirebaseIntegrationError.accountDeletionRequiresRecentSignIn
+        case .keychainError:
+            return FirebaseIntegrationError.secureCredentialStorageUnavailable
         default:
             return error
         }
@@ -555,6 +557,7 @@ enum FirebaseIntegrationError: LocalizedError {
     case googleTokenMissing
     case presentationUnavailable
     case secureRandomGenerationFailed
+    case secureCredentialStorageUnavailable
     case encodingFailed
     case decodingFailed
     case remoteMessage(String)
@@ -587,6 +590,8 @@ enum FirebaseIntegrationError: LocalizedError {
             "Sign-in could not find a screen to present from."
         case .secureRandomGenerationFailed:
             "A secure sign-in request could not be created. Try again."
+        case .secureCredentialStorageUnavailable:
+            "Secure sign-in storage is unavailable. Restart your device and try again."
         case .encodingFailed:
             "Unable to prepare your Firebase data."
         case .decodingFailed:

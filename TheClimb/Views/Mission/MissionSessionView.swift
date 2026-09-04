@@ -122,6 +122,7 @@ struct MissionSessionView: View {
         .onChange(of: activitySelection) { _, newSelection in
             ScreenTimeActivitySelectionStore.saveSelection(newSelection)
             focusTemplates = ScreenTimeActivitySelectionStore.loadTemplateSummaries()
+            viewModel.refreshClimbControlState()
         }
         .onChange(of: showActivityPicker) { _, isPresented in
             guard !isPresented, shouldStartAfterActivityPicker else { return }

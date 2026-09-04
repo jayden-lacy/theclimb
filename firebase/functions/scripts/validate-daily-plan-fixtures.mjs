@@ -76,7 +76,16 @@ const requestFixture = {
     ovrScore: 72,
     streakGoal: 90,
     notificationHour: 25,
-    notificationMinute: "12"
+    notificationMinute: "12",
+    onboarding: {
+      spiritualStartingPoint: "growing",
+      dailyCommitmentMinutes: 10,
+      preferredTimeWindow: "evening",
+      primaryObstacle: "My phone pulls me away",
+      whyStarted: "I want to become more disciplined",
+      firstStepCompletedAt: "2026-06-27T14:00:00.000Z",
+      initialMilestoneDays: 3
+    }
   },
   recentHistory: Array.from({ length: 10 }, (_, index) => ({
     hardestPart: `Hardest part ${index}`,
@@ -285,9 +294,10 @@ function sanitizeDailyPlanRequest(request) {
       longestStreak: cleanNumber(profile.longestStreak, 0, 3650),
       recoveryStreak: cleanNumber(profile.recoveryStreak, 0, 3650),
       ovrScore: cleanNumber(profile.ovrScore, 0, 100),
-      streakGoal: profile.streakGoal === undefined ? 30 : cleanNumber(profile.streakGoal, 7, 365),
+      streakGoal: profile.streakGoal === undefined ? 30 : cleanNumber(profile.streakGoal, 3, 365),
       notificationHour: profile.notificationHour === undefined ? 8 : cleanNumber(profile.notificationHour, 0, 23),
-      notificationMinute: profile.notificationMinute === undefined ? 0 : cleanNumber(profile.notificationMinute, 0, 59)
+      notificationMinute: profile.notificationMinute === undefined ? 0 : cleanNumber(profile.notificationMinute, 0, 59),
+      onboarding: sanitizeOnboardingContext(profile.onboarding)
     },
     recentHistory: (request.recentHistory ?? []).slice(0, maxRecentHistory).map((entry) => ({
       hardestPart: cleanText(entry.hardestPart),
@@ -298,6 +308,22 @@ function sanitizeDailyPlanRequest(request) {
       failureReason: entry.failureReason ? cleanText(entry.failureReason) : null
     })),
     generatedAt: cleanText(request.generatedAt)
+  };
+}
+
+function sanitizeOnboardingContext(value) {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    return undefined;
+  }
+
+  return {
+    spiritualStartingPoint: cleanText(value.spiritualStartingPoint),
+    dailyCommitmentMinutes: cleanNumber(value.dailyCommitmentMinutes, 5, 120),
+    preferredTimeWindow: cleanText(value.preferredTimeWindow),
+    primaryObstacle: cleanText(value.primaryObstacle),
+    whyStarted: cleanText(value.whyStarted),
+    firstStepCompletedAt: cleanText(value.firstStepCompletedAt),
+    initialMilestoneDays: cleanNumber(value.initialMilestoneDays, 3, 100)
   };
 }
 
@@ -374,7 +400,7 @@ function cleanNumber(value, minimum, maximum) {
 }
 
 function assertSourceContainsDailyPlanContract() {
-  assert.match(source, /const dailyPlanCacheVersion = "first-week-heavy-v1"/, "Daily plan cache should be versioned when generation behavior changes.");
+  assert.match(source, /const dailyPlanCacheVersion = "commitment-onboarding-v2"/, "Daily plan cache should be versioned when generation behavior changes.");
   assert.match(source, /const dailyPlanSchema = \{[\s\S]*additionalProperties: false/, "dailyPlanSchema should reject extra object properties.");
   assert.match(source, /name: "daily_plan"[\s\S]*schema: dailyPlanSchema[\s\S]*strict: true/, "OpenAI response format should use the strict daily plan JSON schema.");
   assert.match(source, /function personalizationContext\(/, "AI generation should derive a personalization context before prompting.");
@@ -399,6 +425,10 @@ function assertSourceContainsDailyPlanContract() {
   );
   assert.match(source, /async function fallbackDailyPlan[\s\S]*const recentPlanMemory = await loadRecentPlanMemory\(uid\);/, "Fallback daily plans should also use recent plan memory.");
   assert.match(source, /commonFailureReason[\s\S]*latestImprovementPlan[\s\S]*feedbackDirective/, "Personalization context should include failure, improvement, and feedback signals.");
+  assert.match(source, /type DailyPlanOnboardingContext/, "Daily plan requests should support onboarding personalization context.");
+  assert.match(source, /dailyCommitmentMinutes[\s\S]*primaryObstacle[\s\S]*whyStarted/, "Onboarding commitment, obstacle, and motivation should reach AI personalization.");
+  assert.match(source, /Never turn that answer into a spiritual score/, "Spiritual starting point must not be treated as spiritual worth or a score.");
+  assert.match(source, /commitmentMinutes === undefined[\s\S]*targetDifficulty - 1\) \* 5/, "Mission duration should grow from the user's onboarding commitment.");
 }
 
 function assertInOrder(haystack, needles, message) {
@@ -431,6 +461,8 @@ function main() {
   assert.equal(sanitized.profile.longestStreak, 19);
   assert.equal(sanitized.profile.recoveryStreak, 0);
   assert.equal(sanitized.profile.notificationHour, 23);
+  assert.equal(sanitized.profile.onboarding.dailyCommitmentMinutes, 10);
+  assert.equal(sanitized.profile.onboarding.primaryObstacle, "My phone pulls me away");
   assert.equal(sanitized.recentHistory.length, maxRecentHistory);
 
   const encodedPayload = Buffer.from(JSON.stringify(storedSnapshotFixture), "utf8").toString("base64");

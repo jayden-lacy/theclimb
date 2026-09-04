@@ -856,7 +856,9 @@ final class FocusSessionRuntimeService {
         switch mode {
         case .blockSelected:
             let selection = ScreenTimeActivitySelectionStore.loadSelection()
-            guard selection.hasShieldableContent || blocksAdultWebContent else {
+            guard selection.hasShieldableContent
+                    || blocksAdultWebContent
+                    || !PurityProtectionPreferenceStore.protectedDomainStrings.isEmpty else {
                 throw FocusSessionRuntimeError.selectionRequired
             }
         case .allowEssentialApps:
@@ -882,10 +884,16 @@ final class FocusSessionRuntimeService {
             named: ManagedSettingsStore.Name("TheClimbFocusSession")
         )
         store.clearAllSettings()
+        let purityDomains = Set(
+            PurityProtectionPreferenceStore.protectedDomainStrings.map {
+                WebDomain(domain: $0)
+            }
+        )
 
         switch selectionMode {
         case .blockSelected:
             let selection = ScreenTimeActivitySelectionStore.loadSelection()
+            let protectedWebDomains = selection.webDomains.union(purityDomains)
             store.shield.applications = selection.applicationTokens.isEmpty
                 ? nil
                 : selection.applicationTokens
@@ -896,12 +904,14 @@ final class FocusSessionRuntimeService {
                 ? nil
                 : selection.webDomainTokens
             store.webContent.blockedByFilter = blocksAdultWebContent
-                ? .auto(selection.webDomains)
-                : (selection.webDomains.isEmpty ? nil : .specific(selection.webDomains))
+                ? .auto(protectedWebDomains)
+                : (protectedWebDomains.isEmpty ? nil : .specific(protectedWebDomains))
         case .allowEssentialApps:
             let essentials = EssentialAppsActivitySelectionStore.loadSelection()
             store.shield.applicationCategories = .all(except: essentials.applicationTokens)
-            store.webContent.blockedByFilter = blocksAdultWebContent ? .auto() : nil
+            store.webContent.blockedByFilter = blocksAdultWebContent
+                ? .auto(purityDomains)
+                : (purityDomains.isEmpty ? nil : .specific(purityDomains))
         }
 #else
         throw FocusSessionRuntimeError.unsupported

@@ -21,7 +21,9 @@ struct AttentionSummaryReportView: View {
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .background(Color(uiColor: .systemBackground))
+        .foregroundStyle(Palette.primaryText)
+        .background(Palette.background)
+        .preferredColorScheme(.dark)
     }
 
     private var loadingView: some View {
@@ -329,5 +331,7 @@ private enum DurationText {
 }
 
 private enum Palette {
-    static let accent = Color(red: 0.13, green: 0.77, blue: 0.37)
+    static let background = Color(red: 7 / 255, green: 11 / 255, blue: 22 / 255)
+    static let primaryText = Color(red: 247 / 255, green: 247 / 255, blue: 245 / 255)
+    static let accent = Color(red: 169 / 255, green: 203 / 255, blue: 255 / 255)
 }

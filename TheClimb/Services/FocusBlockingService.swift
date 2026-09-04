@@ -137,18 +137,26 @@ final class ScreenTimeFocusBlockingService: FocusBlockingService {
     @available(iOS 16.0, *)
     private func applyShield(for selection: FamilyActivitySelection) {
         let store = managedSettingsStore
+        let purityDomains = Set(
+            PurityProtectionPreferenceStore.protectedDomainStrings.map {
+                WebDomain(domain: $0)
+            }
+        )
+        let protectedWebDomains = selection.webDomains.union(purityDomains)
         store.clearAllSettings()
         store.shield.applications = selection.applicationTokens.isEmpty ? nil : selection.applicationTokens
         store.shield.webDomains = selection.webDomainTokens.isEmpty ? nil : selection.webDomainTokens
         store.shield.applicationCategories = selection.categoryTokens.isEmpty ? nil : .specific(selection.categoryTokens)
         store.webContent.blockedByFilter = FocusAdultContentFilterStore.isEnabled
-            ? .auto(selection.webDomains)
-            : selectedWebContentFilter(for: selection)
+            ? .auto(protectedWebDomains)
+            : selectedWebContentFilter(for: protectedWebDomains)
     }
 
     @available(iOS 16.0, *)
-    private func selectedWebContentFilter(for selection: FamilyActivitySelection) -> WebContentSettings.FilterPolicy? {
-        selection.webDomains.isEmpty ? nil : .specific(selection.webDomains)
+    private func selectedWebContentFilter(
+        for webDomains: Set<WebDomain>
+    ) -> WebContentSettings.FilterPolicy? {
+        webDomains.isEmpty ? nil : .specific(webDomains)
     }
 #endif
 
@@ -424,6 +432,7 @@ enum FocusAdultContentFilterStore {
 
     static func setEnabled(_ isEnabled: Bool) {
         defaults.set(isEnabled, forKey: storageKey)
+        PurityProtectionPreferenceStore.setFocusFilterEnabled(isEnabled)
         defaults.synchronize()
     }
 }

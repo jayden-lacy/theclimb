@@ -96,6 +96,15 @@ enum OVRScoring {
         return min(90, base + max(0, difficulty - 1) * 10)
     }
 
+    static func minimumMissionMinutes(for difficulty: Int, profile: UserProfile) -> Int {
+        guard let commitment = profile.onboarding?.dailyCommitmentMinutes else {
+            return minimumMissionMinutes(for: difficulty, ageGroup: profile.ageGroup)
+        }
+
+        let baseline = min(max(commitment, 5), 120)
+        return min(90, baseline + max(0, difficulty - 1) * 5)
+    }
+
     static func growthMultiplier(for currentOVR: Int) -> Double {
         switch currentOVR {
         case ..<60:
@@ -191,6 +200,8 @@ final class AppViewModel: ObservableObject {
     @Published private(set) var monthlyLetters: [MonthlyReflectionLetter] = []
     @Published private(set) var verseMemory: [MemorizedVerse] = []
     @Published private(set) var achievementUnlocks: [AchievementUnlock] = []
+    @Published private(set) var climbControlState: ClimbControlStateEnvelope?
+    @Published private(set) var climbTimeMonitoringState: ClimbTimeMonitoringState = .unavailable
     @Published private(set) var focusState: FocusModeState = .unavailable
     @Published private(set) var notificationState: NotificationPermissionState = .notDetermined
     @Published private(set) var isRefreshingLeaderboard = false
@@ -199,7 +210,7 @@ final class AppViewModel: ObservableObject {
     @Published private(set) var isRefreshingPartners = false
     @Published private(set) var latestPartnerInviteCode: String?
     @Published var errorMessage: String?
-    @Published var isLoading = false
+    @Published var isLoading = true
     @Published private(set) var isPreparingTodayPlan = false
     @Published private(set) var isRegeneratingTodayPlan = false
     @Published private(set) var isReonboardingExistingAccount: Bool
@@ -209,6 +220,8 @@ final class AppViewModel: ObservableObject {
     private let offlineGenerationService: MissionGenerationService
     private let focusService: FocusBlockingService
     private let notificationScheduler: NotificationScheduling
+    private let climbControlRuntime: ClimbControlRuntimeService
+    private let climbTimeUsageMonitor: ClimbTimeUsageMonitoring
     private var missionMutationsInFlight: Set<String> = []
 
     init(
@@ -216,7 +229,9 @@ final class AppViewModel: ObservableObject {
         generationService: MissionGenerationService = RemoteAIContentService(),
         offlineGenerationService: MissionGenerationService = TemplateMissionGenerationService(),
         focusService: FocusBlockingService = ScreenTimeFocusBlockingService(),
-        notificationScheduler: NotificationScheduling = LocalNotificationScheduler()
+        notificationScheduler: NotificationScheduling = LocalNotificationScheduler(),
+        climbControlRuntime: ClimbControlRuntimeService = ClimbControlRuntimeService(),
+        climbTimeUsageMonitor: ClimbTimeUsageMonitoring = DeviceActivityClimbTimeUsageMonitor()
     ) {
         self.isReonboardingExistingAccount = UserDefaults.standard.bool(forKey: Self.reonboardingModeKey)
         self.repository = repository
@@ -224,6 +239,8 @@ final class AppViewModel: ObservableObject {
         self.offlineGenerationService = offlineGenerationService
         self.focusService = focusService
         self.notificationScheduler = notificationScheduler
+        self.climbControlRuntime = climbControlRuntime
+        self.climbTimeUsageMonitor = climbTimeUsageMonitor
     }
 
     var todayMission: Mission? {
@@ -232,6 +249,72 @@ final class AppViewModel: ObservableObject {
 
     var todayDevotional: Devotional? {
         devotionals.first { Calendar.current.isDateInToday($0.date) }
+    }
+
+    var climbTimeWallet: ClimbTimeWallet? {
+        climbControlState?.wallet
+    }
+
+    var dailyClimb: DailyClimb {
+        let missionState: DailyClimbActionState
+        switch todayMission?.status {
+        case .pending:
+            missionState = .ready
+        case .active:
+            missionState = .inProgress
+        case .completed, .recovered:
+            missionState = .completed
+        case .failed:
+            missionState = .needsAttention
+        case nil:
+            missionState = .unavailable
+        }
+
+        let prayerCompletedTimestamp = UserDefaults(
+            suiteName: LocalAppRepository.appGroupID
+        )?.double(forKey: "climb.prayer.lastCompletedAt") ?? 0
+        let prayerCompletedAt = prayerCompletedTimestamp > 0
+            ? Date(timeIntervalSince1970: prayerCompletedTimestamp)
+            : nil
+        let prayerHabitCompleted = habits.contains {
+            $0.isEnabled
+                && $0.title.localizedCaseInsensitiveContains("pray")
+                && $0.isCompleted()
+        }
+        let reflectedToday: Bool = {
+            guard let missionID = todayMission?.id else { return false }
+            return journalEntries.contains {
+                $0.missionID == missionID && Calendar.current.isDateInToday($0.date)
+            }
+        }()
+        let dayKey = climbControlState?.wallet.dayKey
+            ?? ClimbDayKey.make(for: Date(), calendar: .current)
+        let reflectionAvailable: Bool = {
+            guard let status = todayMission?.status else { return false }
+            switch status {
+            case .completed, .failed, .recovered:
+                return true
+            case .pending, .active:
+                return false
+            }
+        }()
+
+        return DailyClimbService().makeDailyClimb(
+            from: DailyClimbInput(
+                dayKey: dayKey,
+                scriptureReference: todayDevotional?.bibleVerse,
+                scriptureCompleted: false,
+                prayerAvailable: true,
+                prayerCompleted: prayerHabitCompleted
+                    || prayerCompletedAt.map { Calendar.current.isDateInToday($0) } == true,
+                missionTitle: todayMission?.title,
+                missionState: missionState,
+                screenGoalAvailable: climbTimeMonitoringState == .scheduled,
+                screenGoalCompleted: climbTimeWallet?.availableSeconds == 0,
+                reflectionAvailable: reflectionAvailable,
+                reflectionCompleted: reflectedToday
+            )
+        )
     }
 
     var canRegenerateTodayPlan: Bool {
@@ -517,6 +600,7 @@ final class AppViewModel: ObservableObject {
         do {
             let snapshot = try await repository.loadSnapshot()
             let needsSave = apply(snapshot)
+            refreshClimbControlState()
             isLoading = false
             try await refreshCurrentSession(forceSave: needsSave)
             await refreshGlobalLeaderboard()
@@ -532,6 +616,7 @@ final class AppViewModel: ObservableObject {
     func refreshActiveSession() async {
         do {
             try await refreshCurrentSession()
+            refreshClimbControlState()
         } catch {
             errorMessage = error.localizedDescription
         }
@@ -624,7 +709,8 @@ final class AppViewModel: ObservableObject {
         struggle: Struggle,
         streakGoal: Int,
         notificationHour: Int,
-        notificationMinute: Int
+        notificationMinute: Int,
+        onboarding: OnboardingPersonalization? = nil
     ) async -> Bool {
         let previousSnapshot = snapshot
         let userID: String
@@ -680,10 +766,12 @@ final class AppViewModel: ObservableObject {
             longestStreak: 0,
             recoveryStreak: 0,
             appBlockingEnabled: true,
-            joinedAt: Date()
+            joinedAt: Date(),
+            onboarding: onboarding
         )
 
         self.profile = profile
+        refreshClimbControlState()
         missions = []
         devotionals = []
         journalEntries = []
@@ -797,6 +885,7 @@ final class AppViewModel: ObservableObject {
         let snapshot = try await repository.loadSnapshot()
         if snapshot.profile != nil {
             _ = apply(snapshot)
+            refreshClimbControlState()
             try await refreshCurrentSession()
             WidgetCenter.shared.reloadAllTimelines()
             return true
@@ -858,6 +947,36 @@ final class AppViewModel: ObservableObject {
         notificationState = await notificationScheduler.authorizationState()
     }
 
+    func refreshClimbControlState() {
+        guard let ownerUserID = profile?.id else {
+            climbControlState = nil
+            climbTimeMonitoringState = .unavailable
+            return
+        }
+        do {
+            let state = try climbControlRuntime.loadState(ownerUserID: ownerUserID)
+            climbControlState = state
+            climbTimeMonitoringState = climbTimeUsageMonitor.synchronize(
+                ownerUserID: ownerUserID,
+                wallet: state.wallet
+            )
+        } catch {
+            climbControlState = nil
+            climbTimeMonitoringState = .degraded
+        }
+    }
+
+    private func synchronizeClimbTimeMonitoring(ownerUserID: String) {
+        guard let state = climbControlState else {
+            climbTimeMonitoringState = .degraded
+            return
+        }
+        climbTimeMonitoringState = climbTimeUsageMonitor.synchronize(
+            ownerUserID: ownerUserID,
+            wallet: state.wallet
+        )
+    }
+
     @discardableResult
     func completeMission(
         missionID: String,
@@ -901,6 +1020,20 @@ final class AppViewModel: ObservableObject {
         }
 
         applyTrustedMissionResult(result)
+        if let ownerUserID = profile?.id {
+            climbControlState = try? climbControlRuntime.awardMission(
+                ownerUserID: ownerUserID,
+                missionID: result.mission.id,
+                difficulty: result.mission.difficulty
+            )
+            if let reflectionID = result.journalEntry?.id {
+                climbControlState = try? climbControlRuntime.awardReflection(
+                    ownerUserID: ownerUserID,
+                    reflectionID: reflectionID
+                )
+            }
+            synchronizeClimbTimeMonitoring(ownerUserID: ownerUserID)
+        }
         advanceChallenges(for: result.mission)
         reconcileAdaptiveChallenges()
         do {
@@ -1602,6 +1735,9 @@ final class AppViewModel: ObservableObject {
             await MissionLiveActivityService.end()
             await notificationScheduler.cancelMissionTimerEnded()
             try? await AttentionAssistRuntimeService().clearStoredData()
+            climbTimeUsageMonitor.stopAndClear()
+            try? climbControlRuntime.clear()
+            climbControlState = nil
             try FirebaseIntegration.signOut()
             try await repository.clearLocalSnapshot()
             apply(.empty)
@@ -1622,6 +1758,9 @@ final class AppViewModel: ObservableObject {
             await MissionLiveActivityService.end()
             await notificationScheduler.cancelMissionTimerEnded()
             try? await AttentionAssistRuntimeService().clearStoredData()
+            climbTimeUsageMonitor.stopAndClear()
+            try? climbControlRuntime.clear()
+            climbControlState = nil
             try FirebaseIntegration.signOut()
             try await repository.clearLocalSnapshot()
             apply(.empty)
@@ -1643,6 +1782,9 @@ final class AppViewModel: ObservableObject {
             await MissionLiveActivityService.end()
             await notificationScheduler.cancelMissionTimerEnded()
             try? await AttentionAssistRuntimeService().clearStoredData()
+            climbTimeUsageMonitor.stopAndClear()
+            try? climbControlRuntime.clear()
+            climbControlState = nil
             guard let userID = FirebaseIntegration.currentUserID else {
                 try await repository.clearLocalSnapshot()
                 apply(.empty)
@@ -2000,7 +2142,7 @@ final class AppViewModel: ObservableObject {
             completionRate: completionRate,
             recentFailureCount: recentFailureCount
         )
-        let minimumDuration = OVRScoring.minimumMissionMinutes(for: targetDifficulty, ageGroup: profile.ageGroup)
+        let minimumDuration = OVRScoring.minimumMissionMinutes(for: targetDifficulty, profile: profile)
         let pressureLine = OVRScoring.missionPressureLine(for: targetDifficulty)
         var didMutate = false
 

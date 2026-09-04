@@ -111,6 +111,7 @@ struct FocusControlCenterView: View {
         )
         .onChange(of: blockedSelection) { _, selection in
             ScreenTimeActivitySelectionStore.saveSelection(selection)
+            viewModel.refreshClimbControlState()
         }
         .onChange(of: essentialSelection) { _, selection in
             EssentialAppsActivitySelectionStore.saveSelection(selection)
@@ -1163,16 +1164,23 @@ private struct AlwaysOnProtectionSection: View {
                         .foregroundStyle(Color.climbTextSecondary)
                         .lineLimit(1)
                     Spacer(minLength: 0)
-                    Button(role: .destructive) {
-                        onRemoveBlockedDomain(rule)
-                    } label: {
-                        Image(systemName: "minus.circle")
-                            .font(.system(size: 14, weight: .semibold))
-                            .foregroundStyle(Color.climbMuted)
-                            .frame(width: 32, height: 32)
+                    if rule.source == .userAddedBlocked {
+                        Button(role: .destructive) {
+                            onRemoveBlockedDomain(rule)
+                        } label: {
+                            Image(systemName: "minus.circle")
+                                .font(.system(size: 14, weight: .semibold))
+                                .foregroundStyle(Color.climbMuted)
+                                .frame(width: 32, height: 32)
+                        }
+                        .buttonStyle(ScaleButtonStyle())
+                        .accessibilityLabel("Remove \(rule.domain.rawValue)")
+                    } else {
+                        Label("Built in", systemImage: "lock.fill")
+                            .font(ClimbTypography.sans(10, weight: .semibold))
+                            .foregroundStyle(Color.climbSage)
+                            .labelStyle(.titleAndIcon)
                     }
-                    .buttonStyle(ScaleButtonStyle())
-                    .accessibilityLabel("Remove \(rule.domain.rawValue)")
                 }
                 .padding(.vertical, 5)
             }
