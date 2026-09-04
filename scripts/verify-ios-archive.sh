@@ -4,9 +4,10 @@ set -euo pipefail
 
 usage() {
   cat <<'EOF'
-Usage: scripts/verify-ios-archive.sh <archive.xcarchive> [version] [build] [signing]
+Usage: scripts/verify-ios-archive.sh <archive.xcarchive> [version] [build] [signing] [xcode-build] [sdk-prefix]
 
 signing may be: any (default), development, or distribution.
+Example: scripts/verify-ios-archive.sh App.xcarchive 1.0 18 development 17F113 iphoneos26
 EOF
 }
 
@@ -29,7 +30,7 @@ contains_line() {
   printf '%s\n' "$@" | grep -Fqx "$expected"
 }
 
-if [[ $# -lt 1 || $# -gt 4 ]]; then
+if [[ $# -lt 1 || $# -gt 6 ]]; then
   usage >&2
   exit 2
 fi
@@ -38,6 +39,8 @@ archive="${1%/}"
 expected_version="${2:-}"
 expected_build="${3:-}"
 signing_mode="${4:-any}"
+expected_xcode_build="${5:-}"
+expected_sdk_prefix="${6:-}"
 
 case "$signing_mode" in
   any|development|distribution) ;;
@@ -53,12 +56,20 @@ app="$archive/Products/$application_path"
 
 archive_version="$(plist_value 'ApplicationProperties:CFBundleShortVersionString' "$archive/Info.plist")"
 archive_build="$(plist_value 'ApplicationProperties:CFBundleVersion' "$archive/Info.plist")"
+archive_xcode_build="$(plist_value 'DTXcodeBuild' "$app/Info.plist")"
+archive_sdk="$(plist_value 'DTSDKName' "$app/Info.plist")"
 
 if [[ -n "$expected_version" && "$archive_version" != "$expected_version" ]]; then
   fail "expected version $expected_version but found $archive_version"
 fi
 if [[ -n "$expected_build" && "$archive_build" != "$expected_build" ]]; then
   fail "expected build $expected_build but found $archive_build"
+fi
+if [[ -n "$expected_xcode_build" && "$archive_xcode_build" != "$expected_xcode_build" ]]; then
+  fail "expected Xcode build $expected_xcode_build but found $archive_xcode_build"
+fi
+if [[ -n "$expected_sdk_prefix" && "$archive_sdk" != "$expected_sdk_prefix"* ]]; then
+  fail "expected SDK prefix $expected_sdk_prefix but found $archive_sdk"
 fi
 
 expected_ids=(
@@ -213,4 +224,5 @@ printf 'Archive validation passed.\n'
 printf 'Version: %s (%s)\n' "$archive_version" "$archive_build"
 printf 'Bundles: %s\n' "${#bundles[@]}"
 printf 'Signing: %s\n' "$signing_mode"
+printf 'Toolchain: Xcode build %s, SDK %s\n' "$archive_xcode_build" "$archive_sdk"
 printf 'Third-party privacy manifests: %s\n' "$third_party_manifest_count"

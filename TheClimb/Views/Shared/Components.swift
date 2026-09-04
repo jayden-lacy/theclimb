@@ -1035,7 +1035,7 @@ enum LegalDocument: Identifiable {
                 ("Screen Time Features", "App blocking depends on Apple permissions, device settings, and operating-system behavior. You remain responsible for confirming that a focus session is active."),
                 ("Community Rules", "Do not post harassment, threats, hate, exploitation, sexual content, spam, scams, private information, or content that encourages self-harm or violence. We may remove content or restrict unsafe accounts."),
                 ("Faith, AI, and Wellness", "The app provides Christian encouragement, AI-generated or curated guidance, reflection, and habit support. It is not medical, mental-health, legal, financial, crisis, or pastoral care."),
-                ("Scripture Attribution", "Scripture quotations marked (WEB) are from the World English Bible, a public-domain Bible translation."),
+                ("Scripture Attribution", "Scripture quotations marked (WEB) are from the World English Bible."),
                 ("Your Content", "You retain ownership of content you create and give The Climb a limited license to process it only as needed to operate, sync, secure, and moderate the service."),
                 ("Availability and Account Deletion", "Cloud features can occasionally be unavailable. You can sign out or permanently delete your account in Profile."),
                 ("Contact", "Support questions can be sent to support@theclimbapp.org.")
