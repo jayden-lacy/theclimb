@@ -3,6 +3,7 @@
   "scripts": {
     "build:website": "node website/build-worker.mjs",
     "validate:website": "node website/build-worker.mjs && node website/validate-worker.mjs",
-    "validate:security": "bash scripts/release-security-check.sh"
+    "validate:security": "bash scripts/release-security-check.sh",
+    "validate:archive": "bash scripts/verify-ios-archive.sh"
   }
 }

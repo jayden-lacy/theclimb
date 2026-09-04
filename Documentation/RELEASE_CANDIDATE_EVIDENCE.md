@@ -8,7 +8,7 @@ Last reviewed: September 4, 2026
 - Version: `1.0`
 - Build: `17`
 - Branch: `main`
-- Frozen release source: `9ff8ef4`
+- Release source: current `main`; record the exact uploaded commit with the TestFlight build
 - Platform: iPhone, iOS 17.0 or later
 - Local archive: `/tmp/TheClimb-RC-1.0.17-20260903-220857.xcarchive`
 
@@ -27,10 +27,11 @@ The archive path is temporary evidence on the release Mac. It is not a version-c
 | Repository security validation | Passed |
 | Git whitespace validation | Passed |
 | Website validation | Passed |
+| Repeatable archive validation | Passed for version, bundle inventory, entitlements, signing, privacy manifests, and first-party dSYMs |
 | Live legal/support/AASA endpoints | `/`, `/privacy`, `/terms`, `/download`, and AASA returned HTTP 200 |
-| Firebase deployment | Rules, indexes, and all 16 Gen 2 functions deployed to `the-climb0` |
+| Firebase deployment | Rules, indexes, and all 17 Gen 2 functions deployed to `the-climb0` |
 | Deployed AI source comparison | `generateDailyPlan` deployed source matched local release source |
-| Unauthenticated backend smoke tests | AI, community post, mission completion, and account deletion rejected with HTTP 401 |
+| Unauthenticated backend smoke tests | AI, community post/reaction/report, mission completion, and account deletion rejected with HTTP 401 |
 
 A fresh live npm audit reports seven moderate transitive advisories and no high or critical advisories. The high-severity `brace-expansion` advisory was removed by updating to the patched release. The remaining findings are in Firebase/Google Cloud's dependency chain; npm's proposed forced remediation is a breaking Firebase downgrade and was not applied.
 
@@ -42,6 +43,7 @@ A fresh live npm audit reports seven moderate transitive advisories and no high 
 - App version/build in archive metadata is `1.0 (17)`.
 - The main app and every extension have an arm64 dSYM.
 - First-party and relevant third-party privacy manifests are present.
+- `npm run validate:archive -- <archive> 1.0 17 development` passes against the archived product.
 - The archive contains:
   - Widget and Live Activity extension
   - Shield Configuration extension
@@ -50,6 +52,8 @@ A fresh live npm audit reports seven moderate transitive advisories and no high 
   - Device Activity Report extension
   - Safari Content Blocker extension
 - The archive contains no watchOS app or Network Extension.
+
+The archive does not include dSYMs for the precompiled `FirebaseFirestoreInternal`, `absl`, `grpc`, `grpcpp`, and `openssl_grpc` frameworks. First-party dSYMs match their binaries. These missing third-party symbols may still produce upload warnings and should be rechecked on the final distribution archive.
 
 ## App Store Screenshot Evidence
 
@@ -75,7 +79,7 @@ The development archive is valid evidence but cannot be uploaded to TestFlight. 
 
 ## Backend Deployment
 
-The current Firestore rules, indexes, and Cloud Functions were deployed to project `the-climb0`. The deployment includes authenticated AI generation, App Check enforcement, server-owned scoring, account deletion cleanup, and backend-enforced community/group mutations.
+The current Firestore rules, indexes, and Cloud Functions were deployed to project `the-climb0`. The deployment includes authenticated AI generation, App Check enforcement, server-owned scoring, account deletion cleanup, backend-enforced community/group mutations, server-verified reports, one Amen per user and post, and per-user mutation limits.
 
 ## Required Human Evidence
 

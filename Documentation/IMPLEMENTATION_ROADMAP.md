@@ -1,8 +1,8 @@
 # Screen Time Migration Roadmap
 
-Last reviewed: July 30, 2026
+Last reviewed: September 4, 2026
 
-This roadmap reflects the `1.0 (16)` Screen Time release candidate. It does not treat source code, simulator behavior, unit tests, or a development-signed archive as proof that Apple framework enforcement works on a physical device.
+This roadmap reflects the `1.0 (17)` Screen Time release candidate. It does not treat source code, simulator behavior, unit tests, or a development-signed archive as proof that Apple framework enforcement works on a physical device.
 
 ## Status Legend
 
@@ -16,16 +16,16 @@ This roadmap reflects the `1.0 (16)` Screen Time release candidate. It does not 
 | Evidence | Result |
 | --- | --- |
 | Repository | `/Users/jaydenlacy/Documents/The Climb` |
-| Branch and release source | `main`; this document is included in the build `16` release-candidate commit |
-| Debug simulator compile | Current integrated Xcode scheme passed July 30, 2026 |
-| Native unit tests | 33 of 33 passed July 30, 2026 |
-| Release analysis | Passed July 30, 2026 with no analyzer findings |
-| Current Release archive | `1.0 (16)` development-signed archive succeeded July 30, 2026; deep code-sign verification passed and all six extensions are embedded |
+| Branch and release source | `main`; build `17` release source is committed and pushed |
+| Debug and Release simulator compile | Current integrated Xcode scheme passed September 3, 2026 |
+| Native unit tests | 50 of 50 passed September 3, 2026 |
+| Release analysis | Passed September 3, 2026 with no analyzer findings |
+| Current Release archive | `1.0 (17)` development-signed archive succeeded September 3, 2026; repeatable archive validation, matching first-party dSYMs, deep code-sign verification, and all six extensions are confirmed |
 | Current worktree TestFlight upload | Not performed |
 | Family Controls on physical iPhone | Not verified |
 | Safari extension on physical iPhone | Not verified |
 | Developer portal entitlements and distribution profiles | App Store export is blocked until Xcode has an Apple account, an iOS Distribution certificate, and profiles for the Safari content blocker and Device Activity report |
-| Backend state | No Firebase source changed in this release candidate; all 16 deployed callable functions reported ACTIVE on July 30, 2026 |
+| Backend state | Firestore rules, indexes, and all 17 callable functions were deployed September 4, 2026; unauthenticated callable smoke checks correctly returned `401` |
 
 The previously uploaded `1.0 (15)` build predates this Screen Time upgrade. It is not evidence for the new sessions, rhythms, boundaries, permanent protection, or Safari extension.
 
@@ -68,7 +68,7 @@ The previously uploaded `1.0 (15)` build predates this Screen Time upgrade. It i
 - [~] Focus Rhythm scheduling and extension reapplication; source exists, operating-system delivery is unverified
 - [~] Mission, prayer, devotional, and habit protected-launch integration; source exists, Apple enforcement is unverified
 - [x] Rhythm Pause with explicit rest, schedule-change, travel, or vacation reason and automatic resume
-- [ ] Time-zone and daylight-saving rescheduling evidence
+- [~] Time-zone and daylight-saving rescheduling evidence; date-boundary and cross-midnight unit coverage passes, but operating-system schedule delivery still requires physical-device verification
 
 ### Phase 3 - Boundaries
 
@@ -127,17 +127,17 @@ The previously uploaded `1.0 (15)` build predates this Screen Time upgrade. It i
 ### Phase 7 - Hardening
 
 - [x] Debug simulator compile for the currently integrated Xcode scheme
-- [x] 33 native unit tests passing
+- [x] 50 native unit tests passing
 - [x] Migration idempotency and corrupt-envelope recovery fixtures
 - [x] Policy overlap, strict-delay, intentional-exit, and capability-truth unit coverage
-- [x] Optimized Release analysis and development-signed `1.0 (16)` archive for the current worktree
+- [x] Optimized Release analysis and development-signed `1.0 (17)` archive for the current worktree
 - [ ] Physical-device Screen Time matrix
 - [ ] Extension termination, app termination, and device-restart recovery
-- [ ] Time-zone and daylight-saving tests
+- [~] Date-boundary and cross-midnight tests pass; physical time-zone and daylight-saving rescheduling remains unverified
 - [ ] Family Controls revocation and reauthorization tests
 - [ ] Safari enable, disable, reload, and false-positive tests
-- [ ] Security threat-model closure
-- [~] Sensitive logging and local-storage audit; adult-protection and Safari domain-rule records now migrate to protected App Group files, but release-binary and third-party SDK review remains
+- [~] Static security threat model documented; physical-device, moderation-operations, billing-alert, and App Store disclosure evidence remains
+- [~] Sensitive logging and local-storage audit; secret and tracked-backup scans pass, adult-protection and Safari domain-rule records migrate to protected App Group files, and archive privacy manifests are verified, but final third-party SDK disclosure review remains
 - [~] Static accessibility audit completed; physical assistive-technology matrix remains
 - [~] Release analyzer passed; extension-memory, background-work, launch-time, and battery evidence still requires physical-device profiling
 
@@ -154,8 +154,9 @@ The previously uploaded `1.0 (15)` build predates this Screen Time upgrade. It i
 - [-] Subscription checklist; The Climb is free and the repository contains no StoreKit product, paywall, in-app purchase, or subscription
 - [~] Apple Developer portal entitlement and distribution-profile evidence; development signing resolves, but App Store distribution export does not
 - [ ] App Store Connect privacy, age-rating, encryption, support, and review metadata confirmation
-- [x] Current worktree included in the release-candidate commit containing this document
+- [x] Current worktree included in the build `17` release-candidate commits
 - [x] Development-signed Release archive containing all intended extensions
+- [x] Repeatable archive validator covers version, bundle inventory, entitlements, privacy manifests, code signing, and first-party dSYM UUIDs
 - [ ] New TestFlight upload for the current release candidate
 - [ ] New TestFlight physical-device evidence
 

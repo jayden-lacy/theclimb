@@ -67,6 +67,11 @@ private struct CommunityPostIDRequest: Encodable {
     let postID: String
 }
 
+private struct ReportCommunityPostRequest: Encodable {
+    let postID: String
+    let reason: String
+}
+
 private struct CreateCommunityGroupRequest: Encodable {
     let id: String
     let name: String
@@ -873,23 +878,14 @@ final class FirebaseAppRepository: AppRepository {
             return
         }
 
-        let data: [String: Any] = [
-            "id": report.id,
-            "postID": report.postID,
-            "reportedUserID": report.reportedUserID,
-            "reportedByUserID": userID,
-            "reason": report.reason,
-            "category": report.category.rawValue,
-            "severity": report.severity.rawValue,
-            "status": report.status.rawValue,
-            "postBody": report.postBody,
-            "postAuthorName": report.postAuthorName,
-            "createdAt": report.createdAt,
-            "userID": userID,
-            "updatedAt": FieldValue.serverTimestamp()
-        ]
+        guard report.reportedByUserID == userID else {
+            throw FirebaseIntegrationError.invalidAccountInfo
+        }
 
-        try await firestore.collection("reports").document(report.id).setDataResult(data, merge: false)
+        let _: EmptyCloudFunctionResponse = try await callCloudFunction(
+            named: "reportCommunityPost",
+            body: ReportCommunityPostRequest(postID: report.postID, reason: report.reason)
+        )
         try? await fallback.reportEncouragementPost(report)
     }
 

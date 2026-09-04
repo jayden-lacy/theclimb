@@ -772,18 +772,82 @@ export const addCommunityPostAmen = onRequest(
       response,
       "addCommunityPostAmen",
       "Sign in before reacting to a post.",
-      async () => {
+      async ({ uid }) => {
         const body = request.body as Record<string, unknown> | undefined;
         const postId = requiredDocumentID(body?.postID, "Post");
         const reference = getFirestore().collection("posts").doc(postId);
+        const amenReference = getFirestore().collection("postAmens").doc(`${postId}_${uid}`);
 
         await getFirestore().runTransaction(async (transaction) => {
           const snapshot = await transaction.get(reference);
           if (!snapshot.exists) {
             throw new HTTPError(404, "Post not found.");
           }
+          const amenSnapshot = await transaction.get(amenReference);
+          if (amenSnapshot.exists) {
+            return;
+          }
+          transaction.create(amenReference, {
+            postID: postId,
+            userID: uid,
+            createdAt: FieldValue.serverTimestamp()
+          });
           transaction.update(reference, {
             amenCount: FieldValue.increment(1),
+            updatedAt: FieldValue.serverTimestamp()
+          });
+        });
+
+        return { ok: true };
+      }
+    );
+  }
+);
+
+export const reportCommunityPost = onRequest(
+  secureHttpOptions,
+  async (request, response) => {
+    await handleAuthenticatedPost(
+      request,
+      response,
+      "reportCommunityPost",
+      "Sign in before reporting a post.",
+      async ({ uid }) => {
+        const body = request.body as Record<string, unknown> | undefined;
+        const postId = requiredDocumentID(body?.postID, "Post");
+        const reason = requiredCleanText(body?.reason, "Report reason", 1, 240);
+        const postReference = getFirestore().collection("posts").doc(postId);
+        const reportReference = getFirestore().collection("reports").doc(`${postId}_${uid}`);
+
+        await getFirestore().runTransaction(async (transaction) => {
+          const postSnapshot = await transaction.get(postReference);
+          const reportSnapshot = await transaction.get(reportReference);
+          if (!postSnapshot.exists) {
+            throw new HTTPError(404, "Post not found.");
+          }
+          if (reportSnapshot.exists) {
+            return;
+          }
+
+          const authorID = requiredUserID(postSnapshot.get("authorID"), "Post author");
+          if (authorID === uid) {
+            throw new HTTPError(400, "You cannot report your own post.");
+          }
+
+          const assessment = assessCommunitySafety(`${reason} ${cleanText(postSnapshot.get("body"))}`);
+          transaction.set(reportReference, {
+            id: reportReference.id,
+            postID: postId,
+            reportedUserID: authorID,
+            reportedByUserID: uid,
+            reason,
+            category: assessment.category,
+            severity: assessment.severity,
+            status: "submitted",
+            postBody: optionalCleanText(postSnapshot.get("body"), 500),
+            postAuthorName: optionalCleanText(postSnapshot.get("author"), 40) || "Climber",
+            createdAt: FieldValue.serverTimestamp(),
+            userID: uid,
             updatedAt: FieldValue.serverTimestamp()
           });
         });
@@ -819,6 +883,7 @@ export const deleteCommunityPost = onRequest(
         });
 
         await deleteQuery(getFirestore().collection("reports").where("postID", "==", postId));
+        await deleteQuery(getFirestore().collection("postAmens").where("postID", "==", postId));
         return { ok: true };
       }
     );
@@ -1064,6 +1129,26 @@ type AuthenticatedRequestContext = {
   startedAt: number;
 };
 
+type ActionRateLimitPolicy = {
+  limit: number;
+  windowSeconds: number;
+};
+
+const actionRateLimitPolicies: Record<string, ActionRateLimitPolicy> = {
+  syncLeaderboard: { limit: 60, windowSeconds: 60 * 60 },
+  createCommunityPost: { limit: 8, windowSeconds: 60 * 60 },
+  addCommunityPostAmen: { limit: 120, windowSeconds: 60 * 60 },
+  reportCommunityPost: { limit: 20, windowSeconds: 24 * 60 * 60 },
+  deleteCommunityPost: { limit: 20, windowSeconds: 60 * 60 },
+  createCommunityGroup: { limit: 5, windowSeconds: 24 * 60 * 60 },
+  joinCommunityGroup: { limit: 30, windowSeconds: 60 * 60 },
+  leaveCommunityGroup: { limit: 30, windowSeconds: 60 * 60 },
+  updateCommunityGroup: { limit: 30, windowSeconds: 60 * 60 },
+  setCommunityGroupAdmin: { limit: 60, windowSeconds: 60 * 60 },
+  removeCommunityGroupMember: { limit: 60, windowSeconds: 60 * 60 },
+  deleteCommunityGroup: { limit: 10, windowSeconds: 60 * 60 }
+};
+
 async function handleAuthenticatedPost(
   request: Request,
   response: Response,
@@ -1087,6 +1172,7 @@ async function handleAuthenticatedPost(
       missingTokenMessage
     );
     await verifyAppCheckToken(request.get("x-firebase-appcheck"), uid);
+    await enforceActionRateLimit(uid, functionName);
 
     const result = await handler({ uid, requestId, startedAt });
     logger.info(`${functionName} completed.`, {
@@ -1113,6 +1199,37 @@ async function handleAuthenticatedPost(
       error: error instanceof Error ? error.message : "Unable to finish that request."
     });
   }
+}
+
+async function enforceActionRateLimit(uid: string, functionName: string): Promise<void> {
+  const policy = actionRateLimitPolicies[functionName];
+  if (!policy) {
+    return;
+  }
+
+  const windowMilliseconds = policy.windowSeconds * 1000;
+  const windowNumber = Math.floor(Date.now() / windowMilliseconds);
+  const reference = getFirestore()
+    .collection("actionRateLimits")
+    .doc(`${uid}_${functionName}_${windowNumber}`);
+
+  await getFirestore().runTransaction(async (transaction) => {
+    const snapshot = await transaction.get(reference);
+    const currentCount = snapshot.exists ? Number(snapshot.get("count") ?? 0) : 0;
+    if (currentCount >= policy.limit) {
+      throw new HTTPError(429, "Please wait before trying that action again.");
+    }
+
+    transaction.set(reference, {
+      uid,
+      action: functionName,
+      count: currentCount + 1,
+      windowNumber,
+      limit: policy.limit,
+      updatedAt: FieldValue.serverTimestamp(),
+      expiresAt: Timestamp.fromMillis((windowNumber + 2) * windowMilliseconds)
+    });
+  });
 }
 
 function objectPayload(value: unknown): Record<string, unknown> {
@@ -1767,31 +1884,45 @@ function requiredUserID(value: unknown, fieldName: string): string {
 type CommunitySafetyAssessment = {
   isAllowed: boolean;
   userMessage: string;
+  category: "spam" | "harassment" | "sexualContent" | "hate" | "selfHarm" | "unsafe" | "other";
+  severity: "low" | "medium" | "high" | "urgent";
 };
 
 const communitySafetyRules: Array<{
   tokens: string[];
   userMessage: string;
+  category: CommunitySafetyAssessment["category"];
+  severity: CommunitySafetyAssessment["severity"];
 }> = [
   {
     tokens: ["kys", "kill yourself", "go die", "end yourself", "unalive yourself"],
-    userMessage: "This looks unsafe. Edit it so it supports life and immediate help."
+    userMessage: "This looks unsafe. Edit it so it supports life and immediate help.",
+    category: "selfHarm",
+    severity: "urgent"
   },
   {
     tokens: ["nigger", "faggot", "chink", "spic", "tranny"],
-    userMessage: "Remove hateful or dehumanizing language before posting."
+    userMessage: "Remove hateful or dehumanizing language before posting.",
+    category: "hate",
+    severity: "high"
   },
   {
     tokens: ["fuck", "shit", "bitch", "asshole", "whore", "slut", "retard"],
-    userMessage: "Edit the language and try again."
+    userMessage: "Edit the language and try again.",
+    category: "harassment",
+    severity: "medium"
   },
   {
     tokens: ["onlyfans", "send nudes", "porn", "sex tape"],
-    userMessage: "Sexual content is not allowed in community posts."
+    userMessage: "Sexual content is not allowed in community posts.",
+    category: "sexualContent",
+    severity: "high"
   },
   {
     tokens: ["http://", "https://", "cashapp", "venmo", "telegram", "crypto"],
-    userMessage: "Links, payments, and promotional content are not allowed here."
+    userMessage: "Links, payments, and promotional content are not allowed here.",
+    category: "spam",
+    severity: "medium"
   }
 ];
 
@@ -1801,9 +1932,14 @@ function assessCommunitySafety(text: string): CommunitySafetyAssessment {
     candidate.tokens.some((token) => normalized.includes(token))
   );
   if (!rule) {
-    return { isAllowed: true, userMessage: "" };
+    return { isAllowed: true, userMessage: "", category: "other", severity: "medium" };
   }
-  return { isAllowed: false, userMessage: rule.userMessage };
+  return {
+    isAllowed: false,
+    userMessage: rule.userMessage,
+    category: rule.category,
+    severity: rule.severity
+  };
 }
 
 function enforceCommunitySafety(text: string): void {
@@ -2127,7 +2263,8 @@ async function deleteAccountDataForUser(uid: string): Promise<Record<string, num
     "progress",
     "partnerLinks",
     "posts",
-    "reports"
+    "reports",
+    "postAmens"
   ];
 
   deleted.groups = await removeUserFromGroups(uid);
@@ -2152,6 +2289,9 @@ async function deleteAccountDataForUser(uid: string): Promise<Record<string, num
   );
   deleted.aiUsage = await deleteQuery(
     firestore.collection("aiUsage").where("uid", "==", uid)
+  );
+  deleted.actionRateLimits = await deleteQuery(
+    firestore.collection("actionRateLimits").where("uid", "==", uid)
   );
   deleted.missionScoreEvents = await deleteQuery(
     firestore.collection("missionScoreEvents").where("userID", "==", uid)

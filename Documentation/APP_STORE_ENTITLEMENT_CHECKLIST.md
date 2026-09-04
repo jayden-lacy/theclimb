@@ -9,7 +9,7 @@ Use this checklist for the exact archive submitted to App Store Connect. A capab
 | Item | Current status |
 | --- | --- |
 | Current branch | `main` |
-| Release source | `main`; frozen build 17 source commit `9ff8ef4` |
+| Release source | Current `main`; record the exact uploaded commit and archive when TestFlight processing completes |
 | Screen Time upgrade | Included in release candidate `1.0 (17)` |
 | Local simulator build | Debug and Release passed September 3, 2026 |
 | Native tests | 50 of 50 passed September 3, 2026 |
@@ -25,13 +25,13 @@ Do not submit the previously uploaded `1.0 (15)` as evidence for the current Scr
 
 | Target | Bundle identifier | App Group in source | Family Controls in source | Release action |
 | --- | --- | --- | --- | --- |
-| Main app | `com.jaydenlacy.theclimb` | Yes | Yes | Confirm App ID, distribution approval, and profile |
-| Widget and Live Activity | `com.jaydenlacy.theclimb.widget` | Yes | No | Confirm App ID and App Group profile |
-| Shield configuration | `com.jaydenlacy.theclimb.shieldconfiguration` | Yes | Yes | Confirm Family Controls distribution approval and profile |
-| Shield action | `com.jaydenlacy.theclimb.shieldaction` | Yes | Yes | Confirm Family Controls distribution approval and profile |
-| Device Activity monitor | `com.jaydenlacy.theclimb.deviceactivitymonitor` | Yes | Yes | Confirm Family Controls distribution approval and profile |
-| Device Activity report | `com.jaydenlacy.theclimb.deviceactivityreport` | Yes | Yes | Register App ID and confirm Family Controls distribution approval and profile |
-| Safari content blocker | `com.jaydenlacy.theclimb.contentblocker` | Yes | No | Register App ID and confirm profile before archiving |
+| Main app | `com.jaydenlacy.theclimb` | Yes | Yes | Distribution profile present; install distribution certificate before export |
+| Widget and Live Activity | `com.jaydenlacy.theclimb.widget` | Yes | No | Distribution profile present; install distribution certificate before export |
+| Shield configuration | `com.jaydenlacy.theclimb.shieldconfiguration` | Yes | Yes | Family Controls distribution profile present |
+| Shield action | `com.jaydenlacy.theclimb.shieldaction` | Yes | Yes | Family Controls distribution profile present |
+| Device Activity monitor | `com.jaydenlacy.theclimb.deviceactivitymonitor` | Yes | Yes | Family Controls distribution profile present |
+| Device Activity report | `com.jaydenlacy.theclimb.deviceactivityreport` | Yes | Yes | Development profile present; distribution profile still required |
+| Safari content blocker | `com.jaydenlacy.theclimb.contentblocker` | Yes | No | Development profile present; distribution profile still required |
 
 Shared App Group:
 
@@ -43,33 +43,33 @@ The Device Activity report extension is embedded as an ExtensionKit extension an
 
 ### App IDs
 
-- [ ] Every bundle identifier above exists as an explicit App ID under team `BLH227B4U7`.
-- [ ] The main app, widget, shield extensions, monitor, report, and Safari extension use the same intended team.
-- [ ] The App Group is enabled on every target that reads or writes shared policy, widget, shield, monitor, report, or Safari state.
-- [ ] No obsolete bundle identifier is embedded in the archive.
+- [x] Every bundle identifier above resolves through an explicit development provisioning profile under team `BLH227B4U7`.
+- [x] The main app, widget, shield extensions, monitor, report, and Safari extension use the same intended team in the archive.
+- [x] The App Group is enabled in the signed entitlements for every shipping target.
+- [x] No obsolete bundle identifier is embedded in the archive.
 
 ### Family Controls
 
-- [ ] Apple has approved Family Controls for distribution for the main app.
-- [ ] Apple has approved Family Controls for distribution for the shield configuration extension.
-- [ ] Apple has approved Family Controls for distribution for the shield action extension.
-- [ ] Apple has approved Family Controls for distribution for the Device Activity monitor extension.
+- [x] A distribution profile containing Family Controls exists for the main app.
+- [x] A distribution profile containing Family Controls exists for the shield configuration extension.
+- [x] A distribution profile containing Family Controls exists for the shield action extension.
+- [x] A distribution profile containing Family Controls exists for the Device Activity monitor extension.
 - [ ] Apple has approved Family Controls for distribution for the Device Activity report extension.
 - [ ] Each distribution provisioning profile contains `com.apple.developer.family-controls`.
-- [ ] The entitlement request describes voluntary, user-controlled focus and adult-site protection accurately.
-- [ ] Review copy does not claim remote parental surveillance, universal app-open counting, or bypass-proof control.
+- [x] The entitlement request and review notes describe voluntary, user-controlled focus and adult-site protection.
+- [x] Review copy does not claim remote parental surveillance, universal app-open counting, or bypass-proof control.
 
 The widget and Safari content blocker do not declare Family Controls in source and should not be given that entitlement without a documented technical need.
 
 ### Other Capabilities
 
-- [ ] Sign in with Apple is enabled for `com.jaydenlacy.theclimb`.
-- [ ] Associated Domains is enabled for the main app with `applinks:theclimbapp.org`.
-- [ ] App Group access is enabled for all seven shipping bundles where declared.
-- [ ] Live Activities are supported by the main app Info.plist and widget target.
-- [ ] No Network Extension capability is enabled or represented in review notes.
-- [ ] No APNs entitlement is expected; the current notification implementation uses local notifications.
-- [ ] No StoreKit, in-app purchase, subscription, or paywall capability is configured.
+- [x] Sign in with Apple is present in the signed main-app entitlements.
+- [x] Associated Domains is present in the signed main-app entitlements with `applinks:theclimbapp.org`.
+- [x] App Group access is present in all seven signed shipping bundles.
+- [x] Live Activities are supported by the main app Info.plist and widget target.
+- [x] No Network Extension target or capability is embedded or represented in review notes.
+- [x] No APNs entitlement is embedded; the current notification implementation uses local notifications.
+- [x] No StoreKit, in-app purchase, subscription, or paywall capability is configured in source.
 
 ## Provisioning and Signing
 
@@ -81,6 +81,7 @@ The widget and Safari content blocker do not declare Family Controls in source a
 - [x] The archive contains the widget, shield configuration, shield action, Device Activity monitor, Device Activity report, and Safari content blocker.
 - [x] The archive contains no watchOS app or Network Extension.
 - [x] `codesign --verify --deep --strict` succeeds on the development-signed archived app.
+- [x] First-party app and extension dSYM UUIDs match every archived executable.
 - [ ] Organizer validation succeeds without entitlement mismatch errors.
 
 ## Privacy Manifests

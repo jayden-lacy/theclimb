@@ -33,88 +33,6 @@ service cloud.firestore {
         request.resource.data[key] is timestamp;
     }
 
-    function validReport(reportId) {
-      return request.resource.data.keys().hasOnly([
-        'id',
-        'postID',
-        'reportedUserID',
-        'reportedByUserID',
-        'reason',
-        'category',
-        'severity',
-        'status',
-        'postBody',
-        'postAuthorName',
-        'createdAt',
-        'userID',
-        'updatedAt'
-      ]) &&
-        request.resource.data.keys().hasAll([
-          'id',
-          'postID',
-          'reportedUserID',
-          'reportedByUserID',
-          'reason',
-          'category',
-          'severity',
-          'status',
-          'postBody',
-          'postAuthorName',
-          'createdAt',
-          'userID'
-        ]) &&
-        request.resource.data.id == reportId &&
-        request.resource.data.userID == request.auth.uid &&
-        request.resource.data.reportedByUserID == request.auth.uid &&
-        request.resource.data.reportedUserID != request.auth.uid &&
-        request.resource.data.postID is string &&
-        request.resource.data.postID.size() > 0 &&
-        request.resource.data.postID.size() <= 128 &&
-        request.resource.data.reportedUserID is string &&
-        request.resource.data.reportedUserID.size() > 0 &&
-        request.resource.data.reportedUserID.size() <= 128 &&
-        request.resource.data.reason is string &&
-        request.resource.data.reason.size() > 0 &&
-        request.resource.data.reason.size() <= 240 &&
-        request.resource.data.category in [
-          'spam',
-          'harassment',
-          'sexualContent',
-          'hate',
-          'selfHarm',
-          'unsafe',
-          'other'
-        ] &&
-        request.resource.data.severity in [
-          'low',
-          'medium',
-          'high',
-          'urgent'
-        ] &&
-        request.resource.data.status in [
-          'submitted',
-          'hiddenLocally'
-        ] &&
-        request.resource.data.postBody is string &&
-        request.resource.data.postBody.size() > 0 &&
-        request.resource.data.postBody.size() <= 500 &&
-        request.resource.data.postAuthorName is string &&
-        request.resource.data.postAuthorName.size() > 0 &&
-        request.resource.data.postAuthorName.size() <= 40 &&
-        (
-          request.resource.data.createdAt is timestamp ||
-          request.resource.data.createdAt is string
-        ) &&
-        validOptionalTimestamp('updatedAt');
-    }
-
-    function reportMatchesExistingPost() {
-      return exists(/databases/$(database)/documents/posts/$(request.resource.data.postID)) &&
-        get(/databases/$(database)/documents/posts/$(request.resource.data.postID)).data.authorID == request.resource.data.reportedUserID &&
-        get(/databases/$(database)/documents/posts/$(request.resource.data.postID)).data.body == request.resource.data.postBody &&
-        get(/databases/$(database)/documents/posts/$(request.resource.data.postID)).data.author == request.resource.data.postAuthorName;
-    }
-
     function validPartnerLink(linkId) {
       return request.resource.data.keys().hasOnly([
         'id',
@@ -417,10 +335,15 @@ service cloud.firestore {
 
     match /reports/{reportId} {
       allow get, list, delete: if existingOwnedBySignedInUser();
-      allow create: if isSignedIn() &&
-        validReport(reportId) &&
-        reportMatchesExistingPost();
-      allow update: if false;
+      allow create, update: if false;
+    }
+
+    match /postAmens/{amenId} {
+      allow read, write: if false;
+    }
+
+    match /actionRateLimits/{limitId} {
+      allow read, write: if false;
     }
 
     match /leaderboards/{userId} {

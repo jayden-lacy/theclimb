@@ -14,7 +14,7 @@ Verified on September 3-4, 2026:
 - The main app, widget, shield configuration, Device Activity monitor, Device Activity report, and Safari content blocker privacy manifests are tracked and included in their target resources.
 - The Shield Action extension does not currently access App Group `UserDefaults` or another required-reason API. Add a manifest to that target if its implementation changes.
 - Cloud Functions compile and the offline daily-plan validation script passes.
-- Firestore rules/indexes and all 16 second-generation functions were deployed successfully to `the-climb0`. The deployed `generateDailyPlan` source matched the local release source. Post-deploy unauthenticated AI, community, mission-scoring, and account-deletion smoke requests returned HTTP 401.
+- Firestore rules/indexes and all 17 second-generation functions were deployed successfully to `the-climb0`. The deployed `generateDailyPlan` source matched the local release source. Post-deploy unauthenticated AI, community post/reaction/report, mission-scoring, and account-deletion smoke requests returned HTTP 401.
 - Community posts, groups, leaderboard scores, mission scoring, and account deletion use authenticated callable backend functions. Firestore client writes to server-owned collections are denied.
 - The current codebase uses local World English Bible text, authenticated AI generation, bounded retries/timeouts, same-day caching, per-user rate limits, and deterministic fallback plans.
 - `https://theclimbapp.org`, `/privacy`, `/terms`, `/download`, and `/.well-known/apple-app-site-association` were deployed through Cloudflare and returned HTTP 200.
@@ -61,7 +61,7 @@ Verified on September 3-4, 2026:
   - Optional `OPENAI_TIMEOUT_MS=20000` and `OPENAI_RETRY_COUNT=1` for bounded retry behavior.
 - Deploy Firestore rules with `firebase deploy --only firestore:rules,firestore:indexes` after every rules change. Users may access only their own private data, while posts, groups, leaderboard data, and mission-score events remain backend-owned.
 - Confirm the backend-only `aiUsage` and `aiDailyPlans` collections exist after testing. Client access is denied by the catch-all Firestore rule; only Cloud Functions should write them.
-- Enable Firestore TTL on `aiUsage.expiresAt` and `aiDailyPlans.expiresAt` so old rate-limit and cached-plan records are cleaned up automatically.
+- Enable Firestore TTL on `aiUsage.expiresAt`, `aiDailyPlans.expiresAt`, and `actionRateLimits.expiresAt` so old rate-limit and cached-plan records are cleaned up automatically.
 - Keep the OpenAI key and stored prompt ID backend-only. Never put them in Swift, `Info.plist`, or Remote Config.
 - Set Cloud Billing budgets and alerts for Firebase/Google Cloud, OpenAI usage limits, and log-based alerts for repeated `generateDailyPlan` failures.
 - Run `npm run validate:security` from the repository root before each release. It rejects tracked secrets, private keys, `.env` files, Firebase backups/exports, and generated build artifacts, then fails on high or critical npm advisories.
@@ -78,7 +78,7 @@ Verified on September 3-4, 2026:
 - First-week onboarding ramp context is passed to AI and mirrored client-side so new users get guided early missions even if fallback content is used.
 - The function writes structured logs for generation attempts, cache hits, OpenAI latency/usage, App Check failures, rate-limit rejections, and AI fallback use.
 - The function returns a deterministic fallback plan if OpenAI or the stored prompt fails, so the app does not dead-end the daily flow.
-- Firestore denies direct client writes to `/posts`. Creation, Amen reactions, deletion, filtering, blocking, and report-related moderation flow through authenticated callable functions.
+- Firestore denies direct client writes to `/posts`, `/reports`, `/postAmens`, and `/actionRateLimits`. Creation, one-Amen-per-user reactions, server-verified reports, deletion, filtering, and blocking flow through authenticated callable functions with per-user mutation limits.
 - `/partnerLinks` rules only allow pending invite acceptance to set accepted fields. Accepted members can increment only their own action counters and last-check-in field with `lastInteraction`; truthful interaction text and action rate limits remain client-trusted and should move to a Cloud Function if abuse appears.
 - Firestore denies direct client writes to `/groups`. Group creation, join/leave, admin promotion, member removal, and deletion are enforced by callable functions.
 - Firestore denies direct client writes to `/leaderboards`, `/userScores`, and `/missionScoreEvents`. Leaderboard values and OVR-changing mission outcomes are computed and written by authenticated callable functions.
@@ -88,7 +88,7 @@ Verified on September 3-4, 2026:
 - Run a clean Debug simulator build.
 - Run a Release simulator build.
 - Run `xcodebuild test` against an available iPhone simulator and confirm all `ClimbCoreTests` pass.
-- Run a Release archive validation and confirm no privacy manifest warnings are emitted for the app, widget, shield configuration, shield action, or DeviceActivity monitor binaries.
+- Run `npm run validate:archive -- <archive-path> 1.0 17 distribution` against the final upload archive. Confirm all first-party dSYMs match and review any remaining precompiled Firebase/gRPC framework symbol warnings in Organizer.
 - Complete onboarding with email/password and Google.
 - Confirm the Home screen creates one mission and devotional per local calendar day.
 - Before starting a pending mission, use "Try a different plan" once and confirm the replacement mission/devotional save, widgets refresh, and repeat app opens return the replacement from cache.
@@ -125,6 +125,7 @@ Verified on September 3-4, 2026:
 - The remaining launch gate is a real-device pass for Family Controls, DeviceActivity, custom shields, notifications, widgets, release App Check, Google/Apple sign-in, and account deletion. Simulator evidence is not sufficient for these platform integrations.
 - App Store Connect privacy, age-rating, encryption, content-rights, support URL, review notes, and build-selection fields still require final confirmation before pressing Submit for Review.
 - Firebase's current Google Cloud dependency chain reports seven moderate transitive `uuid` advisories and no high or critical advisories. The project is on current stable Firebase Admin/Functions releases; do not use npm's suggested forced downgrade.
+- The static threat model is tracked in `Documentation/SECURITY_THREAT_MODEL.md`; physical-device behavior, moderation operations, billing alerts, and App Store disclosures remain launch evidence rather than source-code assertions.
 
 ## Official References
 
