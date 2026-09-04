@@ -1,6 +1,6 @@
 # App Store Entitlement Checklist
 
-Last reviewed: July 30, 2026
+Last reviewed: September 4, 2026
 
 Use this checklist for the exact archive submitted to App Store Connect. A capability present in an `.entitlements` file is not proof that Apple approved it for distribution or that the provisioning profile contains it.
 
@@ -9,17 +9,17 @@ Use this checklist for the exact archive submitted to App Store Connect. A capab
 | Item | Current status |
 | --- | --- |
 | Current branch | `main` |
-| Release source | `main`; this document ships with the build `16` release-candidate commit |
-| Screen Time upgrade | Included in release candidate `1.0 (16)` |
-| Local simulator build | Passed July 30, 2026 |
-| Native tests | 33 of 33 passed July 30, 2026 |
-| Release analyzer | Passed July 30, 2026 with no analyzer findings |
-| Signed archive for current worktree | Development-signed `1.0 (16)` archive succeeded; deep code-sign verification passed |
+| Release source | `main`; frozen build 17 source commit `9ff8ef4` |
+| Screen Time upgrade | Included in release candidate `1.0 (17)` |
+| Local simulator build | Debug and Release passed September 3, 2026 |
+| Native tests | 50 of 50 passed September 3, 2026 |
+| Release analyzer | Passed September 3, 2026 with no analyzer findings |
+| Signed archive for current worktree | Development-signed `1.0 (17)` archive succeeded; deep code-sign verification passed |
 | TestFlight build containing current worktree | Not uploaded |
 | Apple portal entitlement status | Source entitlements are present; distribution-profile evidence remains required |
 | Distribution provisioning profiles | App Store export reported no Apple account, no iOS Distribution certificate, and missing profiles for `contentblocker` and `deviceactivityreport` |
 
-Do not submit the previously uploaded `1.0 (15)` as evidence for the Screen Time upgrade or Safari content blocker.
+Do not submit the previously uploaded `1.0 (15)` as evidence for the current Screen Time upgrade or Safari content blocker. The next upload must be build `17` or later.
 
 ## Bundle and Target Inventory
 
@@ -136,6 +136,7 @@ Attach or retain internally:
 - [ ] Distribution profile entitlement dumps for all shipping targets.
 - [x] Signed archive validation log.
 - [x] Archive target and bundle inventory.
+- [x] Three current 1284 x 2778 iPhone screenshots.
 - [ ] Physical-device test matrix with device model, OS version, build number, tester, date, and evidence.
 - [ ] TestFlight smoke-test result.
 - [ ] Final App Store Connect metadata review.

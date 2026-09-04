@@ -2863,6 +2863,219 @@ private extension Calendar {
     }
 }
 
+#if DEBUG
+extension AppViewModel {
+    func loadScreenshotFixture(now: Date = Date()) async {
+        isLoading = true
+
+        let calendar = Calendar.current
+        let profile = UserProfile(
+            id: "app-store-preview-user",
+            displayName: "Alex",
+            ageGroup: .college,
+            goals: ["Control my phone use", "Grow closer to God", "Build discipline"],
+            mainStruggle: .focus,
+            streakGoal: 30,
+            notificationHour: 7,
+            notificationMinute: 30,
+            ovrScore: 74,
+            currentStreak: 12,
+            longestStreak: 19,
+            recoveryStreak: 0,
+            appBlockingEnabled: true,
+            joinedAt: calendar.date(byAdding: .day, value: -48, to: now) ?? now,
+            onboarding: OnboardingPersonalization(
+                spiritualStartingPoint: .climbing,
+                dailyCommitmentMinutes: 30,
+                preferredTimeWindow: .morning,
+                primaryObstacle: "I reach for my phone before I choose what matters.",
+                whyStarted: "I want my attention to reflect my faith.",
+                firstStepCompletedAt: calendar.date(byAdding: .day, value: -47, to: now),
+                initialMilestoneDays: 30
+            )
+        )
+
+        let devotional = Devotional(
+            id: "app-store-preview-devotional",
+            date: now,
+            title: "Guard What Shapes You",
+            bibleVerse: "Romans 12:2 (WEB)",
+            verseText: "Don’t be conformed to this world, but be transformed by the renewing of your mind.",
+            explanation: "Attention is formative. Every repeated choice teaches your mind what deserves first place. Today, create enough quiet to notice what has been shaping you, then choose a better direction on purpose.",
+            reflectionQuestion: "What has been shaping your attention more than it should?",
+            practicalAction: "Begin the day with Scripture before opening a distracting app.",
+            struggle: .focus
+        )
+
+        let mission = Mission(
+            id: "app-store-preview-mission",
+            date: now,
+            title: "Protect the first 30 minutes",
+            summary: "Block your usual distractions, put your phone out of reach, and finish one meaningful task before checking anything else.",
+            category: .focus,
+            durationMinutes: 30,
+            difficulty: 3,
+            status: .pending,
+            fallbackTitle: "Win the next five minutes",
+            fallbackSummary: "Block one distraction and complete five focused minutes.",
+            extraChallenges: [],
+            devotionalID: devotional.id,
+            appBlockingEnabled: true
+        )
+
+        let completedMissionDays = (1...12).compactMap {
+            calendar.date(byAdding: .day, value: -$0, to: now)
+        }
+        let completedMissions = completedMissionDays.enumerated().map { index, date in
+            Mission(
+                id: "app-store-preview-completed-mission-\(index)",
+                date: date,
+                title: index.isMultiple(of: 2) ? "Choose quiet before noise" : "Finish the next right thing",
+                summary: "A completed protected-focus session from your recent climb.",
+                category: .focus,
+                durationMinutes: 25,
+                difficulty: min(3, 1 + (index / 5)),
+                status: .completed,
+                fallbackTitle: "Return for five minutes",
+                fallbackSummary: "Complete one small focused action.",
+                extraChallenges: [],
+                devotionalID: devotional.id,
+                appBlockingEnabled: true
+            )
+        }
+        let completedHabitDays = (0..<12).compactMap {
+            calendar.date(byAdding: .day, value: -$0, to: now)
+        }
+        let habits = [
+            GrowthHabit(
+                id: "app-store-preview-habit-scripture",
+                title: "Scripture before scrolling",
+                cadence: "Daily",
+                isEnabled: true,
+                completedDates: completedHabitDays
+            ),
+            GrowthHabit(
+                id: "app-store-preview-habit-prayer",
+                title: "Ten quiet minutes",
+                cadence: "Daily",
+                isEnabled: true,
+                completedDates: Array(completedHabitDays.prefix(6))
+            ),
+            GrowthHabit(
+                id: "app-store-preview-habit-phone",
+                title: "Phone outside the room",
+                cadence: "Daily",
+                isEnabled: true,
+                completedDates: Array(completedHabitDays.prefix(9))
+            )
+        ]
+
+        let progress = (0..<14).compactMap { offset -> ProgressSnapshot? in
+            guard let date = calendar.date(byAdding: .day, value: -offset, to: now) else { return nil }
+            let score = min(74, 57 + ((13 - offset) * 17 / 13))
+            return ProgressSnapshot(
+                id: "app-store-preview-progress-\(offset)",
+                date: date,
+                ovrScore: score,
+                currentStreak: max(0, 12 - offset),
+                completionRate: min(0.93, 0.58 + (Double(13 - offset) * 0.35 / 13.0)),
+                completedMissions: max(0, 22 - offset),
+                failedMissions: 2
+            )
+        }
+
+        let partner = AccountabilityPartner(
+            id: "app-store-preview-partner",
+            name: "Caleb",
+            focus: .discipline,
+            lastCheckIn: "Today",
+            checkInCount: 18,
+            nudgeCount: 4,
+            encouragementCount: 9,
+            lastInteraction: "Waiting on your check-in",
+            linkedUserID: "app-store-preview-partner-user",
+            lastCheckInDate: now,
+            sharedStreak: 8,
+            weeklyCompletions: 6
+        )
+
+        let reflections = (1...3).compactMap { offset -> ReflectionEntry? in
+            guard let date = calendar.date(byAdding: .day, value: -offset, to: now) else {
+                return nil
+            }
+            return ReflectionEntry(
+                id: "app-store-preview-reflection-\(offset)",
+                date: date,
+                missionID: "app-store-preview-completed-mission-\(offset - 1)",
+                hardestPart: "Putting the phone down before I felt ready.",
+                lessonLearned: "A clear boundary makes the next faithful choice easier.",
+                effortRating: 4,
+                improvementPlan: "Start tomorrow with the same protected window.",
+                mood: .strong,
+                failureReason: nil
+            )
+        }
+
+        let snapshot = AppStateSnapshot(
+            profile: profile,
+            missions: [mission] + completedMissions,
+            devotionals: [devotional],
+            journalEntries: reflections,
+            progress: progress,
+            habits: habits,
+            challenges: [],
+            groups: [
+                ClimbGroup(
+                    id: "app-store-preview-group",
+                    name: "Morning Watch",
+                    subtitle: "Start the day with intention",
+                    members: 8,
+                    activeChallenge: "Seven phone-free mornings",
+                    isJoined: true,
+                    ownerID: profile.id,
+                    adminIDs: [profile.id],
+                    memberIDs: [profile.id],
+                    memberNames: [profile.id: profile.displayName]
+                )
+            ],
+            posts: [
+                EncouragementPost(
+                    id: "app-store-preview-post",
+                    authorID: "app-store-preview-community-user",
+                    author: "Grace",
+                    body: "Protected my morning prayer before opening anything else. One quiet choice changed the whole day.",
+                    createdAt: calendar.date(byAdding: .hour, value: -2, to: now) ?? now,
+                    amenCount: 14
+                )
+            ],
+            partners: [partner],
+            leaderboard: [
+                LeaderboardEntry(id: profile.id, name: profile.displayName, ovrScore: 74, streak: 12),
+                LeaderboardEntry(id: "app-store-preview-rank-2", name: "Noah", ovrScore: 71, streak: 10),
+                LeaderboardEntry(id: "app-store-preview-rank-3", name: "Grace", ovrScore: 68, streak: 8)
+            ]
+        )
+
+        _ = apply(snapshot)
+        var controlState = ClimbControlStateEnvelope.fresh(
+            ownerUserID: profile.id,
+            policy: .balanced,
+            at: now,
+            calendar: calendar
+        )
+        controlState.wallet.earnedSeconds = 8 * 60
+        controlState.wallet.consumedSeconds = 12 * 60
+        controlState.wallet.activeScriptureSeconds = 10 * 60
+        controlState.updatedAt = now
+        climbControlState = controlState
+        climbTimeMonitoringState = .scheduled
+        focusState = .authorized
+        notificationState = .authorized
+        isLoading = false
+    }
+}
+#endif
+
 private enum CommunitySafetyFilter {
     struct Assessment: Equatable {
         let isAllowed: Bool

@@ -62,6 +62,11 @@ struct HomeView: View {
         .onAppear {
             activitySelection = ScreenTimeActivitySelectionStore.loadSelection()
             adultWebFilterEnabled = FocusAdultContentFilterStore.isEnabled
+#if DEBUG
+            guard !ProcessInfo.processInfo.arguments.contains("-screenshotFixture") else {
+                return
+            }
+#endif
             Task {
                 await viewModel.refreshScreenTimeAuthorization()
                 viewModel.refreshClimbControlState()

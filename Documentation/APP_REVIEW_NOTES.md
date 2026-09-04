@@ -1,6 +1,6 @@
 # App Review Notes
 
-Last reviewed: July 30, 2026
+Last reviewed: September 4, 2026
 
 This is a draft for App Store Connect. Replace all bracketed fields with information for the exact submitted build. Do not place reviewer credentials, API keys, recovery codes, or private entitlement correspondence in the repository.
 
@@ -9,7 +9,7 @@ This is a draft for App Store Connect. Replace all bracketed fields with informa
 - Contact name: `[RELEASE CONTACT]`
 - Phone: `[PHONE]`
 - Email: `support@theclimbapp.org`
-- Submitted version/build: `1.0 (16)`
+- Submitted version/build: `1.0 (17)`
 - Test account email: `[ENTER SECURELY IN APP STORE CONNECT]`
 - Test account password: `[ENTER SECURELY IN APP STORE CONNECT]`
 

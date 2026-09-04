@@ -4,8 +4,5 @@
     "build:website": "node website/build-worker.mjs",
     "validate:website": "node website/build-worker.mjs && node website/validate-worker.mjs",
     "validate:security": "bash scripts/release-security-check.sh"
-  },
-  "dependencies": {
-    "firebase-functions": "^7.2.5"
   }
 }

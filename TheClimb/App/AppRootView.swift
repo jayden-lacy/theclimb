@@ -72,6 +72,11 @@ struct AppRootView: View {
             if Self.debugLoadingPreview || Self.debugFocusControlCenter || Self.debugPurityProtectionSetup {
                 return
             }
+            if Self.debugScreenshotFixture {
+                await viewModel.loadScreenshotFixture()
+                selectedTab = Self.debugScreenshotTab ?? .home
+                return
+            }
 #endif
             await viewModel.load()
             syncPersonalizedProtection()
@@ -105,12 +110,18 @@ struct AppRootView: View {
             loadingScripture = LoadingScriptureProvider.next()
         }
         .onChange(of: viewModel.profile?.mainStruggle) { _, _ in
+#if DEBUG
+            guard !Self.debugScreenshotFixture else { return }
+#endif
             syncPersonalizedProtection()
             Task {
                 await ScreenTimeRuntimeBootstrapper().reconcile()
             }
         }
         .onChange(of: scenePhase) { _, newPhase in
+#if DEBUG
+            guard !Self.debugScreenshotFixture else { return }
+#endif
             guard newPhase == .active, viewModel.profile != nil else { return }
             Task {
                 handleShortcutDestinationIfPossible()
@@ -327,6 +338,10 @@ struct AppRootView: View {
             return nil
         }
         return ClimbInviteLink.tab(from: arguments[flagIndex + 1])
+    }
+
+    private static var debugScreenshotFixture: Bool {
+        ProcessInfo.processInfo.arguments.contains("-screenshotFixture")
     }
 #endif
 }

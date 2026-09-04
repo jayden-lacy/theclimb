@@ -6,21 +6,21 @@ Current 1.0 release decision: ship iPhone-only and submit iPhone screenshots onl
 
 ## Verified Local Baseline
 
-Verified on July 27, 2026:
+Verified on September 3-4, 2026:
 
 - Xcode 26.6 recognizes the iPhone app, widget, shield configuration, shield action, DeviceActivity monitor, and native unit-test targets. The release intentionally contains no watchOS target.
-- Debug and optimized Release builds succeed, static analysis passes, and all six native `ClimbCoreTests` pass.
+- Debug and optimized Release builds succeed, static analysis passes, and all 50 native tests pass.
 - Firebase iOS and Google Sign-In packages resolve at their pinned versions.
-- The main app, widget, shield configuration, and DeviceActivity monitor privacy manifests are tracked and included in their target resources.
+- The main app, widget, shield configuration, Device Activity monitor, Device Activity report, and Safari content blocker privacy manifests are tracked and included in their target resources.
 - The Shield Action extension does not currently access App Group `UserDefaults` or another required-reason API. Add a manifest to that target if its implementation changes.
 - Cloud Functions compile and the offline daily-plan validation script passes.
-- Firestore rules/indexes and all 16 second-generation functions were deployed successfully to `the-climb0` on July 27, 2026. Post-deploy unauthenticated AI and community smoke requests returned HTTP 401.
+- Firestore rules/indexes and all 16 second-generation functions were deployed successfully to `the-climb0`. The deployed `generateDailyPlan` source matched the local release source. Post-deploy unauthenticated AI, community, mission-scoring, and account-deletion smoke requests returned HTTP 401.
 - Community posts, groups, leaderboard scores, mission scoring, and account deletion use authenticated callable backend functions. Firestore client writes to server-owned collections are denied.
 - The current codebase uses local World English Bible text, authenticated AI generation, bounded retries/timeouts, same-day caching, per-user rate limits, and deterministic fallback plans.
 - `https://theclimbapp.org`, `/privacy`, `/terms`, `/download`, and `/.well-known/apple-app-site-association` were deployed through Cloudflare and returned HTTP 200.
-- A signed arm64 archive succeeds and contains valid signatures, all four extensions, expected privacy manifests, and app/extension dSYMs.
-- iPhone build `1.0 (15)`, containing the current cross logo, was uploaded successfully and entered App Store Connect processing on July 29, 2026. Firebase binary dSYM upload warnings remain non-blocking.
-- Three current iPhone screenshots were regenerated from the release candidate at exactly 1284 x 2778 in `App Store Previews - 1284x2778`.
+- A development-signed arm64 archive for `1.0 (17)` succeeds and contains valid signatures, all six extensions, expected privacy manifests, and app/extension dSYMs.
+- App Store export for build 17 is blocked until Xcode has the release Apple account, an Apple Distribution certificate, and profiles for all shipping bundle identifiers.
+- Three current iPhone screenshots were regenerated from the build 17 release candidate at exactly 1284 x 2778 in `App Store Previews - 1284x2778`.
 
 ## Apple Configuration
 
@@ -31,15 +31,18 @@ Verified on July 27, 2026:
   - Shield configuration extension: `com.jaydenlacy.theclimb.shieldconfiguration`
   - Shield action extension: `com.jaydenlacy.theclimb.shieldaction`
   - DeviceActivity monitor extension: `com.jaydenlacy.theclimb.deviceactivitymonitor`
-- Register the App Group exactly as `group.com.jaydenlacy.theclimb` and enable it on the app, widget, shield configuration, shield action, and DeviceActivity monitor targets.
+  - Device Activity report extension: `com.jaydenlacy.theclimb.deviceactivityreport`
+  - Safari content blocker extension: `com.jaydenlacy.theclimb.contentblocker`
+- Register the App Group exactly as `group.com.jaydenlacy.theclimb` and enable it on all seven shipping bundle identifiers where declared.
 - Request and enable the Family Controls entitlement for every target that participates in Screen Time blocking before relying on shielding outside development:
   - Main app: `com.jaydenlacy.theclimb`
   - Shield configuration extension: `com.jaydenlacy.theclimb.shieldconfiguration`
   - Shield action extension: `com.jaydenlacy.theclimb.shieldaction`
   - DeviceActivity monitor extension: `com.jaydenlacy.theclimb.deviceactivitymonitor`
+  - Device Activity report extension: `com.jaydenlacy.theclimb.deviceactivityreport`
 - In the entitlement request, describe the app blocking feature as user-controlled focus protection for voluntary daily missions. Be clear that there is no parent/admin dashboard and no monitoring of another person.
 - Confirm App Store Connect device support is iPhone-only for 1.0. Submit the iPhone screenshot set only; do not provide iPad screenshots for this release.
-- Confirm privacy manifests remain valid for every shipped binary. The main app declares the account, personalization, user-content, product-interaction, and crash data used by the current Firebase implementation. The widget, shield configuration, and DeviceActivity monitor have target-specific manifests. The Shield Action extension currently has no required-reason API use.
+- Confirm privacy manifests remain valid for every shipped binary. The main app declares the account, personalization, user-content, product-interaction, and crash data used by the current Firebase implementation. Target-specific manifests cover the widget, shield configuration, Device Activity monitor, Device Activity report, and Safari content blocker. The Shield Action extension currently has no required-reason API use.
 - Confirm App Store Connect privacy answers match the actual Firebase/Auth/community data collection.
 - Use `https://theclimbapp.org/privacy` and `https://theclimbapp.org/terms` in App Store Connect. Use `support@theclimbapp.org` as the support contact across docs, website, and in-app legal/support fallback copy.
 - Build and archive a Release build in Xcode, then upload through Organizer.
@@ -118,7 +121,7 @@ Verified on July 27, 2026:
 - The DeviceActivity monitor bundle ID `com.jaydenlacy.theclimb.deviceactivitymonitor` must be registered and entitled with the rest of the Screen Time bundle set.
 - Server-side daily pregeneration is not required for launch; the app currently generates the next plan when the user opens the app on a new day.
 - Website `/download` redirects to the App Store when the Cloudflare Worker `APP_STORE_URL` environment variable is set to a valid Apple URL. Without that variable, it serves a public fallback download page instead of an internal setup error.
-- Build 15 must finish App Store Connect processing before it can be selected for TestFlight or review. If App Store Connect rejects the processed build, increment `CURRENT_PROJECT_VERSION`, archive again, and upload a new build.
+- Build 17 is the current release candidate. Do not submit build 15 as evidence for this feature set. If App Store Connect rejects build 17, increment `CURRENT_PROJECT_VERSION`, archive again, and upload a new build.
 - The remaining launch gate is a real-device pass for Family Controls, DeviceActivity, custom shields, notifications, widgets, release App Check, Google/Apple sign-in, and account deletion. Simulator evidence is not sufficient for these platform integrations.
 - App Store Connect privacy, age-rating, encryption, content-rights, support URL, review notes, and build-selection fields still require final confirmation before pressing Submit for Review.
 - Firebase's current Google Cloud dependency chain reports seven moderate transitive `uuid` advisories and no high or critical advisories. The project is on current stable Firebase Admin/Functions releases; do not use npm's suggested forced downgrade.
