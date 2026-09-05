@@ -44,6 +44,8 @@ The fixes narrow the recursive match, evaluate shared partner validation once, v
 
 After fixes and two additional authentication/recovery regressions, all 64 tests passed on Node 22.23.2 with Java 21 and Firebase CLI 15.29.0. TypeScript compilation, offline daily-plan fixtures, and the repository security scan also passed. GitHub runs this suite on relevant pull requests and pushes; deployment remains a separate action.
 
+The first independent [GitHub Actions run](https://github.com/jayden-lacy/theclimb/actions/runs/33981083443) passed for commit `35f5e04` on September 5. It used a clean Ubuntu runner with no production secrets and passed the security suite, daily-plan fixtures, and repository security scan.
+
 ## Limits
 
 These tests do not prove Apple/Google OAuth UI behavior, physical-device App Check, Screen Time enforcement, production indexes, human moderation response, or successful account/provider revocation from the iOS app. Account-data cleanup tests cover the HTTP data-deletion contract; provider revocation and Firebase Auth deletion remain a separate client workflow.

@@ -31,4 +31,4 @@ Do not deploy a purported combined monitor until both inputs and email delivery 
 - [Google Cloud budget recipients](https://docs.cloud.google.com/billing/docs/how-to/budgets-notification-recipients)
 - [Google Cloud programmatic budget notifications](https://docs.cloud.google.com/billing/docs/how-to/budgets-programmatic-notifications)
 - [OpenAI spend alerts](https://developers.openai.com/api/docs/guides/terraform/rate-limits-and-spend)
-- [OpenAI usage and costs](https://platform.openai.com/docs/api-reference/usage)
+- [OpenAI project-filtered Costs API](https://developers.openai.com/api/reference/resources/admin/subresources/organization/subresources/usage/methods/costs)

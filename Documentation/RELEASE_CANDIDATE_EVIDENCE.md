@@ -24,6 +24,7 @@ The archive path is temporary evidence on the release Mac. It is not a version-c
 | Xcode Release analyzer | Passed with no analyzer findings |
 | Firebase Functions TypeScript build | Passed |
 | Auth/Firestore security emulator suite | 64 of 64 passed September 5 on Node 22; see `Documentation/BACKEND_SECURITY_TESTS.md` |
+| Independent backend CI | [GitHub run 33981083443](https://github.com/jayden-lacy/theclimb/actions/runs/33981083443) passed for backend commit `35f5e04` on September 5 |
 | Daily-plan validation fixtures | Passed |
 | Repository security validation | Passed |
 | Git whitespace validation | Passed |
