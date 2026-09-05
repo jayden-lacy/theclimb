@@ -1,8 +1,8 @@
 # Security Threat Model
 
-Last reviewed: September 4, 2026
+Last reviewed: September 5, 2026
 
-This document covers The Climb `1.0 (17)` iPhone release candidate, its Firebase backend, AI generation, community features, Screen Time extensions, Safari content blocker, widgets, and public website. It records implemented controls and remaining launch evidence; it does not treat simulator behavior as proof of Apple framework enforcement.
+This document covers The Climb `1.0 (19)` iPhone release candidate, its Firebase backend, AI generation, community features, Screen Time extensions, Safari content blocker, widgets, and public website. It records implemented controls and remaining launch evidence; it does not treat simulator behavior as proof of Apple framework enforcement.
 
 ## Protected Assets
 
@@ -24,8 +24,8 @@ This document covers The Climb `1.0 (17)` iPhone release candidate, its Firebase
 
 | Risk | Control | Verification |
 | --- | --- | --- |
-| Cross-account private-data access | UID-scoped Firestore rules and authenticated repositories | Rules inspection and deployment |
-| Forged OVR or leaderboard scores | Server-owned mission events and leaderboard writes | Client writes denied; authenticated smoke checks |
+| Cross-account private-data access | UID-scoped Firestore rules, non-overlapping profile validation, transactional destination ownership checks | Adversarial emulator tests for rules and HTTP handlers |
+| Direct OVR writes and replayed mission outcomes | Server-owned score/event records, ledger-authoritative terminal status | Emulator tests for direct-write denial, concurrent retries, and stale snapshots; issuance eligibility remains below |
 | Community impersonation or forged reports | Server derives user identity, post author, category, severity, and timestamps | `reportCommunityPost` deployed; direct report writes denied |
 | Reaction inflation | Deterministic per-user/per-post reaction record | Duplicate calls are idempotent |
 | Mutation abuse | Per-user, per-action Firestore rate limits | Backend enforcement before mutation handlers |
@@ -33,20 +33,23 @@ This document covers The Climb `1.0 (17)` iPhone release candidate, its Firebase
 | Group privilege escalation | Backend verifies owner/admin/member transitions | Direct group writes denied |
 | Unauthorized AI use and cost spikes | Auth, App Check, daily usage limits, output cap, timeout, bounded retry, same-day cache, deterministic fallback | Functions build, fixtures, deployment, and logs |
 | Secret or user-export leakage | Release security scan rejects tracked secrets, private keys, environment files, backups, and exports | `npm run validate:security` |
-| Incomplete account deletion | Backend removes private data, leaderboard, community ownership/reactions, reports, AI usage, rate limits, and auth account | Source inspection; physical authenticated test remains |
+| Incomplete account deletion | Backend removes active data; the iOS client handles provider revocation and Firebase Auth account deletion | Emulator data-cleanup isolation tests; full physical authenticated/provider flow remains |
 | Local sensitive preference exposure | Screen Time and domain-rule state use protected App Group storage | Source inspection; device data-protection test remains |
 | Supply-chain privacy mismatch | Pinned Swift packages, npm audit, privacy manifests, archive inspection | Build, audit, and archive validator |
 
 ## Residual Risks And Launch Gates
 
+The September 5 emulator suite has 64 passing tests. Coverage and limits are documented in `Documentation/BACKEND_SECURITY_TESTS.md`. Passing this suite is not blanket production security approval.
+
 1. Complete the physical-iPhone matrix for Screen Time authorization, shields, Device Activity scheduling, Safari enablement, restart recovery, notifications, widgets, authentication, App Check, account deletion, accessibility, and unstable networks.
-2. Obtain distribution signing and provisioning for all seven bundle identifiers, then validate the exact App Store archive.
-3. Configure Firestore TTL for `aiUsage.expiresAt`, `aiDailyPlans.expiresAt`, and `actionRateLimits.expiresAt`.
+2. Confirm build `19` completes App Store Connect processing and passes export-compliance review without new warnings.
+3. Keep the active Firestore TTL policies for `aiUsage.expiresAt`, `aiDailyPlans.expiresAt`, and `actionRateLimits.expiresAt` enabled and monitor cleanup behavior.
 4. Configure Firebase/Google Cloud and OpenAI budgets, spend alerts, function-error alerts, and a documented incident owner.
 5. Define a human moderation response process for urgent reports, appeals, retention, and support escalation. Automated filtering is not complete moderation.
 6. Confirm App Store privacy, age rating, export compliance, content rights, support, and review notes against the submitted binary.
 7. Review Organizer symbol warnings for precompiled Firebase/gRPC frameworks. First-party executable and dSYM UUIDs must continue to match.
+8. Add server-issued mission eligibility and per-day reward limits. A client can still create its own new mission IDs/difficulty/date in its private snapshot; server-owned score writes alone do not prevent reward farming through otherwise authenticated completion requests.
 
 ## Release Decision
 
-The local source, deployed authorization model, automated tests, and development archive support release-candidate status. Production approval requires the distribution archive, physical-device evidence, operational controls, and App Store Connect disclosures listed above.
+The committed source, deployed authorization model, automated tests, signed archive, and successful App Store upload support release-candidate status. Production approval still requires physical-device evidence, operational controls, and App Store Connect disclosures listed above.

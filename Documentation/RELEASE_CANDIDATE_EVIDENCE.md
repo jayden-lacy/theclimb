@@ -1,16 +1,16 @@
 # Release Candidate Evidence
 
-Last reviewed: September 4, 2026
+Last reviewed: September 5, 2026
 
 ## Candidate
 
 - Product: The Climb
 - Version: `1.0`
-- Build: `17`
+- Build: `19`
 - Branch: `main`
-- Release source: current `main`; record the exact uploaded commit with the TestFlight build
+- Binary source commit: `e4d6ba2`
 - Platform: iPhone, iOS 17.0 or later
-- Local archive: `/tmp/TheClimb-RC-1.0.17-20260903-220857.xcarchive`
+- Local archive: `~/Library/Developer/Xcode/Archives/2026-09-04/The Climb Stable 1.0 (19).xcarchive`
 
 The archive path is temporary evidence on the release Mac. It is not a version-controlled release artifact.
 
@@ -23,11 +23,13 @@ The archive path is temporary evidence on the release Mac. It is not a version-c
 | Release simulator build | Passed |
 | Xcode Release analyzer | Passed with no analyzer findings |
 | Firebase Functions TypeScript build | Passed |
+| Auth/Firestore security emulator suite | 64 of 64 passed September 5 on Node 22; see `Documentation/BACKEND_SECURITY_TESTS.md` |
 | Daily-plan validation fixtures | Passed |
 | Repository security validation | Passed |
 | Git whitespace validation | Passed |
 | Website validation | Passed |
 | Repeatable archive validation | Passed for version, bundle inventory, entitlements, signing, privacy manifests, and first-party dSYMs |
+| App Store toolchain | Xcode `26.6 (17F113)`, iOS SDK `26.5 (23F81a)` |
 | Live legal/support/AASA endpoints | `/`, `/privacy`, `/terms`, `/download`, and AASA returned HTTP 200 |
 | Firebase deployment | Rules, indexes, and all 17 Gen 2 functions deployed to `the-climb0` |
 | Deployed AI source comparison | `generateDailyPlan` deployed source matched local release source |
@@ -40,10 +42,10 @@ A fresh live npm audit reports seven moderate transitive advisories and no high 
 - Archive completed with `** ARCHIVE SUCCEEDED **`.
 - The archived app passes `codesign --verify --deep --strict`.
 - The archive is signed with the local Apple Development identity.
-- App version/build in archive metadata is `1.0 (17)`.
+- App version/build in archive metadata is `1.0 (19)`.
 - The main app and every extension have an arm64 dSYM.
 - First-party and relevant third-party privacy manifests are present.
-- `npm run validate:archive -- <archive> 1.0 17 development` passes against the archived product.
+- `npm run validate:archive -- <archive> 1.0 19 development 17F113 iphoneos26` passes against the archived product.
 - The archive contains:
   - Widget and Live Activity extension
   - Shield Configuration extension
@@ -57,7 +59,7 @@ The archive does not include dSYMs for the precompiled `FirebaseFirestoreInterna
 
 ## App Store Screenshot Evidence
 
-The current screenshot set was regenerated from the build 17 debug-only fixture and visually inspected:
+The current screenshot set was regenerated from the build 17 debug-only fixture and visually inspected. Build 19 changes only the bundle build number and legal attribution copy, so the screens remain representative:
 
 - `App Store Previews - 1284x2778/01-protected-focus.png`
 - `App Store Previews - 1284x2778/02-daily-growth.png`
@@ -65,28 +67,35 @@ The current screenshot set was regenerated from the build 17 debug-only fixture 
 
 Each image is exactly 1284 x 2778 pixels. The fixture is compiled only in Debug and does not create Firebase data or alter Release behavior.
 
-## Distribution Export Result
+## App Store Upload Result
 
-App Store export was attempted and stopped at Apple distribution signing:
+Build 17 was uploaded from Xcode 27 beta and must not be selected for review. Build 19 supersedes build 18 and was rebuilt from binary source commit `e4d6ba2` using release Xcode `26.6 (17F113)` and the iOS `26.5` SDK.
 
-- Xcode has no signed-in Apple account available to the command-line export.
-- No Apple Distribution certificate is installed.
-- Distribution profiles are missing for:
-  - `com.jaydenlacy.theclimb.contentblocker`
-  - `com.jaydenlacy.theclimb.deviceactivityreport`
+- App Store upload completed successfully September 4, 2026 at 12:26 PM Central.
+- Current processing/compliance status was not reverified September 5 because App Store Connect requires sign-in again.
+- All seven App Store profiles are present, use team `BLH227B4U7`, contain the shared App Group, and disallow debugging.
+- Family Controls is present in the App Store profiles for the app, shield configuration, shield action, Device Activity monitor, and Device Activity report.
+- Upload emitted symbol warnings only for the precompiled Firebase/gRPC frameworks listed above; the export itself succeeded.
 
-The development archive is valid evidence but cannot be uploaded to TestFlight. Sign in to the release Apple account in Xcode, create or download an Apple Distribution certificate, and resolve profiles for all seven bundle identifiers before creating the upload archive.
+Do not select build 17 or superseded build 18 for review. After build 19 finishes processing, answer export compliance, enable it for internal TestFlight testing, and then perform the physical-device smoke test.
 
 ## Backend Deployment
 
-The current Firestore rules, indexes, and Cloud Functions were deployed to project `the-climb0`. The deployment includes authenticated AI generation, App Check enforcement, server-owned scoring, account deletion cleanup, backend-enforced community/group mutations, server-verified reports, one Amen per user and post, and per-user mutation limits.
+The current Firestore rules, indexes, and Cloud Functions were deployed to project `the-climb0`. The deployment includes authenticated AI generation, App Check enforcement, server-owned scoring, account deletion cleanup, backend-enforced community/group mutations, server-verified reports, one Amen per user and post, and per-user mutation limits. TTL cleanup is active for `aiUsage`, `aiDailyPlans`, and `actionRateLimits` expiration fields.
+
+September 5: redeployed the security fixes to Firestore rules and all 17 functions successfully. Indexes were unchanged from the September 4 deployment. Production POST smoke checks for `generateDailyPlan`, `completeMission`, `failMission`, `completeRecoveryMission`, `syncLeaderboard`, `createCommunityPost`, `reportCommunityPost`, and `deleteAccountData` all rejected missing authentication with HTTP 401. These checks did not mutate production user data or call OpenAI. Build 19's iOS binary was not changed by this backend release.
+
+Spending-alert setup is tracked separately in `Documentation/SPENDING_ALERTS.md`; a provider-specific alert is not evidence of combined Firebase/OpenAI monitoring.
 
 ## Required Human Evidence
 
 The following still require the release owner's Apple account, App Store Connect access, or a physical iPhone:
 
-1. Confirm all App IDs, Family Controls distribution approvals, App Group membership, and distribution profiles.
-2. Export and validate an Apple Distribution archive.
-3. Run the complete physical-device matrix, including Screen Time authorization, app shielding, Device Activity delivery, Safari extension enablement, restart recovery, notifications, widgets, authentication, App Check, account deletion, and accessibility.
-4. Upload build `17` to TestFlight and complete a production smoke test.
-5. Complete App Store Connect privacy, age rating, export compliance, screenshots, support URL, review contact, and review notes.
+1. Refresh build `19` processing/compliance status, answer any outstanding export compliance, and enable it for internal TestFlight testing.
+2. Run the complete physical-device matrix, including Screen Time authorization, app shielding, Device Activity delivery, Safari extension enablement, restart recovery, notifications, widgets, authentication, App Check, account deletion, and accessibility.
+3. Complete App Store Connect privacy, age rating, export compliance, screenshots, support URL, review contact, and review notes.
+4. Select only build `19` for review and retain the TestFlight smoke-test evidence.
+
+## Remaining Technical Gate
+
+Server-owned score writes are implemented, but mission eligibility still comes from client-synchronized mission records. Add server-issued eligibility and per-day reward limits before treating leaderboard integrity as complete. The 64-test suite validates the documented authorization boundaries, not proof that a real-world activity occurred.

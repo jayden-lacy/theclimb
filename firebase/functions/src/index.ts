@@ -1402,10 +1402,11 @@ async function missionScoringContext(
   const scoreReference = firestore.collection("userScores").doc(uid);
   const eventReference = firestore.collection("missionScoreEvents").doc(`${uid}_${missionID}`);
 
-  const [userSnapshot, stateSnapshot, scoreSnapshot] = await Promise.all([
+  const [userSnapshot, stateSnapshot, scoreSnapshot, eventSnapshot] = await Promise.all([
     transaction.get(userReference),
     transaction.get(stateReference),
-    transaction.get(scoreReference)
+    transaction.get(scoreReference),
+    transaction.get(eventReference)
   ]);
 
   const appSnapshot = storedAppSnapshotFromPayload(stateSnapshot.get("payload"));
@@ -1424,6 +1425,25 @@ async function missionScoringContext(
     throw new HTTPError(404, "Mission not found.");
   }
 
+  const score = trustedScoreStateFromSnapshot(scoreSnapshot, uid);
+  if (eventSnapshot.exists && eventSnapshot.get("userID") !== uid) {
+    throw new HTTPError(403, "This mission record belongs to another account.");
+  }
+  // Terminal outcomes come from the server ledger, never a replayed or edited sync snapshot.
+  const recordedStatus = cleanText(eventSnapshot.get("status"));
+  const mission = appSnapshot.missions[missionIndex];
+  if (["completed", "failed", "recovered"].includes(recordedStatus)) {
+    mission.status = recordedStatus;
+  } else if (score.recoveredMissionIDs.includes(missionID)) {
+    mission.status = "recovered";
+  } else if (score.completedMissionIDs.includes(missionID)) {
+    mission.status = "completed";
+  } else if (score.failedMissionIDs.includes(missionID)) {
+    mission.status = "failed";
+  } else {
+    mission.status = mission.status === "active" ? "active" : "pending";
+  }
+
   return {
     userReference,
     stateReference,
@@ -1432,11 +1452,11 @@ async function missionScoringContext(
     appSnapshot,
     missionIndex,
     profile: appSnapshot.profile,
-    score: trustedScoreStateFromSnapshot(scoreSnapshot, uid)
+    score
   };
 }
 
-function persistTrustedMissionResult(
+async function persistTrustedMissionResult(
   transaction: Transaction,
   context: MissionScoringContext,
   result: {
@@ -1446,7 +1466,20 @@ function persistTrustedMissionResult(
     appliedDelta: number;
     eventStatus: string;
   }
-): TrustedMissionResult {
+): Promise<TrustedMissionResult> {
+  const firestore = getFirestore();
+  const missionReference = firestore.collection("missions").doc(requiredDocumentID(result.mission.id, "Mission"));
+  const journalReference = result.journalEntry ?
+    firestore.collection("journalEntries").doc(requiredDocumentID(result.journalEntry.id, "Reflection")) : undefined;
+  const progressReference = result.progressSnapshot ?
+    firestore.collection("progress").doc(requiredDocumentID(result.progressSnapshot.id, "Progress")) : undefined;
+  const references = [missionReference, journalReference, progressReference]
+    .filter((reference): reference is DocumentReference => reference !== undefined);
+  const existingDocuments = await transaction.getAll(...references);
+  if (existingDocuments.some((document) => document.exists && document.get("userID") !== context.score.userID)) {
+    throw new HTTPError(403, "You can only update your own mission and reflection records.");
+  }
+
   const missions = context.appSnapshot.missions ?? [];
   missions[context.missionIndex] = result.mission;
   context.appSnapshot.missions = missions;
@@ -1493,20 +1526,20 @@ function persistTrustedMissionResult(
     missionDateKey: missionDateKey(result.mission),
     updatedAt: FieldValue.serverTimestamp()
   }, { merge: true });
-  transaction.set(getFirestore().collection("missions").doc(cleanText(result.mission.id)), {
+  transaction.set(missionReference, {
     ...result.mission,
     userID: context.score.userID,
     updatedAt: FieldValue.serverTimestamp()
   }, { merge: true });
-  if (result.journalEntry) {
-    transaction.set(getFirestore().collection("journalEntries").doc(cleanText(result.journalEntry.id)), {
+  if (result.journalEntry && journalReference) {
+    transaction.set(journalReference, {
       ...result.journalEntry,
       userID: context.score.userID,
       updatedAt: FieldValue.serverTimestamp()
     }, { merge: true });
   }
-  if (result.progressSnapshot) {
-    transaction.set(getFirestore().collection("progress").doc(cleanText(result.progressSnapshot.id)), {
+  if (result.progressSnapshot && progressReference) {
+    transaction.set(progressReference, {
       ...result.progressSnapshot,
       userID: context.score.userID,
       updatedAt: FieldValue.serverTimestamp()
@@ -2173,7 +2206,7 @@ async function verifyFirebaseUser(
   }
 
   try {
-    const decodedToken = await getAuth().verifyIdToken(token);
+    const decodedToken = await getAuth().verifyIdToken(token, true);
     return decodedToken.uid;
   } catch (error) {
     if (error instanceof HTTPError) {

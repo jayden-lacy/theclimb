@@ -21,6 +21,9 @@ firebase/functions/.env.*
 
 # Local deploy/build outputs
 .firebase/
+firebase-debug*.log
+firestore-debug.log
+ui-debug.log
 .wrangler/
 worker.js
 

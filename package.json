@@ -1,6 +1,7 @@
 {
   "type": "module",
   "scripts": {
+    "test:security": "bash scripts/test-firebase-security.sh",
     "build:website": "node website/build-worker.mjs",
     "validate:website": "node website/build-worker.mjs && node website/validate-worker.mjs",
     "validate:security": "bash scripts/release-security-check.sh",

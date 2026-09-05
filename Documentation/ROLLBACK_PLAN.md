@@ -1,18 +1,19 @@
 # Rollback Plan
 
-Last reviewed: July 30, 2026
+Last reviewed: September 4, 2026
 
 This plan covers release rollback for the Screen Time upgrade while preserving existing faith, account, community, and user data. Apple App Store binaries cannot be remotely replaced, and the current Screen Time feature flags are compiled into the app rather than controlled by a verified remote kill switch.
 
 ## Current Baseline
 
-- Release candidate: `1.0 (16)` on `main`
-- Current Screen Time upgrade: included in the release-candidate commit containing this document
-- Previously uploaded build: `1.0 (15)`
-- Current worktree signed archive: development-signed archive verified locally
-- Current worktree TestFlight build: not uploaded
+- Release candidate: `1.0 (19)` on `main`
+- Current Screen Time upgrade: included in binary source commit `e4d6ba2`
+- Superseded uploads: builds `15`, `17`, and `18`
+- Current signed archive: development-signed build `19` archive verified locally
+- Current release candidate: build `19`, uploaded to App Store Connect; current processing/compliance state requires a signed-in refresh
+- Current release binary source: commit `e4d6ba2`
 
-The first rollback action before distribution is to withhold TestFlight upload until distribution signing and the required physical-device matrix pass.
+Before public distribution, keep build `19` limited to internal TestFlight testing until the required physical-device matrix passes.
 
 ## Rollback Principles
 

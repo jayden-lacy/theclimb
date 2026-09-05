@@ -163,11 +163,8 @@ service cloud.firestore {
         request.resource.data[field] == resource.data[field] + 1;
     }
 
-    function acceptsPartnerLink(linkId) {
-      return isSignedIn() &&
-        validPartnerLink(linkId) &&
-        preservesPartnerLinkOwner() &&
-        resource.data.status == 'pending' &&
+    function acceptsPartnerLink() {
+      return resource.data.status == 'pending' &&
         resource.data.acceptedByID == '' &&
         resource.data.ownerID != request.auth.uid &&
         request.resource.data.acceptedByID == request.auth.uid &&
@@ -246,11 +243,8 @@ service cloud.firestore {
         incrementsField('acceptedEncouragementCount');
     }
 
-    function updatesOwnPartnerAction(linkId) {
-      return isSignedIn() &&
-        validPartnerLink(linkId) &&
-        preservesPartnerLinkOwner() &&
-        resource.data.status == 'accepted' &&
+    function updatesOwnPartnerAction() {
+      return resource.data.status == 'accepted' &&
         request.resource.data.status == 'accepted' &&
         (
           ownerCheckInAction() ||
@@ -273,7 +267,8 @@ service cloud.firestore {
         allow read, write, delete: if isUser(userId);
       }
 
-      match /{document=**} {
+      // Require a child document: a recursive wildcard alone also matches the profile itself.
+      match /{collectionId}/{documentId}/{nested=**} {
         allow read, write, delete: if isUser(userId);
       }
     }
@@ -323,8 +318,10 @@ service cloud.firestore {
         );
       allow list: if isExistingPartnerLinkMember();
       allow create: if createsPartnerLink(linkId);
-      allow update: if acceptsPartnerLink(linkId) ||
-        updatesOwnPartnerAction(linkId);
+      allow update: if isSignedIn() &&
+        validPartnerLink(linkId) &&
+        preservesPartnerLinkOwner() &&
+        (acceptsPartnerLink() || updatesOwnPartnerAction());
       allow delete: if isExistingPartnerLinkMember();
     }
 

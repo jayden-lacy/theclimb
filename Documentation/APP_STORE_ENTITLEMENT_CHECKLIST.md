@@ -9,29 +9,29 @@ Use this checklist for the exact archive submitted to App Store Connect. A capab
 | Item | Current status |
 | --- | --- |
 | Current branch | `main` |
-| Release source | Current `main`; record the exact uploaded commit and archive when TestFlight processing completes |
-| Screen Time upgrade | Included in release candidate `1.0 (17)` |
+| Release source | Build `19` binary source commit `e4d6ba2`; backend security fixes and evidence follow on `main` |
+| Screen Time upgrade | Included in release candidate `1.0 (19)` |
 | Local simulator build | Debug and Release passed September 3, 2026 |
 | Native tests | 50 of 50 passed September 3, 2026 |
 | Release analyzer | Passed September 3, 2026 with no analyzer findings |
-| Signed archive for current worktree | Development-signed `1.0 (17)` archive succeeded; deep code-sign verification passed |
-| TestFlight build containing current worktree | Not uploaded |
-| Apple portal entitlement status | Source entitlements are present; distribution-profile evidence remains required |
-| Distribution provisioning profiles | App Store export reported no Apple account, no iOS Distribution certificate, and missing profiles for `contentblocker` and `deviceactivityreport` |
+| Signed archive for current worktree | Stable-Xcode `1.0 (19)` archive succeeded; deep code-sign and repeatable archive verification passed |
+| TestFlight build containing current iOS source | Build `19` uploaded successfully; current processing/compliance state requires a signed-in refresh |
+| Apple portal entitlement status | All intended App Store profile entitlements verified locally |
+| Distribution provisioning profiles | App Store profiles are present for all seven shipping bundle identifiers and expire May 19, 2027 |
 
-Do not submit the previously uploaded `1.0 (15)` as evidence for the current Screen Time upgrade or Safari content blocker. The next upload must be build `17` or later.
+Do not submit the previously uploaded build `15`, beta-Xcode build `17`, or superseded build `18`. Select stable-Xcode build `19` only.
 
 ## Bundle and Target Inventory
 
 | Target | Bundle identifier | App Group in source | Family Controls in source | Release action |
 | --- | --- | --- | --- | --- |
-| Main app | `com.jaydenlacy.theclimb` | Yes | Yes | Distribution profile present; install distribution certificate before export |
-| Widget and Live Activity | `com.jaydenlacy.theclimb.widget` | Yes | No | Distribution profile present; install distribution certificate before export |
+| Main app | `com.jaydenlacy.theclimb` | Yes | Yes | App Store profile verified |
+| Widget and Live Activity | `com.jaydenlacy.theclimb.widget` | Yes | No | App Store profile verified |
 | Shield configuration | `com.jaydenlacy.theclimb.shieldconfiguration` | Yes | Yes | Family Controls distribution profile present |
 | Shield action | `com.jaydenlacy.theclimb.shieldaction` | Yes | Yes | Family Controls distribution profile present |
 | Device Activity monitor | `com.jaydenlacy.theclimb.deviceactivitymonitor` | Yes | Yes | Family Controls distribution profile present |
-| Device Activity report | `com.jaydenlacy.theclimb.deviceactivityreport` | Yes | Yes | Development profile present; distribution profile still required |
-| Safari content blocker | `com.jaydenlacy.theclimb.contentblocker` | Yes | No | Development profile present; distribution profile still required |
+| Device Activity report | `com.jaydenlacy.theclimb.deviceactivityreport` | Yes | Yes | Family Controls App Store profile verified |
+| Safari content blocker | `com.jaydenlacy.theclimb.contentblocker` | Yes | No | App Store profile verified |
 
 Shared App Group:
 
@@ -54,8 +54,8 @@ The Device Activity report extension is embedded as an ExtensionKit extension an
 - [x] A distribution profile containing Family Controls exists for the shield configuration extension.
 - [x] A distribution profile containing Family Controls exists for the shield action extension.
 - [x] A distribution profile containing Family Controls exists for the Device Activity monitor extension.
-- [ ] Apple has approved Family Controls for distribution for the Device Activity report extension.
-- [ ] Each distribution provisioning profile contains `com.apple.developer.family-controls`.
+- [x] A distribution profile containing Family Controls exists for the Device Activity report extension.
+- [x] Each participating App Store provisioning profile contains `com.apple.developer.family-controls`.
 - [x] The entitlement request and review notes describe voluntary, user-controlled focus and adult-site protection.
 - [x] Review copy does not claim remote parental surveillance, universal app-open counting, or bypass-proof control.
 
@@ -73,16 +73,16 @@ The widget and Safari content blocker do not declare Family Controls in source a
 
 ## Provisioning and Signing
 
-- [ ] Xcode automatic signing or manually selected profiles resolve for every shipping target.
-- [ ] Release uses team `BLH227B4U7`.
-- [ ] The archive is signed for distribution, not development.
-- [ ] The embedded profiles contain the intended bundle IDs and capabilities.
-- [ ] The App Group value is identical across the app and all participating extensions.
+- [x] Automatic signing and App Store upload resolve for every shipping target.
+- [x] Release uses team `BLH227B4U7`.
+- [x] App Store export and upload succeeded for build `19`.
+- [x] App Store profiles contain the intended bundle IDs and capabilities.
+- [x] The App Group value is identical across the app and all participating extensions.
 - [x] The archive contains the widget, shield configuration, shield action, Device Activity monitor, Device Activity report, and Safari content blocker.
 - [x] The archive contains no watchOS app or Network Extension.
 - [x] `codesign --verify --deep --strict` succeeds on the development-signed archived app.
 - [x] First-party app and extension dSYM UUIDs match every archived executable.
-- [ ] Organizer validation succeeds without entitlement mismatch errors.
+- [x] App Store upload validation succeeds without entitlement mismatch errors.
 
 ## Privacy Manifests
 
@@ -100,7 +100,7 @@ The Shield Action target does not currently use App Group `UserDefaults` or anot
 - [x] Reconfirm the Shield Action implementation has not gained required-reason API use.
 - [x] Confirm each manifest is included in the built target resource bundle.
 - [x] Confirm third-party SDK privacy manifests are present in the archive.
-- [ ] Resolve any Organizer privacy-manifest warning before submission.
+- [x] Build `19` upload produced no privacy-manifest warning.
 
 ## App Store Connect Configuration
 
@@ -134,7 +134,7 @@ No separate subscription checklist is required for this release.
 Attach or retain internally:
 
 - [ ] App ID capability screenshots or exports.
-- [ ] Distribution profile entitlement dumps for all shipping targets.
+- [x] Distribution profile entitlement dumps for all shipping targets.
 - [x] Signed archive validation log.
 - [x] Archive target and bundle inventory.
 - [x] Three current 1284 x 2778 iPhone screenshots.

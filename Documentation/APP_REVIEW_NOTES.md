@@ -9,7 +9,7 @@ This is a draft for App Store Connect. Replace all bracketed fields with informa
 - Contact name: `[RELEASE CONTACT]`
 - Phone: `[PHONE]`
 - Email: `support@theclimbapp.org`
-- Submitted version/build: `1.0 (17)`
+- Submitted version/build: `1.0 (19)`
 - Test account email: `[ENTER SECURELY IN APP STORE CONNECT]`
 - Test account password: `[ENTER SECURELY IN APP STORE CONNECT]`
 
@@ -125,9 +125,8 @@ Account deletion removes the Firebase Authentication account and requests deleti
 
 ## Submission Gate
 
-These notes are not ready to paste until:
+Family Controls App Store profiles and the stable-Xcode build `19` upload are verified. These notes are not ready to paste until:
 
-- Family Controls distribution profiles are confirmed for every participating target;
-- an App Store distribution archive is exported and validated;
+- build `19` finishes processing, export compliance is answered, and the build is enabled for internal TestFlight testing;
 - the full physical-device matrix passes; and
 - bracketed reviewer information is entered securely in App Store Connect.

@@ -8,6 +8,7 @@
   "scripts": {
     "build": "tsc",
     "validate:daily-plan": "node scripts/validate-daily-plan-fixtures.mjs",
+    "test:security:run": "npm run build && node --test --test-concurrency=1 test/*.test.mjs",
     "serve": "npm run build && firebase emulators:start --only functions",
     "deploy": "firebase deploy --only functions"
   },
@@ -17,7 +18,10 @@
     "openai": "^6.49.0"
   },
   "devDependencies": {
+    "@firebase/rules-unit-testing": "5.0.2",
     "@types/node": "^22.20.1",
+    "express": "^5.1.0",
+    "firebase": "12.18.0",
     "typescript": "^5.0.0"
   },
   "overrides": {

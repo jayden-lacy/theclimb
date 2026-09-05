@@ -1,8 +1,8 @@
 # Screen Time Migration Roadmap
 
-Last reviewed: September 4, 2026
+Last reviewed: September 5, 2026
 
-This roadmap reflects the `1.0 (17)` Screen Time release candidate. It does not treat source code, simulator behavior, unit tests, or a development-signed archive as proof that Apple framework enforcement works on a physical device.
+This roadmap reflects the `1.0 (19)` Screen Time release candidate. It does not treat source code, simulator behavior, unit tests, or a development-signed archive as proof that Apple framework enforcement works on a physical device.
 
 ## Status Legend
 
@@ -16,16 +16,16 @@ This roadmap reflects the `1.0 (17)` Screen Time release candidate. It does not 
 | Evidence | Result |
 | --- | --- |
 | Repository | `/Users/jaydenlacy/Documents/The Climb` |
-| Branch and release source | `main`; build `17` release source is committed and pushed |
+| Branch and release source | `main`; build `19` binary source is commit `e4d6ba2` |
 | Debug and Release simulator compile | Current integrated Xcode scheme passed September 3, 2026 |
 | Native unit tests | 50 of 50 passed September 3, 2026 |
 | Release analysis | Passed September 3, 2026 with no analyzer findings |
-| Current Release archive | `1.0 (17)` development-signed archive succeeded September 3, 2026; repeatable archive validation, matching first-party dSYMs, deep code-sign verification, and all six extensions are confirmed |
-| Current worktree TestFlight upload | Not performed |
+| Current Release archive | `1.0 (19)` archive built with release Xcode `26.6 (17F113)` and iOS SDK `26.5`; repeatable validation, matching first-party dSYMs, deep code-sign verification, and all six extensions are confirmed |
+| Current worktree TestFlight upload | Build `19` upload succeeded September 4, 2026; processing/compliance status requires a signed-in refresh |
 | Family Controls on physical iPhone | Not verified |
 | Safari extension on physical iPhone | Not verified |
-| Developer portal entitlements and distribution profiles | App Store export is blocked until Xcode has an Apple account, an iOS Distribution certificate, and profiles for the Safari content blocker and Device Activity report |
-| Backend state | Firestore rules, indexes, and all 17 callable functions were deployed September 4, 2026; unauthenticated callable smoke checks correctly returned `401` |
+| Developer portal entitlements and distribution profiles | All seven App Store profiles are present with the intended team and App Group; Family Controls is present on all five participating profiles |
+| Backend state | Security fixes redeployed to rules and all 17 HTTP functions September 5; indexes unchanged from September 4. All 64 emulator tests and eight unauthenticated production smoke checks passed |
 
 The previously uploaded `1.0 (15)` build predates this Screen Time upgrade. It is not evidence for the new sessions, rhythms, boundaries, permanent protection, or Safari extension.
 
@@ -130,7 +130,7 @@ The previously uploaded `1.0 (15)` build predates this Screen Time upgrade. It i
 - [x] 50 native unit tests passing
 - [x] Migration idempotency and corrupt-envelope recovery fixtures
 - [x] Policy overlap, strict-delay, intentional-exit, and capability-truth unit coverage
-- [x] Optimized Release analysis and development-signed `1.0 (17)` archive for the current worktree
+- [x] Optimized Release build and stable-Xcode `1.0 (19)` archive for binary source commit `e4d6ba2`
 - [ ] Physical-device Screen Time matrix
 - [ ] Extension termination, app termination, and device-restart recovery
 - [~] Date-boundary and cross-midnight tests pass; physical time-zone and daylight-saving rescheduling remains unverified
@@ -152,23 +152,24 @@ The previously uploaded `1.0 (15)` build predates this Screen Time upgrade. It i
 - [x] Physical-device test matrix document
 - [x] Known iOS limitations document
 - [-] Subscription checklist; The Climb is free and the repository contains no StoreKit product, paywall, in-app purchase, or subscription
-- [~] Apple Developer portal entitlement and distribution-profile evidence; development signing resolves, but App Store distribution export does not
+- [x] Apple Developer portal distribution-profile evidence for all seven targets; intended App Group and Family Controls entitlements verified
 - [ ] App Store Connect privacy, age-rating, encryption, support, and review metadata confirmation
-- [x] Current worktree included in the build `17` release-candidate commits
+- [x] Binary source frozen at build `19` commit `e4d6ba2`
 - [x] Development-signed Release archive containing all intended extensions
 - [x] Repeatable archive validator covers version, bundle inventory, entitlements, privacy manifests, code signing, and first-party dSYM UUIDs
-- [ ] New TestFlight upload for the current release candidate
+- [~] Build `19` uploaded successfully; current processing/compliance state requires a signed-in refresh
 - [ ] New TestFlight physical-device evidence
 
 ## Release Gate
 
-The automated release candidate is complete, but the build is not ready to submit for review. Release remains blocked until:
+The release candidate has passed the documented automated checks, but is not ready to submit for review. Release remains gated on:
 
-1. Xcode is signed into the release owner's Apple Developer account and an iOS Distribution certificate is installed.
-2. Family Controls distribution entitlements and provisioning profiles are confirmed for every participating bundle ID, including the Device Activity report and Safari content blocker.
-3. The physical-device matrix passes for authorization, shielding, schedules, boundaries, breaks, restart recovery, Safari, notifications, widgets, authentication, App Check, and account deletion.
-4. App Store Connect disclosures and review notes match the exact archived binary.
-5. A new TestFlight build containing this worktree passes smoke testing.
+1. Build `19` finishes processing, export compliance is answered, and the build is enabled for internal TestFlight testing.
+2. The physical-device matrix passes for authorization, shielding, schedules, boundaries, breaks, restart recovery, Safari, notifications, widgets, authentication, App Check, and account deletion.
+3. App Store Connect disclosures and review notes match the exact archived binary.
+4. Build `19` passes the TestFlight smoke test.
+5. Server-issued mission eligibility and per-day reward limits close the remaining scoring-integrity gap documented in `Documentation/SECURITY_THREAT_MODEL.md`.
+6. Spending/error alerts and human support/moderation response are verified.
 
 ## Sequencing Rules
 

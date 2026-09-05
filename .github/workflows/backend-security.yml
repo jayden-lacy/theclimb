@@ -1,0 +1,49 @@
+name: Backend Security
+
+on:
+  pull_request:
+    paths:
+      - 'firestore.rules'
+      - 'firestore.indexes.json'
+      - 'firebase/**'
+      - 'firebase*.json'
+      - 'scripts/**'
+      - 'package.json'
+      - '.github/workflows/backend-security.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'firestore.rules'
+      - 'firestore.indexes.json'
+      - 'firebase/**'
+      - 'firebase*.json'
+      - 'scripts/**'
+      - 'package.json'
+      - '.github/workflows/backend-security.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  emulator-security:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: firebase/functions/package-lock.json
+      - uses: actions/setup-java@b6effb05e454b25005698d916606bdc6ffcbf961 # v5
+        with:
+          distribution: temurin
+          java-version: '21'
+      - run: npm ci --prefix firebase/functions --ignore-scripts
+      - run: npm install --global firebase-tools@15.29.0
+      - run: npm run test:security
+      - run: npm --prefix firebase/functions run validate:daily-plan
+      - run: npm run validate:security

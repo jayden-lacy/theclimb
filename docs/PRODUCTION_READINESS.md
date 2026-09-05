@@ -18,9 +18,11 @@ Verified on September 3-4, 2026:
 - Community posts, groups, leaderboard scores, mission scoring, and account deletion use authenticated callable backend functions. Firestore client writes to server-owned collections are denied.
 - The current codebase uses local World English Bible text, authenticated AI generation, bounded retries/timeouts, same-day caching, per-user rate limits, and deterministic fallback plans.
 - `https://theclimbapp.org`, `/privacy`, `/terms`, `/download`, and `/.well-known/apple-app-site-association` were deployed through Cloudflare and returned HTTP 200.
-- A development-signed arm64 archive for `1.0 (17)` succeeds and contains valid signatures, all six extensions, expected privacy manifests, and app/extension dSYMs.
-- App Store export for build 17 is blocked until Xcode has the release Apple account, an Apple Distribution certificate, and profiles for all shipping bundle identifiers.
+- A development-signed arm64 archive for `1.0 (19)` built with release Xcode `26.6 (17F113)` succeeds and contains valid signatures, all six extensions, expected privacy manifests, and app/extension dSYMs.
+- All seven App Store profiles contain the intended App Group, and every participating profile contains Family Controls. Build `19` uploaded successfully. Current processing/compliance state needs an authenticated App Store Connect refresh.
 - Three current iPhone screenshots were regenerated from the build 17 release candidate at exactly 1284 x 2778 in `App Store Previews - 1284x2778`.
+
+September 5 backend verification: 64 Auth/Firestore emulator tests pass on Node 22. They exposed and now cover profile-rule overlap, legitimate partner action rejection, cross-account mission/journal writes, stale terminal mission states, and fabricated recovery state. See `Documentation/BACKEND_SECURITY_TESTS.md`. These tests do not replace the physical-device or live-provider matrix.
 
 ## Apple Configuration
 
@@ -61,9 +63,10 @@ Verified on September 3-4, 2026:
   - Optional `OPENAI_TIMEOUT_MS=20000` and `OPENAI_RETRY_COUNT=1` for bounded retry behavior.
 - Deploy Firestore rules with `firebase deploy --only firestore:rules,firestore:indexes` after every rules change. Users may access only their own private data, while posts, groups, leaderboard data, and mission-score events remain backend-owned.
 - Confirm the backend-only `aiUsage` and `aiDailyPlans` collections exist after testing. Client access is denied by the catch-all Firestore rule; only Cloud Functions should write them.
-- Enable Firestore TTL on `aiUsage.expiresAt`, `aiDailyPlans.expiresAt`, and `actionRateLimits.expiresAt` so old rate-limit and cached-plan records are cleaned up automatically.
+- Firestore TTL is active on `aiUsage.expiresAt`, `aiDailyPlans.expiresAt`, and `actionRateLimits.expiresAt` so old rate-limit and cached-plan records are cleaned up automatically.
 - Keep the OpenAI key and stored prompt ID backend-only. Never put them in Swift, `Info.plist`, or Remote Config.
 - Set Cloud Billing budgets and alerts for Firebase/Google Cloud, OpenAI usage limits, and log-based alerts for repeated `generateDailyPlan` failures.
+- September 5: the owner's email channel is attached to the existing USD 25 Firebase early-warning budget. The requested USD 100 combined Firebase/OpenAI alert remains unconfigured; see `Documentation/SPENDING_ALERTS.md`. No spending cap was applied.
 - Run `npm run validate:security` from the repository root before each release. It rejects tracked secrets, private keys, `.env` files, Firebase backups/exports, and generated build artifacts, then fails on high or critical npm advisories.
 
 ## Backend Hardening
@@ -85,10 +88,11 @@ Verified on September 3-4, 2026:
 
 ## Verification
 
+- Run `npm run test:security` with Node 22, Java 21, and the Firebase CLI. All rule and HTTP authorization tests must pass against the disposable demo project.
 - Run a clean Debug simulator build.
 - Run a Release simulator build.
 - Run `xcodebuild test` against an available iPhone simulator and confirm all `ClimbCoreTests` pass.
-- Run `npm run validate:archive -- <archive-path> 1.0 17 distribution` against the final upload archive. Confirm all first-party dSYMs match and review any remaining precompiled Firebase/gRPC framework symbol warnings in Organizer.
+- Run `npm run validate:archive -- <archive-path> 1.0 19 development 17F113 iphoneos26` against the exact build 19 archive. Confirm all first-party dSYMs match and review the remaining precompiled Firebase/gRPC framework symbol warnings in Organizer.
 - Complete onboarding with email/password and Google.
 - Confirm the Home screen creates one mission and devotional per local calendar day.
 - Before starting a pending mission, use "Try a different plan" once and confirm the replacement mission/devotional save, widgets refresh, and repeat app opens return the replacement from cache.
@@ -121,11 +125,12 @@ Verified on September 3-4, 2026:
 - The DeviceActivity monitor bundle ID `com.jaydenlacy.theclimb.deviceactivitymonitor` must be registered and entitled with the rest of the Screen Time bundle set.
 - Server-side daily pregeneration is not required for launch; the app currently generates the next plan when the user opens the app on a new day.
 - Website `/download` redirects to the App Store when the Cloudflare Worker `APP_STORE_URL` environment variable is set to a valid Apple URL. Without that variable, it serves a public fallback download page instead of an internal setup error.
-- Build 17 is the current release candidate. Do not submit build 15 as evidence for this feature set. If App Store Connect rejects build 17, increment `CURRENT_PROJECT_VERSION`, archive again, and upload a new build.
+- Build 19 is the current release candidate. Build 17 was created with Xcode 27 beta, and build 18 does not include the latest attribution copy; neither should be selected for review. If App Store Connect rejects build 19, increment `CURRENT_PROJECT_VERSION`, archive with release Xcode `26.6`, and upload a new build.
 - The remaining launch gate is a real-device pass for Family Controls, DeviceActivity, custom shields, notifications, widgets, release App Check, Google/Apple sign-in, and account deletion. Simulator evidence is not sufficient for these platform integrations.
 - App Store Connect privacy, age-rating, encryption, content-rights, support URL, review notes, and build-selection fields still require final confirmation before pressing Submit for Review.
 - Firebase's current Google Cloud dependency chain reports seven moderate transitive `uuid` advisories and no high or critical advisories. The project is on current stable Firebase Admin/Functions releases; do not use npm's suggested forced downgrade.
 - The static threat model is tracked in `Documentation/SECURITY_THREAT_MODEL.md`; physical-device behavior, moderation operations, billing alerts, and App Store disclosures remain launch evidence rather than source-code assertions.
+- Mission eligibility and per-day reward limits still need server enforcement. Direct score-write denial and idempotency for one mission ID do not prevent a modified client from claiming newly fabricated missions.
 
 ## Official References
 
